@@ -4,7 +4,7 @@
 
 Conductor is an Electron desktop app that orchestrates the Maestro CLI so non-developers can author e2e tests.
 No backend exists and no credential is ours — every capability comes from the user's machine (`.context.md` §9.0, §12.15).
-The repo is **pre-scaffold**: only this file, `.context.md`, `.gitignore` and `.claude/` are here. Everything below — commands, layout, architecture, names — is the contract the scaffold and all later code must satisfy, not a description of what exists.
+The scaffold **exists**: the app boots, and the Commands and Layout tables below describe the tree as built. The directories they name that are not there yet — `maestro/`, `services/`, `views/`, `components/`, `hooks/`, `stores/`, `lib/` — are the contract each later spec must satisfy when it creates them.
 `.context.md` at the repo root is the source of truth for product and architecture decisions; this file is the working contract for how code is organized and written. If they conflict, `.context.md` wins — fix this file in the same change.
 
 ## Commands
@@ -139,6 +139,7 @@ Rules that keep the layers honest:
 | Renderer pure module | kebab-case in `lib/` | `lib/hit-test.ts` |
 | Service (main only) | `<name>.service.ts`, one exported class | `services/repo.service.ts` → `RepoService` |
 | IPC module | `<domain>.ts` in `ipc/`, exports `register<Domain>Ipc` | `ipc/flow.ts` → `registerFlowIpc(deps)` |
+| Shared IPC guard | `ipc/handle.ts` — not a domain, so not `register<Domain>Ipc` | `ipc/handle.ts` → `handle(channel, schema, fn)` |
 | Main-process class module | `PascalCase.ts` | `maestro/CliRunner.ts` (path pinned by §10.1) |
 | Plain module / util | kebab-case | `process/run.ts`, `shared/config.ts` |
 | Test | sibling of its subject, `*.test.ts` / `*.test.tsx` | `maestro/SelectorSynth.test.ts` |
