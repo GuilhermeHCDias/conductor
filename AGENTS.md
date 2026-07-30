@@ -4,8 +4,8 @@
 
 Conductor is an Electron desktop app that orchestrates the Maestro CLI so non-developers can author e2e tests.
 No backend exists and no credential is ours — every capability comes from the user's machine (`.context.md` §9.0, §12.15).
-The repo is **pre-scaffold**: only `.context.md`, `.gitignore` and `.claude/` are here. The commands, layout and names below are the contract the scaffold must satisfy, not a description of what exists.
-`.context.md` at the repo root is the source of truth for product and architecture; this file is the harness only.
+The repo is **pre-scaffold**: only this file, `.context.md`, `.gitignore` and `.claude/` are here. Everything below — commands, layout, architecture, names — is the contract the scaffold and all later code must satisfy, not a description of what exists.
+`.context.md` at the repo root is the source of truth for product and architecture decisions; this file is the working contract for how code is organized and written. If they conflict, `.context.md` wins — fix this file in the same change.
 
 ## Commands
 
@@ -27,27 +27,32 @@ The scaffold must define these as `package.json` scripts. Use `npm`, not `pnpm` 
 ```
 src/
   main/                       # Node. Everything privileged lives here.
-    index.ts                  # app entry: BrowserWindow, IPC registration
-    ipc/                      # one module per channel group: handler + arg schema
+    index.ts                  # composition root: window, services, IPC registration
+    window.ts                 # the one BrowserWindow factory — carries the §9.3 flags
+    ipc/                      # <domain>.ts — thin handlers: validate, call a service
     maestro/                  # MaestroGateway, LocalGateway, CliRunner,
                               # ScreenCapture, HierarchyParser, SelectorSynth (§9.2)
-    services/                 # *.service.ts — repo, gh, flow-index, doctor, ai
+    services/                 # <name>.service.ts — repo, gh, flow-index, doctor, ai
     process/run.ts            # the only execFile wrapper (§10.1)
   preload/
-    index.ts                  # contextBridge only — never expose raw ipcRenderer
+    index.ts                  # contextBridge only — implements ConductorApi, no logic
     index.d.ts                # Window augmentation for the exposed API
   renderer/                   # Browser. No Node APIs, sandboxed.
     index.html
     src/
       main.tsx                # React root
-      App.tsx
-      components/<Name>/      # see Naming
-      stores/*.store.ts       # Zustand
-      hooks/use*.ts
+      App.tsx                 # layout shell arranging views — no business logic
+      views/<Name>/           # one folder per §9.2 panel — see Architecture
+      components/<Name>/      # reusable presentational components
+      hooks/use<Name>.ts      # event subscriptions + reusable view logic
+      stores/<name>.store.ts  # Zustand, one per domain
+      lib/                    # pure renderer logic (hit-test, bounds math)
       styles/                 # global CSS + tokens
       env.d.ts
-  shared/                     # imported by BOTH sides: types + config.ts (§2).
-                              # No `node:` imports, no DOM APIs.
+  shared/                     # imported by BOTH sides. No `node:` imports, no DOM.
+    config.ts                 # §2 — the single CONFIG source
+    ipc.ts                    # the IPC contract: channels, Zod schemas, ConductorApi
+    types.ts                  # TreeNode, Snapshot, Device, RunEvent… (split when it grows)
 out/                          # build output — package.json main is ./out/main/index.js
 resources/                    # runtime assets shipped with the app
 build/                        # icons + entitlements for electron-builder
@@ -55,31 +60,90 @@ build/                        # icons + entitlements for electron-builder
 
 Root config files: `electron.vite.config.ts`, `tsconfig.json` (references only), `tsconfig.node.json` (main + preload + shared), `tsconfig.web.json` (renderer + shared), `biome.json`, `electron-builder.yml`, `vitest.config.ts`.
 
-A sandboxed renderer has no `process.env`, so it receives `CONFIG` through the preload bridge; `src/shared/config.ts` stays the single source. Never hardcode a `CONFIG` value outside that file (§2, §12.6).
+A sandboxed renderer has no `process.env`, so it receives `CONFIG` through the preload bridge; `src/shared/config.ts` stays the single source and the renderer imports **types only** from `shared/`. Never hardcode a `CONFIG` value outside that file (§2, §12.6).
+
+## Architecture
+
+### The data path
+
+One direction, no shortcuts:
+
+```
+view / store action (renderer)
+  → window.conductor.<fn>()               preload — the only bridge
+  → ipc/<domain>.ts                       main — sender check + Zod parse
+  → service · MaestroGateway              main — business logic
+  → run.ts | CliRunner | ScreenCapture    the only 3 process creators (§10.1)
+  → maestro · gh · git · claude · adb · simctl
+```
+
+Results come back up the same path. Anything main must **push** — watcher hits, run progress, AI stream chunks, mirror frames — crosses as a typed event that the preload wraps in a subscription function. The renderer never reaches around this pipeline; main never knows React exists.
+
+The product's core loop (§5.5) as a worked example: mirror frames stream in cheap and fast (`ScreenCapture`, no JVM); hover hit-tests **locally in the renderer** against the frozen snapshot (`lib/hit-test.ts` — zero IPC per mousemove); a click asks main to synthesize (`maestro:synthesize-selector`), where `SelectorSynth` validates uniqueness against the same snapshot (§5.4); the editor inserts the returned command and saves via `flow:save`; the watcher reports the write back as `flow:changed`, and the UI re-renders from that event.
+
+### Main process
+
+- **`index.ts` is the composition root** — the only place services are constructed, wired together (plain constructor injection) and registered. No module-level singletons: a class you cannot instantiate in a test with fakes is shaped wrong.
+- **`ipc/` modules are thin controllers.** Validate, call one service method, shape the result. Business logic in a handler is in the wrong layer.
+- **Services own one domain each** and hold the business logic. They may use the Gateway and `run.ts`; they never import `child_process` (Biome enforces it, §10.1).
+- **`MaestroGateway` is the only door to Maestro** (§4.3.7). `LocalGateway` implements it via `CliRunner` (always `--no-reinstall-driver` + `MAESTRO_CLI_NO_ANALYTICS=1`, §12.10) and `ScreenCapture` (`adb`/`simctl`, §12.13). Keep the contract remote-safe: screenshots as bytes, `deviceId` opaque, everything async (§10.1's six rules).
+- **`HierarchyParser` and `SelectorSynth` are pure** — no I/O, no Electron imports (§9.2). They read the top-level booleans of `TreeNode`, not `attributes` strings, and treat `null` as "not reported" (§5.2).
+- **Long work is streamed, never awaited in a handler.** A start invoke returns an id immediately; progress arrives as push events; cancellation is its own channel (`run:start` → `run:event` → `run:cancel`; same shape for `ai:*`). Never block main, and never use `sendSync` anywhere.
+- **Every service holding a process, session or watcher implements `dispose()`**, called from `before-quit`. No orphaned JVMs, `claude` sessions or chokidar watchers.
+
+### Renderer
+
+Layers from dumb to wired — each may import only from the rows above it:
+
+| Layer | Role | May import |
+|---|---|---|
+| `lib/` | Pure functions: hit-test, bounds/scale math, formatting. No React, no IPC. | `shared` (types) |
+| `components/` | Reusable presentational pieces. Props in, callbacks out. No stores, no `window.conductor`. | `lib`, other components |
+| `stores/` | Zustand, one per domain (`device`, `flow`, `run`, `ai`, `doctor`, `pr`). State + actions; **actions are the only renderer code that calls `window.conductor` commands**. | `lib` |
+| `hooks/` | Subscriptions (`window.conductor.on*`) that write into stores, plus reusable view logic. | `stores`, `lib`, other hooks |
+| `views/` | One folder per §9.2 panel: `DeviceMirror`, `FlowEditor`, `AIPanel`, `RunPanel`, `PRPanel` — plus `Doctor` (§10). Compose components, select from stores, mount hooks. | everything above |
+
+Rules that keep the layers honest:
+
+- `App.tsx` only arranges views and mounts the app-wide subscription hooks (flow index, doctor, run and AI events). View-scoped streams — mirror frames — are mounted by their view, so they stop when it unmounts.
+- Every subscription function returns an unsubscribe; the hook calls it in effect cleanup. A leaked listener at 1–2 fps is a memory leak with a framerate.
+- Main owns the truth for anything on disk or on the device; stores are projections of it plus pure UI state. `flow:changed` fires whether the edit came from the user, the AI or an external editor — one path, no special cases (§12.21). Never keep a renderer-only copy of a flow.
+- Select narrowly (`useFlowStore(s => s.selected)`). Mirror frames arrive continuously; a sloppy selector turns them into whole-app re-renders.
+- Frames cross IPC as bytes (§10.1 rule 2): make an object URL, render it, revoke the previous one.
+
+### The IPC contract
+
+- `src/shared/ipc.ts` is the single contract: channel names, one Zod schema per channel, and the `ConductorApi` type derived from them. Main imports the schemas to validate; the preload implements `ConductorApi`; the renderer imports types only.
+- Channel names are `<domain>:<action>` in kebab-case: `maestro:hierarchy`, `flow:save`, `doctor:check`, `gh:open-pr`. Push channels read as events: `flow:changed`, `run:event`, `ai:event`.
+- The preload exposes **one named function per channel** under `contextBridge.exposeInMainWorld('conductor', …)` and nothing else — never `ipcRenderer`, `send` or `invoke` raw. It holds no logic and no state; anything smarter than forwarding belongs in main or the renderer.
+- `src/preload/index.d.ts` augments `Window` with `ConductorApi` and is the only place the global is declared.
+- Every `ipcMain.handle` validates `event.senderFrame` against the app's own window before doing any work (Electron checklist item 17 — an addition to §9.3), then parses its args with the channel's schema.
+- Expected failures cross the boundary as values, not exceptions: handlers return `{ ok: true, data } | { ok: false, error: { code, message } }`, declared once in `shared/ipc.ts`. Electron strips custom fields from rejected `invoke`s, and the doctor UX needs stable `code`s to tell "gh missing" from "gh not authenticated" (§10, §8.1). Throwing across IPC is reserved for bugs.
+- Flow paths from the renderer resolve **inside** `.maestro/` and are rejected on traversal; sanitize branch and file names before they touch the filesystem or Git (§9.3).
+- Behind the channels, every Maestro call we make goes through `MaestroGateway`. The one exception is `maestro mcp`, which Claude Code manages as its own subprocess, outside the Gateway (§4.3.7, §12.9).
+
+### Lifecycle
+
+- `app.requestSingleInstanceLock()` at startup; a second instance focuses the first and exits. Two Conductors would fight over the repo clone and the on-device driver (§4.3.6).
+- `window.ts` is the only module that creates a `BrowserWindow`, and it carries the §9.3 flags.
+- On `before-quit`, `index.ts` disposes every service — watchers closed, `claude` and `maestro` children killed.
 
 ## Naming
 
 | Kind | Convention | Example |
 |---|---|---|
-| React component | folder named for the component, files matching it, no barrel | `components/DeviceMirror/DeviceMirror.tsx`, `DeviceMirror.module.css`, `DeviceMirror.test.tsx` |
+| View | folder per §9.2 panel under `views/`, files matching, no barrel | `views/FlowEditor/FlowEditor.tsx`, `FlowEditor.module.css`, `FlowEditor.test.tsx` |
+| React component | folder named for the component, same file pattern | `components/FlowList/FlowList.tsx` |
+| Hook | `use<Name>.ts` | `hooks/useMirrorStream.ts` |
+| Zustand store | `<domain>.store.ts` | `stores/flow.store.ts` |
+| Renderer pure module | kebab-case in `lib/` | `lib/hit-test.ts` |
 | Service (main only) | `<name>.service.ts`, one exported class | `services/repo.service.ts` → `RepoService` |
-| Zustand store | `<name>.store.ts` | `stores/flow.store.ts` |
-| Hook | `use<Name>.ts` | `hooks/useDeviceMirror.ts` |
+| IPC module | `<domain>.ts` in `ipc/`, exports `register<Domain>Ipc` | `ipc/flow.ts` → `registerFlowIpc(deps)` |
 | Main-process class module | `PascalCase.ts` | `maestro/CliRunner.ts` (path pinned by §10.1) |
 | Plain module / util | kebab-case | `process/run.ts`, `shared/config.ts` |
 | Test | sibling of its subject, `*.test.ts` / `*.test.tsx` | `maestro/SelectorSynth.test.ts` |
 
-Import components by full path — `@renderer/components/DeviceMirror/DeviceMirror`. There is no `index.ts` barrel; do not add one.
-
-## Process boundaries & IPC
-
-- Channel names are `<domain>:<action>` in kebab-case: `maestro:hierarchy`, `flow:save`, `doctor:check`, `gh:open-pr`.
-- The preload exposes **one function per channel** under a single namespace — `contextBridge.exposeInMainWorld('conductor', { … })`. Never expose `ipcRenderer`, `send`, or `invoke` itself; expose a named function that wraps the channel.
-- The renderer's view of that API is typed in `src/preload/index.d.ts` by augmenting `Window`. That file is the only place the global is declared.
-- Every `ipcMain.handle` validates `event.senderFrame` against the app's own window before doing any work, and returns or throws otherwise. (Electron security checklist item 17 — an addition to `.context.md` §9.3, which mandates schema validation but not sender validation.)
-- Every handler validates its arguments against a Zod schema declared beside the channel, before use (§9.3).
-- Flow paths from the renderer resolve **inside** `.maestro/` and are rejected on traversal; sanitize branch and file names before they touch the filesystem or Git (§9.3).
-- Behind the channel, every Maestro call we make goes through `MaestroGateway`. The one exception is `maestro mcp`, which Claude Code manages as its own subprocess and which sits outside the Gateway (§4.3.7, §12.9).
+Import by full path — `@renderer/views/FlowEditor/FlowEditor`. There is no `index.ts` barrel anywhere; do not add one.
 
 ## Security
 
@@ -98,8 +162,10 @@ Import components by full path — `@renderer/components/DeviceMirror/DeviceMirr
 
 - Vitest with two projects: `main` (`environment: 'node'`, covering `src/main/**`, `src/preload/**`, `src/shared/**`) and `renderer` (`environment: 'jsdom'`, covering `src/renderer/**`).
 - Tests sit beside the code they test. Never add a separate `__tests__` tree.
-- Component tests use React Testing Library, querying by role and text.
-- `SelectorSynth` and `HierarchyParser` are pure, live in main, and carry the project's strongest unit tests — they hold the highest density of traps (§5.2–5.4, §9.2, §13 step 5).
+- The architecture is the test plan: `lib/`, stores, `HierarchyParser`, `SelectorSynth` and services are plain TS — test them directly, no rendering, no Electron. If a behavior is hard to test without mounting a component, its logic sits in the wrong layer; move it down before writing the test.
+- Renderer tests mock exactly one seam: `window.conductor`. Never mock stores, hooks or components.
+- Component and view tests use React Testing Library, querying by role and text.
+- `SelectorSynth` and `HierarchyParser` carry the project's strongest unit tests — they hold the highest density of traps (§5.2–5.4, §9.2, §13 step 5).
 - E2E is not set up yet. When it is, it is `@playwright/test`'s `_electron`; do not add an E2E layer before the app boots.
 - TDD is the default workflow, governed by the `test-driven-development` skill in `.claude/skills/`.
 
@@ -126,5 +192,6 @@ Import components by full path — `@renderer/components/DeviceMirror/DeviceMirr
 | AI panel, `claude` CLI | §6 |
 | Git, repo cache, pull requests | §7, §8.1 |
 | Environment prerequisites, doctor | §10 |
+| IPC, preload, new channels | §9.3 — plus the Architecture section above |
 
 `.context.md` marks open questions with ❓. When you hit one, ask — do not choose in silence (§12.22).
