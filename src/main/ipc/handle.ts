@@ -34,6 +34,11 @@ export function handle<C extends Channel, A extends unknown[]>(
     try {
       return { ok: true, data: await fn(...parsed.data) };
     } catch (error) {
+      // Reaching here means a handler threw, and throwing across IPC is
+      // reserved for bugs — so this is one. It leaves as a value for the
+      // renderer, but it must also leave a trail in main, or the bug is
+      // invisible to everyone except the user who hit it.
+      console.error(`IPC handler for ${channel} threw:`, error);
       return failure(
         'ipc/handler-failed',
         error instanceof Error ? error.message : `${channel} failed.`,
@@ -47,18 +52,27 @@ export function handle<C extends Channel, A extends unknown[]>(
  * top frame of one of our own windows, still on the renderer's own URL, counts.
  */
 function isTrustedSender(event: IpcMainInvokeEvent): boolean {
-  const frame = event.senderFrame;
-  if (frame === null) {
+  // Electron leaves the frame object behind when the frame itself is destroyed
+  // — a reload or a window close racing an invoke in flight — and every getter
+  // on it then throws. An untrusted answer is the right one, and it has to be
+  // an answer rather than an exception: the failure still has to cross the
+  // boundary as a `Result`.
+  try {
+    const frame = event.senderFrame;
+    if (frame === null) {
+      return false;
+    }
+    // A subframe is never the application window, however it came to exist.
+    if (frame !== event.sender.mainFrame) {
+      return false;
+    }
+    if (BrowserWindow.fromWebContents(event.sender) === null) {
+      return false;
+    }
+    return isRendererUrl(frame.url);
+  } catch {
     return false;
   }
-  // A subframe is never the application window, however it came to exist.
-  if (frame !== event.sender.mainFrame) {
-    return false;
-  }
-  if (BrowserWindow.fromWebContents(event.sender) === null) {
-    return false;
-  }
-  return isRendererUrl(frame.url);
 }
 
 function failure(code: string, message: string): Result<never> {

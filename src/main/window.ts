@@ -49,6 +49,12 @@ export function createWindow(): BrowserWindow {
   // §9.3: nothing opens a second window, and the renderer never leaves its
   // own origin. A link that wants a browser is an IPC method, not an escape.
   mainWindow.webContents.setWindowOpenHandler(() => ({ action: 'deny' }));
+  // Electron checklist item 4, the companion to the sender check in ipc/handle.ts:
+  // a local placeholder UI has no use for camera, microphone, geolocation or
+  // notifications, and the default session would otherwise grant some of them.
+  mainWindow.webContents.session.setPermissionRequestHandler((_contents, _permission, grant) => {
+    grant(false);
+  });
   mainWindow.webContents.on('will-navigate', (event, url) => {
     if (!isRendererUrl(url)) {
       event.preventDefault();

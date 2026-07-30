@@ -32,22 +32,34 @@ export function App(): JSX.Element {
     let active = true;
 
     void (async () => {
-      const [info, config] = await Promise.all([
-        window.conductor.appInfo(),
-        window.conductor.configGet(),
-      ]);
-      if (!active) {
-        return;
+      try {
+        const [info, config] = await Promise.all([
+          window.conductor.appInfo(),
+          window.conductor.configGet(),
+        ]);
+        if (!active) {
+          return;
+        }
+        if (!info.ok) {
+          setShell({ status: 'failed', message: info.error.message });
+          return;
+        }
+        if (!config.ok) {
+          setShell({ status: 'failed', message: config.error.message });
+          return;
+        }
+        setShell({ status: 'ready', info: info.data, config: config.data });
+      } catch (error) {
+        // A failure that is not a `Result`: the bridge itself is missing or the
+        // invoke rejected. Proving the round-trip is this shell's whole job, so
+        // it has to say so rather than sit on "Loading…" forever.
+        if (active) {
+          setShell({
+            status: 'failed',
+            message: error instanceof Error ? error.message : String(error),
+          });
+        }
       }
-      if (!info.ok) {
-        setShell({ status: 'failed', message: info.error.message });
-        return;
-      }
-      if (!config.ok) {
-        setShell({ status: 'failed', message: config.error.message });
-        return;
-      }
-      setShell({ status: 'ready', info: info.data, config: config.data });
     })();
 
     return () => {

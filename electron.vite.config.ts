@@ -71,13 +71,20 @@ export default defineConfig({
   // load and the bridge is never exposed.
   preload: {
     resolve: { alias },
-    build: { externalizeDeps: false },
+    // Bundling the dependencies in (above) is what makes minifying worthwhile
+    // here: without it the preload ships its bundled deps unminified.
+    build: { externalizeDeps: false, minify: true },
   },
   renderer: {
     root: 'src/renderer',
     resolve: { alias },
     plugins: [react(), contentSecurityPolicy()],
+    // electron-vite leaves every target unminified by default, so a release
+    // build would otherwise ship development-shaped code. Main is left readable
+    // on purpose: it is a few kB, and its stack traces are the ones that surface
+    // in logs when the app misbehaves.
     build: {
+      minify: true,
       rollupOptions: { input: resolve('src/renderer/index.html') },
     },
   },

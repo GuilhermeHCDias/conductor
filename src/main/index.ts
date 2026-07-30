@@ -48,8 +48,21 @@ if (!app.requestSingleInstanceLock()) {
     }
   });
 
-  app.on('before-quit', () => {
-    void disposeServices();
+  // `before-quit` does not await a listener, so firing disposal and returning
+  // would let the process exit out from under it — the orphaned JVMs and
+  // `claude` sessions this registry exists to prevent. Hold the quit open for
+  // exactly one pass instead, then let it through. (A service whose `dispose`
+  // never settles would stall the quit; that is a bug in the service.)
+  let quitting = false;
+  app.on('before-quit', (event) => {
+    if (quitting) {
+      return;
+    }
+    quitting = true;
+    event.preventDefault();
+    void disposeServices().finally(() => {
+      app.quit();
+    });
   });
 
   void app.whenReady().then(() => {

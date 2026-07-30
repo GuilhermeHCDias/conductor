@@ -16,6 +16,14 @@ export interface RunOptions {
 }
 
 /**
+ * Node applies its own 1 MB default only when `maxBuffer` is *absent*; passing
+ * `undefined` through removes the ceiling entirely, which would let a runaway
+ * child grow main's heap without bound. So the default is set here, explicitly:
+ * generous enough for a dense `maestro hierarchy` dump, finite by construction.
+ */
+export const DEFAULT_MAX_BUFFER = 16 * 1024 * 1024;
+
+/**
  * The only `execFile` wrapper, and — with `CliRunner` and `ScreenCapture` —
  * one of the only three files allowed to create an OS process (.context.md
  * §10.1, §12.19). Biome enforces that; if the rule fires elsewhere, the code
@@ -41,7 +49,7 @@ export function run(
         cwd: options.cwd,
         env: options.env,
         timeout: options.timeout,
-        maxBuffer: options.maxBuffer,
+        maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
         signal: options.signal,
         encoding: 'utf8',
         shell: false,
