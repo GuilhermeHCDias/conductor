@@ -1,6 +1,7 @@
 node_modules/
 out/
 dist/
+worktrees/
 *.log
 .DS_Store
 .claude/settings.local.json

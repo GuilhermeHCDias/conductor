@@ -1,0 +1,36 @@
+# Conductor itself. Distinct from CONFIG.APP_ID, which identifies the app under
+# test — neither is derived from the other (.context.md §2).
+appId: com.vtex.conductor
+productName: Conductor
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/**/*'
+  - '!specs/**/*'
+  - '!worktrees/**/*'
+  - '!.claude/**/*'
+  - '!.husky/**/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!vitest.config.{js,ts,mjs,cjs}'
+  - '!commitlint.config.{js,ts,mjs,cjs}'
+  - '!biome.json'
+  - '!{.env,.env.*,.npmrc,.nvmrc,pnpm-lock.yaml,yarn.lock}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{CHANGELOG.md,README.md,AGENTS.md,CLAUDE.md,.context.md}'
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  # Unsigned: no certificate and no notarization credentials belong to us
+  # (.context.md §9.0 — no credential is ours).
+  identity: null
+  notarize: false
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+  category: Development
