@@ -1,6 +1,7 @@
 import '@testing-library/jest-dom/vitest';
+import type { ConductorApi } from '@shared/ipc';
 import { cleanup } from '@testing-library/react';
-import { afterEach } from 'vitest';
+import { afterEach, beforeEach } from 'vitest';
 
 // Vitest runs without `globals`, so Testing Library cannot register its own
 // auto-cleanup. Without this, every test inherits the previous test's DOM.
@@ -8,6 +9,30 @@ afterEach(() => {
   cleanup();
   observers.clear();
   prefersDark = false;
+});
+
+/* ── window.conductor ─────────────────────────────────────────────────────────
+   The preload bridge does not exist under jsdom, and it is the one seam the
+   renderer's tests are allowed to mock. This is the quiet default — nothing
+   attached, nothing failing — so a test about the layout never has to know that
+   a panel inside it talks to main. A test about the device replaces it. */
+
+/** Answers every channel with the shape of "nothing here yet". */
+function idleConductor(): ConductorApi {
+  return {
+    appInfo: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    configGet: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    deviceList: () =>
+      Promise.resolve({ ok: true, data: { devices: [], selectedId: null, properties: null } }),
+    deviceAppInfo: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    viewerOpen: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    onDeviceChanged: () => () => {},
+  };
+}
+
+beforeEach(() => {
+  window.conductor = idleConductor();
 });
 
 /* ── ResizeObserver ───────────────────────────────────────────────────────────

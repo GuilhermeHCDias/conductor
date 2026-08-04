@@ -408,8 +408,19 @@ describe('what the criteria name', () => {
     }
   });
 
-  it.each(['.statusBar', '.navBar'])('paints %s from that palette too', (selector) => {
-    expect(rule(mirror, selector)).toContain('background: var(--phone-bar)');
+  /**
+   * Criterion 24 supersedes 42's drawn chrome: the status bar and the nav bar
+   * are gone, because they were furniture for a mirror this panel does not
+   * draw. What is on the screen now are controls, and they are painted from the
+   * phone's palette for the same reason the bezel is.
+   */
+  it('draws no status bar and no nav bar', () => {
+    expect(mirror).not.toContain('.statusBar');
+    expect(mirror).not.toContain('.navBar');
+  });
+
+  it.each(['.viewer', '.deviceChoice'])('paints %s from that palette too', (selector) => {
+    expect(rule(mirror, selector)).toContain('background: var(--phone-choice)');
   });
 
   it('gives the phone its own drop shadow', () => {

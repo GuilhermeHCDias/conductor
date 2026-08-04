@@ -3,11 +3,15 @@ import { join, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 /**
- * Criterion 55 — the layout shell performs no integration. The renderer is
- * sandboxed (`nodeIntegration: false`, `contextIsolation: true`), so a `node:`
- * import here would not merely be out of scope, it would throw at load; and a
- * `window.conductor` call would mean the shell had grown a dependency on IPC
- * that no later spec asked it for.
+ * Criterion 55 — the renderer is sandboxed (`nodeIntegration: false`,
+ * `contextIsolation: true`), so a `node:` import here would not merely be out
+ * of scope, it would throw at load.
+ *
+ * The blanket ban on `window.conductor` that the layout shell carried is gone:
+ * the Device inspector is the integration it was holding the line against. What
+ * replaces it is the layer rule from AGENTS.md — store actions are the only
+ * renderer code that calls a command, and a hook may subscribe. A `lib`, a
+ * component or a view reaching for the bridge is still a layering break.
  *
  * The tests themselves are exempt: they run in Node, never ship, and this file
  * has to read the tree to check it.
@@ -52,9 +56,23 @@ describe('the renderer tree', () => {
     expect(code).not.toMatch(/require\(\s*['"]node:/);
   });
 
-  it.each(FILES)('$name never reaches for window.conductor', ({ code }) => {
-    expect(code).not.toContain('window.conductor');
-  });
+  // AGENTS.md § Renderer: actions are the only renderer code that calls a
+  // `window.conductor` command. Everything below the store layer takes its data
+  // as props or from a selector.
+  it.each(FILES.filter((file) => !file.name.startsWith('stores/')))(
+    '$name calls no window.conductor command',
+    ({ name, code }) => {
+      if (name.startsWith('hooks/')) {
+        // A hook may subscribe — that is what a push channel is for — and
+        // nothing else. `on*` is the whole of its allowance.
+        expect(code.replace(/window\.conductor\.on[A-Z]\w*/g, '')).not.toContain(
+          'window.conductor',
+        );
+        return;
+      }
+      expect(code).not.toContain('window.conductor');
+    },
+  );
 
   // AGENTS.md § Naming: import by full path, and there is no barrel anywhere.
   it('has no barrel file', () => {

@@ -3,10 +3,10 @@
  * `ui_kits/conductor-c-aurora/data.jsx` so the screenshots stay usable as a
  * review reference.
  *
- * Everything here is a fixture and is meant to look like one: nothing in this
- * spec talks to Maestro, to `adb`, to the filesystem or to `window.conductor`.
- * When real state arrives, these constants are replaced by domain stores and
- * this file is deleted — which is why no component defines its own sample data.
+ * Everything here is a fixture and is meant to look like one. When real state
+ * arrives, these constants are replaced by domain stores and this file is
+ * deleted — which is why no component defines its own sample data. The device
+ * was the first to go: it lives in `stores/device.store.ts` now, fed by adb.
  *
  * Content belonging to the app under test stays in the team's own Portuguese.
  */
@@ -47,13 +47,6 @@ export type ChatTurn = {
   readonly role: 'assistant' | 'user';
   readonly body: string;
   readonly code?: string;
-};
-
-export type DeviceState = 'connected' | 'offline';
-
-export type Device = {
-  readonly serial: string;
-  readonly state: DeviceState;
 };
 
 /** The starting flow, as Maestro would write it. */
@@ -146,8 +139,6 @@ export const SUGGESTIONS: readonly string[] = [
   'Assert both order cards are visible',
   'Screenshot after checkout',
 ];
-
-export const DEVICE: Device = { serial: 'R9QYC01EMXL', state: 'connected' };
 
 export const ENVIRONMENT = 'staging';
 
