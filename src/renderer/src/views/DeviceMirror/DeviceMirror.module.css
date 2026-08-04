@@ -39,9 +39,20 @@
   overflow: hidden;
 }
 
-/* Criterion 38: the serial is the first thing to give ground as the pane
-   narrows — it truncates rather than wrapping or pushing the tools out. */
+/* Criteria 28 and 38: the device's name gives ground rather than leaving the
+   header — it truncates instead of wrapping or pushing the tools out. */
 .serial {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Criterion 28: the app identity is the first thing to go, so what remains is
+   always the device itself. */
+.identity {
+  color: var(--text-tertiary);
+  font: var(--type-mono-label);
+  min-width: 0;
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -85,6 +96,10 @@
   --phone-glyph: oklch(100% 0 0 / 0.6);
   --phone-text: oklch(88% 0.006 254);
   --phone-text-dim: oklch(72% 0.01 252);
+  /* The controls drawn on the screen belong to the phone too, so they take its
+     palette rather than the app's glass. */
+  --phone-choice: oklch(100% 0 0 / 0.06);
+  --phone-choice-hover: oklch(100% 0 0 / 0.11);
   /* The rim and the lit top edge of a dark object, not of a themed panel:
      `--edge-2` and `--shadow-inset-top` would flip with the app. */
   --phone-edge: oklch(100% 0 0 / 0.09);
@@ -111,67 +126,87 @@
   width: 100%;
 }
 
-.statusBar {
-  align-items: center;
-  background: var(--phone-bar);
-  color: var(--phone-text);
-  display: flex;
-  flex: none;
-  font: var(--type-mono-label);
-  height: 22px;
-  justify-content: space-between;
-  padding: 0 var(--space-5);
-}
-
-.statusIcons {
-  align-items: center;
-  display: flex;
-  gap: 5px;
-}
-
-/* Criterion 43. */
-.screen {
+/* Criterion 24: what the screen holds now is one state and its next action.
+   The drawn status bar and nav bar are gone — they were furniture for a mirror
+   that this spec deliberately does not build. */
+.state {
   align-content: center;
   display: grid;
   flex: 1;
   gap: var(--space-3);
   justify-items: center;
   min-height: 0;
-  padding: 0 28px;
+  padding: 0 24px;
 }
 
-.screenTitle {
+.stateTitle {
   color: var(--phone-text);
   font: var(--type-body-strong);
   text-align: center;
 }
 
-.screenBody {
+.stateBody {
   color: var(--phone-text-dim);
   font: var(--type-caption);
   text-align: center;
 }
 
-.navBar {
-  align-items: center;
-  background: var(--phone-bar);
-  color: var(--phone-glyph);
-  display: flex;
-  flex: none;
-  height: 34px;
-  justify-content: space-around;
+.devices {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: stretch;
+  width: 100%;
 }
 
-.navCircle {
-  border: 1.6px solid currentcolor;
-  border-radius: var(--radius-pill);
-  height: 13px;
-  width: 13px;
+.deviceChoice {
+  background: var(--phone-choice);
+  border: var(--border-hair) solid var(--phone-edge);
+  border-radius: var(--a-radius-field);
+  color: var(--phone-text);
+  font: var(--type-mono-label);
+  padding: var(--space-2) var(--space-3);
+  transition: var(--t-hover);
+  width: 100%;
 }
 
-.navSquare {
-  border: 1.6px solid currentcolor;
-  border-radius: 2px;
-  height: 12px;
-  width: 12px;
+.deviceChoice:hover:not(:disabled) {
+  background: var(--phone-choice-hover);
+}
+
+/* Criterion 25: the control that says where the screen actually appears. It is
+   painted from the phone's palette, because it sits on the phone. */
+.viewer {
+  background: var(--phone-choice);
+  border: var(--border-hair) solid var(--phone-edge);
+  border-radius: var(--a-radius-field);
+  color: var(--phone-text);
+  font: var(--type-body-strong);
+  margin-top: var(--space-2);
+  padding: var(--space-2) var(--space-4);
+  transition: var(--t-hover);
+}
+
+.viewer:hover:not(:disabled) {
+  background: var(--phone-choice-hover);
+}
+
+.viewer:disabled {
+  color: var(--phone-text-dim);
+  opacity: 0.55;
+}
+
+.viewer:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.deviceChoice:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.viewerNote {
+  color: var(--phone-text-dim);
+  font: var(--type-caption);
+  text-align: center;
 }

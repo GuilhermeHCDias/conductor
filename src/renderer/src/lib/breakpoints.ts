@@ -26,18 +26,21 @@ export function layoutForWidth(width: number): WindowLayout {
 }
 
 export type DeviceHeaderLayout = {
+  /** Whether the app identity line still fits. */
+  readonly identity: boolean;
   /** Whether the uppercase `DEVICE` label still fits. */
   readonly label: boolean;
-  /** Whether the reload and screenshot buttons still fit. */
+  /** Whether the refresh button still fits. */
   readonly tools: boolean;
 };
 
 /**
  * The device header degrades in priority order as the inspector narrows: the
- * serial truncates (CSS does that), then the label goes, then reload and
- * screenshot go. Inspect is not represented here because it always survives —
- * it is the mode the whole window is in.
+ * app identity goes first, then the label, then the tools. The device's own
+ * name never goes — it truncates instead, which CSS does (criterion 28).
+ * Inspect is not represented here because it always survives: it is the mode
+ * the whole window is in.
  */
 export function deviceHeaderLayout(width: number): DeviceHeaderLayout {
-  return { label: width >= 250, tools: width >= 190 };
+  return { identity: width >= 300, label: width >= 250, tools: width >= 190 };
 }

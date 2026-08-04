@@ -19,4 +19,14 @@ export const CONFIG = {
 
   /** Extensões reconhecidas como flow. */
   FLOW_EXTENSIONS: ['.yml', '.yaml'] as const,
+
+  /**
+   * Caminho explícito do binário `adb`. Vazio = resolver sozinho, na ordem que
+   * o `AdbBridge` documenta. A resolução é comportamento e mora lá; aqui fica
+   * só a constante que o usuário pode sobrescrever.
+   */
+  ADB_PATH: process.env.CONDUCTOR_ADB_PATH ?? '',
+
+  /** Idem para o `maestro`. Vazio = resolver sozinho. */
+  MAESTRO_PATH: process.env.CONDUCTOR_MAESTRO_PATH ?? '',
 } as const;

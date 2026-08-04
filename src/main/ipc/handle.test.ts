@@ -1,4 +1,4 @@
-import { CHANNELS, IPC } from '@shared/ipc';
+import { CHANNELS, IPC, type Result } from '@shared/ipc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 type Listener = (event: unknown, ...args: unknown[]) => Promise<unknown>;
@@ -22,7 +22,7 @@ vi.mock('../window', () => ({
 
 const RENDERER_URL = 'http://localhost:5173/index.html';
 
-const { handle } = await import('./handle');
+const { handle, handleResult } = await import('./handle');
 const { BrowserWindow } = await import('electron');
 
 const appInfo = {
@@ -165,6 +165,80 @@ describe('handle', () => {
 
   it('converts a rejected async handler into a failure Result', async () => {
     const listener = register(() => Promise.reject(new Error('async explosion')));
+
+    await expect(listener(trustedEvent())).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'ipc/handler-failed' },
+    });
+  });
+});
+
+/**
+ * The variant for services that fail as a value. `adb` missing is not a bug and
+ * not a snapshot either — it is a stable code the doctor reads, so the handler
+ * produces the whole `Result` and the guard passes it through rather than
+ * wrapping a second one around it.
+ */
+describe('handleResult', () => {
+  const snapshot = { devices: [], selectedId: null, properties: null };
+
+  function registerResult(fn: () => unknown): Listener {
+    handleResult(
+      CHANNELS.deviceList,
+      IPC[CHANNELS.deviceList].request,
+      fn as () => Result<typeof snapshot>,
+    );
+    const listener = listeners.get(CHANNELS.deviceList);
+    if (listener === undefined) {
+      throw new Error('handleResult() did not register a listener');
+    }
+    return listener;
+  }
+
+  it('passes a success Result through untouched', async () => {
+    const listener = registerResult(() => ({ ok: true, data: snapshot }));
+
+    await expect(listener(trustedEvent())).resolves.toEqual({ ok: true, data: snapshot });
+  });
+
+  it('passes a handler-produced failure through with its own code', async () => {
+    const listener = registerResult(() => ({
+      ok: false,
+      error: { code: 'device/adb-not-found', message: 'No adb on this machine.' },
+    }));
+
+    await expect(listener(trustedEvent())).resolves.toEqual({
+      ok: false,
+      error: { code: 'device/adb-not-found', message: 'No adb on this machine.' },
+    });
+  });
+
+  it('checks the sender before invoking the handler', async () => {
+    const fn = vi.fn(() => ({ ok: true, data: snapshot }));
+    const listener = registerResult(fn);
+    const mainFrame = { url: 'https://evil.example/index.html' };
+
+    const result = await listener({ senderFrame: mainFrame, sender: { mainFrame } });
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'ipc/untrusted-sender' } });
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  it('parses the arguments before invoking the handler', async () => {
+    const fn = vi.fn(() => ({ ok: true, data: snapshot }));
+    const listener = registerResult(fn);
+
+    const result = await listener(trustedEvent(), 'unexpected');
+
+    expect(result).toMatchObject({ ok: false, error: { code: 'ipc/invalid-args' } });
+    expect(fn).not.toHaveBeenCalled();
+  });
+
+  // A service that throws is still a bug, and still has to leave as a value.
+  it('converts a throwing handler into a failure Result', async () => {
+    const listener = registerResult(() => {
+      throw new Error('service exploded');
+    });
 
     await expect(listener(trustedEvent())).resolves.toMatchObject({
       ok: false,

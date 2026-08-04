@@ -15,6 +15,20 @@ export function handle<C extends Channel, A extends unknown[]>(
   schema: ZodType<A>,
   fn: (...args: A) => Response<C> | Promise<Response<C>>,
 ): void {
+  handleResult(channel, schema, async (...args: A) => ({ ok: true, data: await fn(...args) }));
+}
+
+/**
+ * The same guard, for a service that fails as a value rather than by throwing:
+ * the handler produces the whole `Result` and it travels through untouched.
+ * `adb` missing is not a bug, and the stable `code` the doctor reads has to
+ * survive the trip — wrapping a second `Result` around it would bury it.
+ */
+export function handleResult<C extends Channel, A extends unknown[]>(
+  channel: C,
+  schema: ZodType<A>,
+  fn: (...args: A) => Result<Response<C>> | Promise<Result<Response<C>>>,
+): void {
   ipcMain.handle(channel, async (event, ...args: unknown[]): Promise<Result<Response<C>>> => {
     if (!isTrustedSender(event)) {
       return failure(
@@ -32,7 +46,7 @@ export function handle<C extends Channel, A extends unknown[]>(
     }
 
     try {
-      return { ok: true, data: await fn(...parsed.data) };
+      return await fn(...parsed.data);
     } catch (error) {
       // Reaching here means a handler threw, and throwing across IPC is
       // reserved for bugs — so this is one. It leaves as a value for the

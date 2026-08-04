@@ -23,20 +23,25 @@ describe('layoutForWidth', () => {
 });
 
 /**
- * Criterion 37 — the device header degrades in priority order: the serial
- * truncates (CSS), then the DEVICE label goes, then reload and screenshot go.
- * Inspect always survives; it is the mode the whole window is in.
+ * Criteria 37 and 28 — the device header degrades in priority order: the app
+ * identity line goes first, then the DEVICE label, then the tools. The device's
+ * own name never leaves the header; it truncates instead (CSS). Inspect always
+ * survives; it is the mode the whole window is in.
  */
 describe('deviceHeaderLayout', () => {
-  it.each([250, 268, 340])('keeps the label and the tools at %ipx', (width) => {
-    expect(deviceHeaderLayout(width)).toEqual({ label: true, tools: true });
+  it.each([300, 340])('keeps everything at %ipx', (width) => {
+    expect(deviceHeaderLayout(width)).toEqual({ identity: true, label: true, tools: true });
   });
 
-  it.each([190, 220, 249])('drops the label but keeps the tools at %ipx', (width) => {
-    expect(deviceHeaderLayout(width)).toEqual({ label: false, tools: true });
+  it.each([250, 268, 299])('drops the app identity first, at %ipx', (width) => {
+    expect(deviceHeaderLayout(width)).toEqual({ identity: false, label: true, tools: true });
   });
 
-  it.each([0, 120, 189])('drops the label and the tools at %ipx', (width) => {
-    expect(deviceHeaderLayout(width)).toEqual({ label: false, tools: false });
+  it.each([190, 220, 249])('drops the label next, at %ipx', (width) => {
+    expect(deviceHeaderLayout(width)).toEqual({ identity: false, label: false, tools: true });
+  });
+
+  it.each([0, 120, 189])('drops the tools last, at %ipx', (width) => {
+    expect(deviceHeaderLayout(width)).toEqual({ identity: false, label: false, tools: false });
   });
 });

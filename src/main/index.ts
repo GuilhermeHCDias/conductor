@@ -1,6 +1,17 @@
+import { homedir } from 'node:os';
 import { optimizer } from '@electron-toolkit/utils';
-import { app, BrowserWindow } from 'electron';
+import { CONFIG } from '@shared/config';
+import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
+import { app, BrowserWindow, shell } from 'electron';
 import { registerAppIpc } from './ipc/app';
+import { registerDeviceIpc } from './ipc/device';
+import { registerViewerIpc } from './ipc/viewer';
+import { AdbBridge } from './maestro/AdbBridge';
+import { LocalGateway } from './maestro/LocalGateway';
+import { isExecutable } from './process/executable';
+import { run, spawnStreaming } from './process/run';
+import { DeviceService } from './services/device.service';
+import { ViewerService } from './services/viewer.service';
 import { createWindow } from './window';
 
 /**
@@ -11,7 +22,7 @@ import { createWindow } from './window';
 
 /** Anything holding a process, session or watcher implements this and is
  * pushed here, so `before-quit` leaves no orphaned JVM, `claude` session or
- * chokidar watcher behind. The first entries arrive with `MaestroGateway`. */
+ * chokidar watcher behind. */
 interface Service {
   dispose: () => void | Promise<void>;
 }
@@ -20,6 +31,16 @@ const services: Service[] = [];
 
 function disposeServices(): Promise<unknown> {
   return Promise.allSettled(services.map((service) => service.dispose()));
+}
+
+/** The push half of the contract. Every window of ours gets it; a window that
+ * is gone is not an error, it is just no longer listening. */
+function broadcast<C extends PushChannel>(channel: C, payload: PushPayload<C>): void {
+  for (const window of BrowserWindow.getAllWindows()) {
+    if (!window.isDestroyed()) {
+      window.webContents.send(channel, payload);
+    }
+  }
 }
 
 // Two Conductors would fight over the repo clone and the on-device driver
@@ -66,8 +87,42 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    // The one place any of this is constructed. Every dependency is passed in,
+    // which is what lets each class above be tested with fakes.
+    const home = homedir();
+    const adb = new AdbBridge({
+      run,
+      isExecutable,
+      env: process.env,
+      home,
+      configuredPath: CONFIG.ADB_PATH,
+    });
+    const device = new DeviceService({
+      gateway: new LocalGateway(adb),
+      appId: CONFIG.APP_ID,
+      emit: (payload) => {
+        broadcast(PUSH_CHANNELS.deviceChanged, payload);
+      },
+    });
+    const viewer = new ViewerService({
+      spawn: spawnStreaming,
+      isExecutable,
+      env: process.env,
+      home,
+      configuredPath: CONFIG.MAESTRO_PATH,
+      // §9.3: the URL is validated inside the service before it gets here, and
+      // the renderer never sees a navigation of its own.
+      openExternal: (url) => shell.openExternal(url),
+    });
+    services.push(device, viewer);
+
     registerAppIpc();
+    registerDeviceIpc({ device });
+    registerViewerIpc({ viewer });
+
     createWindow();
+    // Starts after the window exists, so its first push has somewhere to land.
+    device.start();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
