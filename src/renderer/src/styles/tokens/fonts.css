@@ -1,0 +1,22 @@
+/* The one token file not copied verbatim from the design system. Its leading
+   @import of
+     https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap
+   is dropped: `style-src 'self'` blocks it, no `font-src` is granted, and the
+   CSP is not widened for a typeface. On the target Macs the keywords below
+   already resolve to real SF Pro and SF Mono, which is this file's own stated
+   intent; off-Mac, Manrope and JetBrains Mono simply do not resolve. */
+
+/* Conductor is a macOS app first, so the UI face is the SYSTEM face: on a Mac `-apple-system`
+   resolves to real SF Pro — the font every native window is set in, and the single cheapest way
+   for a design to read as macOS. `ui-monospace` does the same for SF Mono. Both are referenced by
+   KEYWORD rather than by family name: Apple does not permit redistributing the files, so there is
+   nothing to host, and the keyword form resolves to the identical face without naming a family
+   the project cannot ship.
+
+   Manrope is the cross-platform fallback and stays the display face everywhere, where its tighter
+   geometry does more for the brand than SF's neutrality. JetBrains Mono is the mono fallback. */
+:root {
+  --font-ui: -apple-system, BlinkMacSystemFont, "Manrope", "Segoe UI", system-ui, sans-serif;
+  --font-display: "Manrope", -apple-system, BlinkMacSystemFont, system-ui, sans-serif;
+  --font-mono: ui-monospace, "JetBrains Mono", Menlo, monospace;
+}

@@ -1,97 +1,83 @@
-import type { Response } from '@shared/ipc';
-import { type JSX, useEffect, useState } from 'react';
+import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
+import { FLOW_YAML } from './fixtures/flows';
+import { useElementWidth } from './hooks/useElementWidth';
+import { useWindowShortcuts } from './hooks/useWindowShortcuts';
+import { countCommands } from './lib/yaml-tokens';
+import { selectSidebarVisible, useUiStore } from './stores/ui.store';
+import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
+import { FlowEditor } from './views/FlowEditor/FlowEditor';
+import { FlowList } from './views/FlowList/FlowList';
+import { Toolbar } from './views/Toolbar/Toolbar';
 
-type AppInfo = Response<'app:info'>;
-type AppConfig = Response<'config:get'>;
+/** The window opens at this width; the frame corrects it on first measure. */
+const INITIAL_WIDTH = 1280;
 
-type Shell =
-  | { status: 'loading' }
-  | { status: 'failed'; message: string }
-  | { status: 'ready'; info: AppInfo; config: AppConfig };
-
-function factsOf(info: AppInfo, config: AppConfig): ReadonlyArray<readonly [string, string]> {
-  return [
-    ['App under test', config.APP_ID],
-    ['Flows directory', config.FLOWS_DIR],
-    ['Base branch', config.REPO_BASE_BRANCH],
-    ['Conductor', info.appVersion],
-    ['Electron', info.electronVersion],
-    ['Chromium', info.chromeVersion],
-    ['Node', info.nodeVersion],
-    ['Platform', info.platform],
-  ];
-}
-
-/** Placeholder shell. It exists to prove the renderer → preload → main → back
- * round-trip works; the §9.2 views replace it, each with its own spec. */
+/**
+ * One macOS window on a quiet desktop: a unified toolbar over three adjacent
+ * panes divided by hairlines (criteria 1–4). The window owns the single blur;
+ * nothing inside it floats, and no region declares a `backdrop-filter` of its
+ * own — nesting frost inside frost is the design system's biggest failure mode.
+ *
+ * This shell arranges views and mounts the window-wide subscriptions. It holds
+ * no business logic, and nothing in this tree calls `window.conductor`.
+ */
 export function App(): JSX.Element {
-  const [shell, setShell] = useState<Shell>({ status: 'loading' });
+  const dark = useUiStore((state) => state.dark);
+  const running = useUiStore((state) => state.running);
+  const reported = useUiStore((state) => state.steps.length);
+  const setWindowWidth = useUiStore((state) => state.setWindowWidth);
+  const sidebarVisible = useUiStore(selectSidebarVisible);
+  const [frameRef, frameWidth] = useElementWidth(INITIAL_WIDTH);
+
+  useWindowShortcuts();
+
+  // A layout effect, not a plain one: the appearance has to be on the document
+  // before the first paint, or the window flashes light and then goes dark
+  // (criterion 6).
+  useLayoutEffect(() => {
+    document.documentElement.dataset.theme = dark ? 'aurora-dark' : 'aurora';
+  }, [dark]);
 
   useEffect(() => {
-    let active = true;
+    setWindowWidth(frameWidth);
+  }, [frameWidth, setWindowWidth]);
 
-    void (async () => {
-      try {
-        const [info, config] = await Promise.all([
-          window.conductor.appInfo(),
-          window.conductor.configGet(),
-        ]);
-        if (!active) {
-          return;
-        }
-        if (!info.ok) {
-          setShell({ status: 'failed', message: info.error.message });
-          return;
-        }
-        if (!config.ok) {
-          setShell({ status: 'failed', message: config.error.message });
-          return;
-        }
-        setShell({ status: 'ready', info: info.data, config: config.data });
-      } catch (error) {
-        // A failure that is not a `Result`: the bridge itself is missing or the
-        // invoke rejected. Proving the round-trip is this shell's whole job, so
-        // it has to say so rather than sit on "Loading…" forever.
-        if (active) {
-          setShell({
-            status: 'failed',
-            message: error instanceof Error ? error.message : String(error),
-          });
-        }
-      }
-    })();
-
-    return () => {
-      active = false;
-    };
-  }, []);
+  const total = Math.max(countCommands(FLOW_YAML), 1);
+  const progress = Math.min(100, Math.round((reported / total) * 100));
 
   return (
-    <main className={styles.shell}>
-      <header className={styles.header}>
-        <h1 className={styles.title}>Conductor</h1>
-        <p className={styles.tagline}>Maestro flows, authored by anyone.</p>
-      </header>
+    <div className={styles.desktop} data-testid="window-frame" ref={frameRef}>
+      <div aria-hidden="true" className={styles.wash} />
 
-      {shell.status === 'loading' && <p className={styles.status}>Loading…</p>}
+      <div className={styles.window}>
+        <Toolbar />
 
-      {shell.status === 'failed' && (
-        <p className={styles.error} role="alert">
-          {shell.message}
-        </p>
-      )}
+        <div
+          className={styles.panes}
+          data-sidebar={sidebarVisible ? 'true' : undefined}
+          data-testid="panes"
+        >
+          {running ? (
+            <div
+              className={styles.progress}
+              data-testid="run-progress"
+              style={{ width: `${progress}%` }}
+            />
+          ) : null}
 
-      {shell.status === 'ready' && (
-        <dl className={styles.facts}>
-          {factsOf(shell.info, shell.config).map(([label, value]) => (
-            <div className={styles.fact} key={label}>
-              <dt className={styles.factLabel}>{label}</dt>
-              <dd className={styles.factValue}>{value}</dd>
-            </div>
-          ))}
-        </dl>
-      )}
-    </main>
+          {sidebarVisible ? (
+            <>
+              <FlowList />
+              <span aria-hidden="true" className={styles.hairline} data-testid="pane-hairline" />
+            </>
+          ) : null}
+
+          <FlowEditor />
+          <span aria-hidden="true" className={styles.hairline} data-testid="pane-hairline" />
+          <DeviceMirror />
+        </div>
+      </div>
+    </div>
   );
 }

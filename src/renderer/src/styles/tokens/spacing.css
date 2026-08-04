@@ -1,0 +1,32 @@
+:root {
+  /* 4px base. Conductor's chrome is dense: panel padding is 12–16, not 24. */
+  --space-0: 0px;
+  --space-1: 2px;
+  --space-2: 4px;
+  --space-3: 6px;
+  --space-4: 8px;
+  --space-5: 12px;
+  --space-6: 16px;
+  --space-7: 20px;
+  --space-8: 24px;
+  --space-9: 32px;
+  --space-10: 40px;
+  --space-11: 56px;
+  --space-12: 72px;
+
+  /* Layout constants — the Studio window is a fixed four-region frame. */
+  --titlebar-h: 52px; /* macOS 11+ unified titlebar + toolbar */
+  --toolbar-h: 44px;
+  --panel-gap: 8px;
+  --panel-pad: 12px;
+  --rail-w: 44px;
+  --mirror-w: 340px;
+  --chat-w: 372px;
+  --logs-h: 232px;
+  --logs-h-collapsed: 40px;
+  --row-h: 28px;
+  --row-h-lg: 34px;
+  --control-h: 30px;
+  --control-h-lg: 36px;
+  --hit-min: 28px;
+}

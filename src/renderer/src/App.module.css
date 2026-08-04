@@ -1,69 +1,98 @@
-.shell {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-8);
-  height: 100%;
-  padding: var(--space-8);
-}
-
-.header {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
-}
-
-.title {
-  font-size: var(--font-size-lg);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-}
-
-.tagline {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
-}
-
-.status,
-.error {
-  font-size: var(--font-size-sm);
-}
-
-.status {
-  color: var(--color-text-muted);
-}
-
-.error {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-danger);
-  border-radius: var(--radius-sm);
-  color: var(--color-danger);
-  padding: var(--space-3) var(--space-4);
-}
-
-.facts {
-  background: var(--color-surface-raised);
-  border: 1px solid var(--color-border);
-  border-radius: var(--radius-md);
+/*
+ * The window surface, edge to edge. The design system's kit insets its window
+ * by 22px of drawn desktop because it is a web mock; here the OS supplies the
+ * window — its corners, its shadow and its traffic lights — so repeating that
+ * inset would be a frame inside a frame, and would leave the real traffic
+ * lights sitting in the margin above the toolbar rather than in it.
+ *
+ * Two layers, because the blur needs something behind it to blur: this paints
+ * `--bg-window`, `.wash` paints `--bg-wash` over it, and `.window` blurs both.
+ */
+.desktop {
+  background: var(--bg-window);
   display: grid;
-  gap: var(--space-3);
-  grid-template-columns: repeat(auto-fill, minmax(15rem, 1fr));
-  padding: var(--space-6);
+  height: 100vh;
+  overflow: hidden;
+  position: relative;
 }
 
-.fact {
-  display: flex;
-  flex-direction: column;
-  gap: var(--space-1);
+/* The wallpaper. Static and desaturated: moving gradients are what made the
+   design system's previous pass look like a screensaver. */
+.wash {
+  background: var(--bg-wash);
+  background-repeat: no-repeat;
+  background-size: cover;
+  inset: 0;
+  pointer-events: none;
+  position: absolute;
+  z-index: 0;
 }
 
-.factLabel {
-  color: var(--color-text-muted);
-  font-size: var(--font-size-sm);
+/*
+ * Criteria 1–2. THE window: one blur, one specular rim, two rows.
+ *
+ * The `backdrop-filter` here is the only one in the app's own CSS. Regions
+ * inside are alpha fills over it — `--a-chrome`, `--a-panel`, `--a-content`,
+ * `--a-well` — never their own frost. `styles.test.ts` holds that line.
+ */
+.window {
+  backdrop-filter: blur(var(--a-blur)) saturate(var(--a-saturate));
+  background: var(--a-panel);
+  display: grid;
+  grid-template-rows: 52px minmax(0, 1fr);
+  isolation: isolate;
+  min-height: 0;
+  overflow: hidden;
+  position: relative;
+  z-index: 1;
 }
 
-.factValue {
-  color: var(--color-accent);
-  font-family: var(--font-mono);
-  font-size: var(--font-size-sm);
-  overflow-wrap: anywhere;
+/* The window edge: a white specular line along the top fading out, then the
+   faintest hairline all the way round. One masked pseudo-element, because a
+   border cannot fade along its length. No radius — macOS rounds its own
+   window, and an inner radius would show the desktop through the corners.
+   Only the WINDOW gets this — inside, separation is a plain 1px hairline. */
+.window::before {
+  background: var(--a-rim);
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 3;
+}
+
+/* Criterion 2: sidebar · hairline · working area · hairline · inspector. The
+   sidebar and its hairline leave the DOM together, so the track list changes
+   with them. */
+.panes {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 1px auto;
+  min-height: 0;
+  position: relative;
+}
+
+.panes[data-sidebar="true"] {
+  grid-template-columns: minmax(200px, 268px) 1px minmax(0, 1fr) 1px auto;
+}
+
+.hairline {
+  background: var(--a-hair);
+}
+
+/* Criterion 12: a run reports as a line along the top edge of the panes, not
+   as a spinner. */
+.progress {
+  background: var(--accent);
+  height: 2px;
+  left: 0;
+  position: absolute;
+  top: 0;
+  transition: width var(--dur-slow) var(--ease-out);
+  z-index: 5;
 }

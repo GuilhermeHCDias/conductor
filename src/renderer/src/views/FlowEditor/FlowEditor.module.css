@@ -1,0 +1,176 @@
+/* Criterion 22: document bar · YAML · segmented control · lower panel · composer.
+   The near-opaque fill is what makes code and chat text sit still over the
+   window's blur. */
+.column {
+  background: var(--a-content);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(120px, 0.95fr) 38px minmax(0, 1.05fr) auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Criterion 23. One document, named — no tab fill, no tab border, no button. */
+.documentBar {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  display: flex;
+  flex: none;
+  gap: 7px;
+  height: 38px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 var(--space-4);
+}
+
+.documentGlyph {
+  color: var(--accent);
+  flex: none;
+}
+
+.documentName {
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.language {
+  color: var(--text-disabled);
+  flex: none;
+  font: var(--type-mono-label);
+}
+
+/* Unsaved changes. macOS marks the document, not the title bar. */
+.dirty {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  flex: none;
+  height: 5px;
+  width: 5px;
+}
+
+.body {
+  display: grid;
+  min-height: 0;
+  overflow: auto;
+}
+
+/* Criterion 26. */
+.yaml {
+  align-content: start;
+  display: grid;
+  font: var(--type-code);
+  letter-spacing: var(--ls-mono);
+  padding: var(--space-5) 0;
+  tab-size: 2;
+}
+
+.line {
+  align-items: flex-start;
+  display: flex;
+  gap: var(--space-5);
+  min-height: calc(var(--size-13) * var(--lh-code));
+  padding: 0 var(--space-6) 0 var(--space-5);
+}
+
+/* Criterion 27, weakest first so the strongest wash is the one that lands. */
+.line[data-line="active"] {
+  background: var(--editor-active-line);
+}
+
+.line[data-line="ai"] {
+  background: var(--ai-quiet);
+  box-shadow: inset 2px 0 0 0 var(--ai);
+}
+
+.line[data-line="error"] {
+  background: var(--state-fail-quiet);
+  box-shadow: inset 2px 0 0 0 var(--state-fail);
+}
+
+.gutter {
+  color: var(--editor-gutter);
+  flex: none;
+  text-align: right;
+  user-select: none;
+}
+
+.line[data-line="active"] .gutter {
+  color: var(--text-secondary);
+}
+
+.code {
+  min-width: 0;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.token[data-token="key"] {
+  color: var(--syn-key);
+}
+
+.token[data-token="anchor"] {
+  color: var(--syn-anchor);
+}
+
+.token[data-token="string"] {
+  color: var(--syn-string);
+}
+
+.token[data-token="number"] {
+  color: var(--syn-number);
+}
+
+.token[data-token="punct"] {
+  color: var(--syn-punct);
+}
+
+.token[data-token="comment"] {
+  color: var(--syn-comment);
+}
+
+.token[data-token="plain"] {
+  color: var(--text-primary);
+}
+
+/* Criterion 28. */
+.caret {
+  animation: cd-caret 1s steps(1) infinite;
+  background: var(--editor-caret);
+  display: inline-block;
+  height: 1.05em;
+  margin-left: 1px;
+  vertical-align: text-bottom;
+  width: 1.5px;
+}
+
+/* Criterion 29. */
+.subTabs {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  border-top: 1px solid var(--a-hair);
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+  height: 38px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 10px;
+}
+
+.status {
+  color: var(--text-disabled);
+  flex: none;
+  font: var(--type-mono-label);
+}
+
+.lower {
+  min-height: 0;
+  overflow: auto;
+}

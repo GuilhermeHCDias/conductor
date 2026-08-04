@@ -1,0 +1,6 @@
+/* An icon never shrinks: in a dense row a squashed glyph reads as a rendering
+   bug, and every row here is dense. */
+.icon {
+  display: block;
+  flex: none;
+}

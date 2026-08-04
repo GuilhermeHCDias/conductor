@@ -31,7 +31,20 @@ export function createWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
-    backgroundColor: '#0f131b',
+    // The Aurora shell is one macOS window: the OS draws the traffic lights,
+    // and the renderer's toolbar reserves the 70px they span. Drawing our own
+    // would put a frame inside a frame.
+    titleBarStyle: 'hiddenInset',
+    // 18px in from the window edge, and centred in the 52px toolbar: the
+    // renderer paints that toolbar at the very top of the window, so these
+    // land inside it and clear of the 70px it holds open for them.
+    trafficLightPosition: { x: 18, y: 20 },
+    vibrancy: 'under-window',
+    // Vibrancy only renders through a transparent window background. The
+    // renderer paints `--bg-window` and the wash over it, so nothing shows
+    // through in practice — but an opaque colour here would disable the
+    // material outright, and would flash the wrong theme on resize.
+    backgroundColor: '#00000000',
     title: 'Conductor',
     webPreferences: {
       preload: join(__dirname, '../preload/index.js'),

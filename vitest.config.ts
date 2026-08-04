@@ -30,6 +30,7 @@ export default defineConfig({
           name: 'renderer',
           environment: 'jsdom',
           include: ['src/renderer/**/*.test.{ts,tsx}'],
+          setupFiles: ['src/renderer/src/test-setup.ts'],
           exclude,
           passWithNoTests: true,
         },
