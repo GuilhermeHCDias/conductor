@@ -1,8 +1,30 @@
 # Device identity and Maestro Viewer
 
-status: draft
+status: built, partly superseded
 created: 2026-08-04
-supersedes: specs/android-device-mirror.md
+partly-superseded-by: specs/android-device-mirror.md
+
+> **Built and shipped**, and verified against a physical Galaxy A07 on 2026-08-04: adb discovery,
+> the device list, app identity, the MCP client and the Viewer path all work. What did not survive
+> contact is the *premise*.
+>
+> The Viewer was accepted as the interactive mirror the product owner had used to author tests. It
+> is not that. That mirror is **Maestro Studio, a separate desktop app** which the CLI no longer
+> bundles; `open_maestro_viewer` returns a **URL to a web page**, so the screen renders in the
+> person's browser and the inspector panel never fills. With the picture in another application,
+> the §5.5 loop has no surface and no click to read.
+>
+> **Superseded by `android-device-mirror.md`:** criterion 25 (a control saying the screen appears
+> in the browser) and criterion 26 (the eight-state list, two of which belong to that control).
+> The panel fills with our own scrcpy mirror instead.
+>
+> **Still standing:** criteria 1–23 and 27–39. The adb and app-identity halves are untouched — no
+> Maestro surface identifies an app — and the Viewer mechanics keep working.
+>
+> **Open (§12.22):** whether the Viewer path survives at all once the mirror lands, and whether it
+> survives past scrcpy's control socket. See *❓ Open question* in `android-device-mirror.md`. Until
+> that is answered, `ViewerService`, `McpClient`, the `viewer:open` channel and the `.context.md`
+> §12 rule 11 exception all stay as they are.
 
 ## Goal
 
