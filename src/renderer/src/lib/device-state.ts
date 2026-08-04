@@ -1,8 +1,17 @@
 import type { AppIdentity, Device, DeviceProperties } from '@shared/ipc';
-import { ERROR_CODES } from '@shared/ipc';
 
 /**
- * Which one thing the inspector is saying (criterion 26). Pure, and separate
+ * Where the mirror is. It lives here rather than in the store because the two
+ * functions below are what read it, and `lib` may not import from `stores` —
+ * the renderer's import ladder only runs one way.
+ *
+ * `unsupported` is not a failure of this device: it is a renderer with no
+ * `VideoDecoder` at all, and the next action is a different one (criterion 43).
+ */
+export type MirrorStatus = 'idle' | 'starting' | 'streaming' | 'failed' | 'unsupported';
+
+/**
+ * Which one thing the inspector is saying (criterion 38). Pure, and separate
  * from the view, because "exactly one state per condition" is a rule about
  * precedence — and precedence is the sort of thing that rots quietly inside a
  * chain of ternaries in JSX.
@@ -15,8 +24,11 @@ export type InspectorState =
   | 'unauthorized'
   | 'choose-device'
   | 'app-missing'
-  | 'maestro-missing'
-  | 'viewer-failed'
+  /** This renderer has no `VideoDecoder` (criterion 43). */
+  | 'unsupported'
+  | 'mirror-failed'
+  /** The bezel holds the canvas. Whether a frame has landed yet is the mirror's
+   * own business, not a different thing to say. */
   | 'ready';
 
 export type InspectorInput = {
@@ -24,14 +36,14 @@ export type InspectorInput = {
   readonly selectedId: string | null;
   readonly deviceError: { readonly code: string } | null;
   readonly appIdentity: AppIdentity | null;
-  readonly viewerError: { readonly code: string } | null;
+  readonly mirrorStatus: MirrorStatus;
 };
 
 /**
  * Device conditions first — they are what the person can act on right now —
- * then the app, then whatever the last attempt at the Viewer reported. The
- * order is the point: an unauthorized phone and a missing Maestro are both
- * true at once on a fresh machine, and only one of them is worth saying first.
+ * then the app, then the mirror. The order is the point: an unauthorized phone
+ * and a mirror that could not start are both true at once, and the first one is
+ * the reason for the second.
  */
 export function inspectorState(input: InspectorInput): InspectorState {
   if (input.deviceError !== null) {
@@ -57,13 +69,38 @@ export function inspectorState(input: InspectorInput): InspectorState {
     return 'app-missing';
   }
 
-  if (input.viewerError !== null) {
-    return input.viewerError.code === ERROR_CODES.maestroNotFound
-      ? 'maestro-missing'
-      : 'viewer-failed';
+  if (input.mirrorStatus === 'unsupported') {
+    return 'unsupported';
+  }
+  if (input.mirrorStatus === 'failed') {
+    return 'mirror-failed';
   }
 
   return 'ready';
+}
+
+/**
+ * What the header's dot reports (criterion 39): the real device, and the real
+ * session on it. Green over a bezel that never filled would be the panel lying
+ * about itself, so only a stream that is actually arriving counts as connected.
+ *
+ * The values are the `StatusDot` states it feeds, spelled out here rather than
+ * imported — a `lib` module reaching up into `components` would invert the
+ * renderer's import ladder.
+ */
+export type HeaderDot = 'connected' | 'idle' | 'fail' | 'offline';
+
+export function headerDot(device: Device | null, mirrorStatus: MirrorStatus): HeaderDot {
+  if (device === null || device.state !== 'device') {
+    return 'offline';
+  }
+  if (mirrorStatus === 'streaming') {
+    return 'connected';
+  }
+  if (mirrorStatus === 'failed' || mirrorStatus === 'unsupported') {
+    return 'fail';
+  }
+  return 'idle';
 }
 
 /** The selected device, or `null`. Selection is main's, so this only looks up. */

@@ -6,7 +6,7 @@ import {
   type DeviceState,
   ERROR_CODES,
 } from '@shared/ipc';
-import type { RunResult } from '../process/run';
+import type { RunResult, SpawnOptions, StreamingProcess } from '../process/run';
 
 /**
  * Every `adb` invocation the app makes, and the only module that knows the
@@ -21,8 +21,17 @@ import type { RunResult } from '../process/run';
 
 export type AdbRunner = (command: string, args: readonly string[]) => Promise<RunResult>;
 
+/** The streaming counterpart, for the one adb child that has to stay up: the
+ * scrcpy server's `app_process`. */
+export type AdbSpawner = (
+  command: string,
+  args: readonly string[],
+  options: SpawnOptions,
+) => StreamingProcess;
+
 export type AdbBridgeDeps = {
   readonly run: AdbRunner;
+  readonly spawn: AdbSpawner;
   /** True when `path` exists and can be executed. */
   readonly isExecutable: (path: string) => boolean;
   readonly env: NodeJS.ProcessEnv;
@@ -147,6 +156,67 @@ export class AdbBridge {
     };
   }
 
+  /**
+   * Puts a host file on the device. The mirror's server is ours and pinned, so
+   * this is how it gets there — never the copy a `brew install scrcpy` left on
+   * the machine, whose version we do not control.
+   */
+  async push(deviceId: string, localPath: string, remotePath: string): Promise<void> {
+    const args = ['-s', deviceId, 'push', localPath, remotePath];
+    const result = await this.deps.run(this.binary(), args);
+    if (result.code !== 0) {
+      throw new AdbFailedError(args, result);
+    }
+  }
+
+  /**
+   * Criterion 16. `tcp:0` makes adb allocate, and it prints the port it chose —
+   * verified on hardware, where it answered `54556`. Hardcoding 27183 the way
+   * scrcpy's own client does would collide with a scrcpy the person is running
+   * beside us.
+   */
+  async forward(deviceId: string, remote: string): Promise<number> {
+    const args = ['-s', deviceId, 'forward', 'tcp:0', remote];
+    const result = await this.deps.run(this.binary(), args);
+    if (result.code !== 0) {
+      throw new AdbFailedError(args, result);
+    }
+
+    const port = Number(result.stdout.trim());
+    if (!Number.isInteger(port) || port <= 0) {
+      throw new AdbFailedError(args, {
+        ...result,
+        // Reported as a failure rather than as port 0: a forward whose port we
+        // cannot read is a tunnel nothing can reach, and pretending otherwise
+        // would surface as a connect timeout three steps later.
+        stderr: `adb printed no port. It said: ${result.stdout.trim()}`,
+        code: -1,
+      });
+    }
+    return port;
+  }
+
+  /** Criterion 22 — the counterpart, so no forward outlives its session. */
+  async removeForward(deviceId: string, port: number): Promise<void> {
+    const args = ['-s', deviceId, 'forward', '--remove', `tcp:${port}`];
+    const result = await this.deps.run(this.binary(), args);
+    if (result.code !== 0) {
+      throw new AdbFailedError(args, result);
+    }
+  }
+
+  /**
+   * A shell that stays up. `run` buffers to completion, which for the scrcpy
+   * server means waiting for the session to end — so this is the one adb call
+   * that goes through `spawnStreaming` instead.
+   *
+   * `args` arrives already split, and stays split all the way down to
+   * `execFile`: nothing here ever composes a shell string (.context.md §12.19).
+   */
+  shell(deviceId: string, args: readonly string[], options: SpawnOptions = {}): StreamingProcess {
+    return this.deps.spawn(this.binary(), ['-s', deviceId, 'shell', ...args], options);
+  }
+
   /** One place resolves the binary, so one place can report it missing. */
   private adb(args: readonly string[]): Promise<RunResult> {
     const binary = this.resolve();
@@ -154,6 +224,20 @@ export class AdbBridge {
       return Promise.reject(new AdbNotFoundError());
     }
     return this.deps.run(binary, args);
+  }
+
+  /**
+   * The same resolution, for the callers that need the path itself. It throws
+   * rather than returning `null`: inside an `async` method that becomes the
+   * same rejection `adb()` produces, and `shell()` — which is not async — has
+   * no `Result` to hand back and no child to return.
+   */
+  private binary(): string {
+    const binary = this.resolve();
+    if (binary === null) {
+      throw new AdbNotFoundError();
+    }
+    return binary;
   }
 
   /**

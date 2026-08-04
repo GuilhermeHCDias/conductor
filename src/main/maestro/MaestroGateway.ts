@@ -1,4 +1,42 @@
-import type { AppIdentity, Device, DeviceProperties } from '@shared/ipc';
+import type { AppIdentity, Device, DeviceProperties, ErrorCode } from '@shared/ipc';
+
+/**
+ * One encoded frame, as it came off whatever wire the Gateway is speaking. The
+ * payload is bytes, never a path (§10.1 rule 2) — the device may not share a
+ * filesystem with us, and one day will not share a machine either.
+ */
+export type MirrorPacket = {
+  /** Carries SPS and PPS. It configures the decoder and is never drawn. */
+  readonly config: boolean;
+  readonly keyFrame: boolean;
+  /** Microseconds. */
+  readonly pts: number;
+  readonly payload: Uint8Array;
+};
+
+/** Why a session ended. The stable `code` is what the panel names an action from. */
+export type MirrorFailure = {
+  readonly code: ErrorCode;
+  readonly message: string;
+};
+
+export type MirrorHandlers = {
+  readonly onPacket: (packet: MirrorPacket) => void;
+  /** Fires at most once, and never for a session that was stopped on purpose. */
+  readonly onEnded: (failure: MirrorFailure) => void;
+};
+
+/** What a started mirror is, from above the Gateway: a size, a codec, and a way
+ * to stop. Nothing here says the device is local. */
+export type MirrorSession = {
+  readonly deviceName: string;
+  /** As the stream declared it — `h264`. */
+  readonly codec: string;
+  readonly width: number;
+  readonly height: number;
+  /** Idempotent, and leaves nothing behind on either side. */
+  stop: () => Promise<void>;
+};
 
 /**
  * The one door to everything Conductor knows about a device (.context.md
@@ -22,4 +60,15 @@ export interface MaestroGateway {
   deviceProperties(deviceId: string): Promise<DeviceProperties>;
   /** The app under test on that device, identified by `appId` alone. */
   appIdentity(deviceId: string, appId: string): Promise<AppIdentity>;
+  /**
+   * Opens a live picture of the device. Resolves as soon as the stream declares
+   * its size — the frames themselves arrive on `handlers.onPacket`, because a
+   * call that awaited them would block for the length of the session.
+   *
+   * The mirror is a Gateway capability rather than its own service because
+   * `RemoteGateway` will have to serve it too. §9.2 already puts `ScreenCapture`
+   * here for the same reason: where the device lives is the Gateway's secret,
+   * and a standalone service calling adb would be leak #1 in §10.1's table.
+   */
+  startMirror(deviceId: string, handlers: MirrorHandlers): Promise<MirrorSession>;
 }

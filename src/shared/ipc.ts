@@ -14,6 +14,8 @@ export const CHANNELS = {
   deviceList: 'device:list',
   deviceAppInfo: 'device:app-info',
   viewerOpen: 'viewer:open',
+  mirrorStart: 'mirror:start',
+  mirrorStop: 'mirror:stop',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -21,6 +23,7 @@ export const CHANNELS = {
  * its stable code whether the renderer asked just then or not. */
 export const PUSH_CHANNELS = {
   deviceChanged: 'device:changed',
+  mirrorEvent: 'mirror:event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -94,17 +97,69 @@ const viewerOpened = z.object({
   url: z.string(),
 });
 
+/**
+ * Criterion 28. What `mirror:start` answers with, and all it answers with: the
+ * session to stop later, and the size the canvas takes from the stream's own
+ * codec header. The handler returns this the moment the device declares it and
+ * never waits on a frame — long work is streamed, never awaited.
+ */
+const mirrorStream = z.object({
+  sessionId: z.string(),
+  /** As the stream declared it, from the codec header: `h264`. */
+  codec: z.string(),
+  width: z.number().int(),
+  height: z.number().int(),
+});
+
+const mirrorStopped = z.object({ sessionId: z.string() });
+
+/**
+ * Criterion 29. The payload crosses as bytes, never as a path: the device may
+ * share no filesystem with us today and no machine at all tomorrow (§10.1
+ * rule 2). Electron's structured clone carries a `Uint8Array` natively.
+ */
+const mirrorFrame = z.object({
+  type: z.literal('frame'),
+  sessionId: z.string(),
+  /** Carries SPS and PPS. It configures the decoder and is never drawn. */
+  config: z.boolean(),
+  keyFrame: z.boolean(),
+  /** Microseconds, from the low 62 bits of the frame header. */
+  pts: z.number(),
+  // A predicate rather than `z.instanceof`: the latter pins the backing buffer
+  // to `ArrayBuffer`, and a view whose buffer came from elsewhere is still the
+  // bytes we asked for.
+  data: z.custom<Uint8Array>((value) => value instanceof Uint8Array),
+});
+
+/**
+ * Criterion 25. A session that ended, and why. It travels as an event rather
+ * than as an `ok: false` because the subscription did not fail — the session
+ * did, and the renderer needs to know *which* one to put away.
+ */
+const mirrorEnded = z.object({
+  type: z.literal('ended'),
+  sessionId: z.string(),
+  code: z.string(),
+  message: z.string(),
+});
+
+const mirrorEvent = z.discriminatedUnion('type', [mirrorFrame, mirrorEnded]);
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
   [CHANNELS.deviceList]: { request: noArguments, response: deviceSnapshot },
   [CHANNELS.deviceAppInfo]: { request: z.tuple([z.string()]), response: appIdentity },
   [CHANNELS.viewerOpen]: { request: noArguments, response: viewerOpened },
+  [CHANNELS.mirrorStart]: { request: z.tuple([z.string()]), response: mirrorStream },
+  [CHANNELS.mirrorStop]: { request: z.tuple([z.string()]), response: mirrorStopped },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
 export const PUSH = {
   [PUSH_CHANNELS.deviceChanged]: deviceSnapshot,
+  [PUSH_CHANNELS.mirrorEvent]: mirrorEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -119,6 +174,9 @@ export type Device = z.infer<typeof device>;
 export type DeviceProperties = z.infer<typeof deviceProperties>;
 export type DeviceSnapshot = z.infer<typeof deviceSnapshot>;
 export type AppIdentity = z.infer<typeof appIdentity>;
+export type MirrorStream = z.infer<typeof mirrorStream>;
+export type MirrorFrame = z.infer<typeof mirrorFrame>;
+export type MirrorEvent = z.infer<typeof mirrorEvent>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -141,6 +199,22 @@ export const ERROR_CODES = {
   viewerToolMissing: 'viewer/tool-missing',
   viewerCallFailed: 'viewer/call-failed',
   viewerUntrustedUrl: 'viewer/untrusted-url',
+  /** The server could not be pushed, forwarded, started or connected to. */
+  mirrorStartFailed: 'mirror/start-failed',
+  /** The stream ended inside the dummy byte, the device name or the codec
+   * header. Its own code because that prefix is strict and its failure looks
+   * nothing like a mid-stream one. */
+  mirrorHandshakeFailed: 'mirror/handshake-failed',
+  /** The wire said something impossible — a packet longer than the ceiling. */
+  mirrorProtocolFailed: 'mirror/protocol-failed',
+  /** The phone went away mid-session. The inspector goes back to disconnected
+   * rather than stalling on the last frame it drew. */
+  mirrorDeviceLost: 'mirror/device-lost',
+  /** A stop naming a session that is already gone. */
+  mirrorSessionNotFound: 'mirror/session-not-found',
+  /** WebCodecs refused the stream. The renderer's only failure of the set — the
+   * bytes arrived, and this Chromium would not decode them. */
+  mirrorDecodeFailed: 'mirror/decode-failed',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -154,7 +228,12 @@ export interface ConductorApi {
     ...args: Request<'device:app-info'>
   ) => Promise<Result<Response<'device:app-info'>>>;
   viewerOpen: (...args: Request<'viewer:open'>) => Promise<Result<Response<'viewer:open'>>>;
+  mirrorStart: (...args: Request<'mirror:start'>) => Promise<Result<Response<'mirror:start'>>>;
+  mirrorStop: (...args: Request<'mirror:stop'>) => Promise<Result<Response<'mirror:stop'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
+  /** Criterion 32. Same rule, and it bites harder here: this one fires 30 times
+   * a second, so a listener left behind is a memory leak with a framerate. */
+  onMirrorEvent: (listener: (payload: PushPayload<'mirror:event'>) => void) => () => void;
 }

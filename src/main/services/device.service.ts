@@ -1,6 +1,6 @@
-import type { AppIdentity } from '@shared/ipc';
+import type { AppIdentity, ErrorCode, MirrorEvent, MirrorStream } from '@shared/ipc';
 import { type Device, type DeviceSnapshot, ERROR_CODES, type Result } from '@shared/ipc';
-import type { MaestroGateway } from '../maestro/MaestroGateway';
+import type { MaestroGateway, MirrorSession } from '../maestro/MaestroGateway';
 
 /**
  * What is plugged in, which one we are talking to, and what the app under test
@@ -22,6 +22,9 @@ export type DeviceServiceDeps = {
   readonly appId: string;
   /** Pushes a snapshot at the renderer. Called only when something changed. */
   readonly emit: (payload: Result<DeviceSnapshot>) => void;
+  /** Pushes one mirror event. Frames come through here ~30 times a second, so
+   * it is deliberately the cheapest thing in this file. */
+  readonly emitMirror: (payload: Result<MirrorEvent>) => void;
   readonly intervalMs?: number;
 };
 
@@ -33,6 +36,10 @@ export class DeviceService {
   /** The last payload pushed, serialised — the cheapest honest way to answer
    * "is this different from what the renderer already has?". */
   private lastEmitted: string | null = null;
+  /** Live mirror sessions, by the id the renderer holds. */
+  private readonly sessions = new Map<string, MirrorSession>();
+  /** Monotonic, so a session id is never reused within a run. */
+  private nextSession = 1;
 
   constructor(deps: DeviceServiceDeps) {
     this.deps = deps;
@@ -67,12 +74,101 @@ export class DeviceService {
     }
   }
 
-  dispose(): void {
+  /**
+   * Opens a mirror and answers immediately with what the stream declared. The
+   * frames arrive as pushes: a handler that awaited them would hold main for the
+   * length of the session (AGENTS.md § Architecture).
+   *
+   * One session at a time, one device, one cable — so a start ends whatever was
+   * already running. Skipping that is exactly how the orphaned `app_process` the
+   * spike left behind happens.
+   */
+  async startMirror(deviceId: string): Promise<Result<MirrorStream>> {
+    if (this.disposed) {
+      return mirrorFailure(ERROR_CODES.mirrorStartFailed, 'Conductor is shutting down.');
+    }
+    await this.stopMirrors();
+
+    const sessionId = `mirror-${this.nextSession}`;
+    this.nextSession += 1;
+
+    try {
+      const session = await this.deps.gateway.startMirror(deviceId, {
+        onPacket: (packet) => {
+          // A packet from a session already put away belongs to nobody: the
+          // renderer has stopped listening for it and the id would be stale.
+          if (this.sessions.get(sessionId) === undefined) {
+            return;
+          }
+          this.deps.emitMirror({
+            ok: true,
+            data: {
+              type: 'frame',
+              sessionId,
+              config: packet.config,
+              keyFrame: packet.keyFrame,
+              pts: packet.pts,
+              data: packet.payload,
+            },
+          });
+        },
+        onEnded: (ended) => {
+          this.sessions.delete(sessionId);
+          this.deps.emitMirror({
+            ok: true,
+            data: { type: 'ended', sessionId, code: ended.code, message: ended.message },
+          });
+        },
+      });
+
+      this.sessions.set(sessionId, session);
+      return {
+        ok: true,
+        data: { sessionId, codec: session.codec, width: session.width, height: session.height },
+      };
+    } catch (error) {
+      return failure(error, ERROR_CODES.mirrorStartFailed);
+    }
+  }
+
+  /** Criterion 22. Naming a session that is already gone is a condition with its
+   * own code, not a bug — a stop can always race a disconnect. */
+  async stopMirror(sessionId: string): Promise<Result<{ sessionId: string }>> {
+    const session = this.sessions.get(sessionId);
+    if (session === undefined) {
+      return mirrorFailure(
+        ERROR_CODES.mirrorSessionNotFound,
+        `There is no mirror session ${sessionId}.`,
+      );
+    }
+
+    this.sessions.delete(sessionId);
+    await session.stop();
+    return { ok: true, data: { sessionId } };
+  }
+
+  /**
+   * Criterion 24. A renderer that reloaded or closed is not coming back for its
+   * sessions, and waiting for `before-quit` to notice would leave a server
+   * running on the device for the rest of the app's life.
+   *
+   * Settled rather than awaited in sequence: one session whose stop refuses must
+   * not keep the others alive.
+   */
+  async stopMirrors(): Promise<void> {
+    const running = [...this.sessions.values()];
+    this.sessions.clear();
+    await Promise.allSettled(running.map((session) => session.stop()));
+  }
+
+  /** Criterion 23 — nothing survives the quit. */
+  async dispose(): Promise<void> {
     this.disposed = true;
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
     }
+    await this.stopMirrors();
   }
 
   /**
@@ -118,14 +214,18 @@ function autoSelect(devices: readonly Device[]): string | null {
  * refusing are different conditions with different fixes, and the doctor tells
  * them apart by this code.
  */
-function failure(error: unknown): Result<never> {
+function failure(error: unknown, fallback: ErrorCode = ERROR_CODES.adbFailed): Result<never> {
   const code =
     typeof error === 'object' && error !== null && 'code' in error && typeof error.code === 'string'
       ? error.code
-      : ERROR_CODES.adbFailed;
+      : fallback;
 
   return {
     ok: false,
     error: { code, message: error instanceof Error ? error.message : 'adb failed.' },
   };
+}
+
+function mirrorFailure(code: ErrorCode, message: string): Result<never> {
+  return { ok: false, error: { code, message } };
 }

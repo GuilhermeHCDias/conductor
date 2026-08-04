@@ -4,6 +4,7 @@ import {
   appIdentityLine,
   deviceLabel,
   headerDevice,
+  headerDot,
   inspectorState,
   selectedDevice,
 } from './device-state';
@@ -26,7 +27,7 @@ const base = {
   selectedId: PHONE.id,
   deviceError: null,
   appIdentity: INSTALLED,
-  viewerError: null,
+  mirrorStatus: 'streaming' as const,
 };
 
 /** Criterion 26 — one state per condition, and the precedence between them. */
@@ -90,33 +91,88 @@ describe('inspectorState', () => {
     expect(inspectorState({ ...base, appIdentity: null })).toBe('ready');
   });
 
-  it('reports a missing Maestro under its own state', () => {
-    expect(inspectorState({ ...base, viewerError: { code: 'viewer/maestro-not-found' } })).toBe(
-      'maestro-missing',
-    );
+  /**
+   * Criterion 38. The mirror's own failure replaces the two states the Viewer
+   * used to own: with the picture in this panel, "Maestro is missing" is no
+   * longer a reason the screen is not here.
+   */
+  it('reports a mirror that failed under its own state', () => {
+    expect(inspectorState({ ...base, mirrorStatus: 'failed' })).toBe('mirror-failed');
   });
 
-  it.each([
-    'viewer/start-failed',
-    'viewer/handshake-timeout',
-    'viewer/tool-missing',
-    'viewer/call-failed',
-    'viewer/untrusted-url',
-  ])('reports %s as a failed viewer', (code) => {
-    expect(inspectorState({ ...base, viewerError: { code } })).toBe('viewer-failed');
+  /** Criterion 43 — a renderer with no WebCodecs is its own condition, and its
+   * next action is not the same one. */
+  it('reports a renderer that cannot decode under its own state', () => {
+    expect(inspectorState({ ...base, mirrorStatus: 'unsupported' })).toBe('unsupported');
   });
+
+  /** Nothing is streaming for the first moment of every session, and the bezel
+   * is where the picture is about to appear — not an empty state. */
+  it.each(['idle', 'starting', 'streaming'] as const)(
+    'is ready while the mirror is %s',
+    (status) => {
+      expect(inspectorState({ ...base, mirrorStatus: status })).toBe('ready');
+    },
+  );
 
   // A phone that was never authorized is a more useful thing to say than a
-  // Maestro that was never installed: it is the one the person is holding.
-  it('names the device problem before the viewer one', () => {
+  // mirror that could not start: it is the one the person is holding, and it is
+  // why the mirror could not start.
+  it('names the device problem before the mirror one', () => {
     expect(
       inspectorState({
         ...base,
         devices: [UNAUTHORIZED],
         selectedId: null,
-        viewerError: { code: 'viewer/maestro-not-found' },
+        mirrorStatus: 'failed',
       }),
     ).toBe('unauthorized');
+  });
+
+  it('names a missing app before a failed mirror', () => {
+    expect(
+      inspectorState({
+        ...base,
+        appIdentity: { ...INSTALLED, installed: false },
+        mirrorStatus: 'failed',
+      }),
+    ).toBe('app-missing');
+  });
+
+  /** Criterion 38 — six conditions, and nothing about Maestro among them. */
+  it('has no state left that describes the screen as being somewhere else', () => {
+    const states = (['idle', 'starting', 'streaming', 'failed', 'unsupported'] as const).map(
+      (mirrorStatus) => inspectorState({ ...base, mirrorStatus }),
+    );
+
+    expect(states).not.toContain('maestro-missing');
+    expect(states).not.toContain('viewer-failed');
+  });
+});
+
+/**
+ * Criterion 39 — the dot reports the real device *and* the real session. A green
+ * dot over a bezel that never filled would be the panel lying about itself.
+ */
+describe('headerDot', () => {
+  it('is connected only while frames are actually arriving', () => {
+    expect(headerDot(PHONE, 'streaming')).toBe('connected');
+  });
+
+  it.each(['idle', 'starting'] as const)('is idle while the mirror is %s', (status) => {
+    expect(headerDot(PHONE, status)).toBe('idle');
+  });
+
+  it.each(['failed', 'unsupported'] as const)('reports a mirror that is %s', (status) => {
+    expect(headerDot(PHONE, status)).toBe('fail');
+  });
+
+  it('is offline when there is no device at all', () => {
+    expect(headerDot(null, 'streaming')).toBe('offline');
+  });
+
+  it.each([UNAUTHORIZED, OFFLINE])('is offline for a device in state $state', (device) => {
+    expect(headerDot(device, 'streaming')).toBe('offline');
   });
 });
 

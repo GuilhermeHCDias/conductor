@@ -1,6 +1,6 @@
 # Android device mirror
 
-status: draft
+status: done
 created: 2026-08-04
 reopened: 2026-08-04
 supersedes: criteria 25 and 26 of specs/device-identity-and-viewer.md
@@ -25,6 +25,21 @@ supersedes: criteria 25 and 26 of specs/device-identity-and-viewer.md
 >
 > **What this spec owes:** criteria 14–49 — the scrcpy session, the wire protocol, the WebCodecs
 > decode path and the in-panel canvas.
+>
+> ---
+>
+> **Built 2026-08-04.** Criteria 14–49 are implemented and covered: 929 tests pass (up from 688),
+> in order and under `--sequence.shuffle`, with `npm run lint`, `npm run typecheck` and
+> `npm run build` clean. `scrcpy-protocol.ts` carries 38 tests and `lib/h264.ts` 26, both driven
+> from the captured bytes below and from synthesised boundaries that capture could not reach.
+>
+> ⚠️ **The manual verification has NOT been run** — no Android device was attached to the machine
+> this was built on (`adb devices` reported an empty list). Every one of the six numbered steps
+> under *Verification* is outstanding, including the glass-to-glass latency measurement that is
+> `.context.md` §13 step 1. **`.context.md` §4.4's table is therefore still an estimate**, and was
+> deliberately left unamended rather than filled in with numbers nobody measured. The teardown of
+> criteria 22–24 is the step most worth running first: it is written against a failure that was
+> observed in the spike, and only a device can confirm the fix.
 
 ## Goal
 
@@ -519,6 +534,46 @@ are restated because the mirror depends on them, not because they are open work.
   against real captured SPS bytes). Parser tests for the `AdbBridge` additions against captured
   output. Fake-driven tests for `LocalGateway` and `DeviceService`. RTL for the inspector's states,
   mocking only `window.conductor`. No snapshot tests, no test that requires a device.
+
+### Resolved during implementation, 2026-08-04
+
+None of these needed a decision from the product owner; each is recorded because a later reader
+would otherwise have to re-derive it.
+
+- **`mirror:start` needs a timeout, and now has one (10 s, injected).** Nothing else in the spec
+  makes the start promise settle: `tunnel_forward=true` means adb accepts the socket whether or not
+  the server ever binds — that is exactly what the dummy byte exists to disambiguate — so a device
+  that connects and then says nothing would leave the panel on "starting" with no way out. This is
+  not the retry policy that *Out of scope* rules out; it is what makes the contract well-founded.
+- **Starting a mirror ends whatever was already running.** *Out of scope* allows one session at a
+  time, and enforcing that in `DeviceService` rather than trusting the renderer is what keeps the
+  orphaned `app_process` — observed in the spike, survived `pkill`, needed `kill -9` — from having
+  a second way to happen.
+- **The `ended` event travels as `ok: true` with its code inside.** Criterion 31 is about what a
+  *handler returns*; an ended event is information about a session, and wrapping it as `ok: false`
+  would drop the `sessionId` the renderer needs to know *which* session to put away.
+- **Where the demoted Viewer control went.** Criterion 38 removed its two panel states but the spec
+  does not say where the control itself lands. It is now a footer under the bay, painted from the
+  app's chrome rather than the phone's palette — it is no longer on the phone — and it reports its
+  own failure beside itself. `styles.test.ts`'s guard that `.viewer` uses `--phone-choice` was
+  narrowed to `.deviceChoice` for the same reason, and replaced by one pinning the demotion.
+- **`mirror-fit`'s readability clamp became a rendered width.** Making the device size a parameter
+  (criterion 33) left `MIN_SCALE = 0.35` calibrated against the 330 px placeholder: a phone held
+  landscape opens at 1024 px, and 0.35 of that is 358 px clipped into a 250 px column. The floor is
+  now "never narrower than the placeholder at its own minimum", which is identical for the
+  placeholder and correct for every stream.
+- **WebCodecs needed no ambient declarations.** TypeScript 7's DOM library already ships
+  `VideoDecoder`, `VideoDecoderConfig`, `EncodedVideoChunk`, `VideoFrame`, and a `CanvasImageSource`
+  that includes `VideoFrame`. `env.d.ts` is unchanged.
+- **`lib/h264.ts`'s SPS fixtures are canonical encoder output, not the captured packet.** The
+  capture recorded packet 0's length and its first five bytes; the remaining 26 were not
+  transcribed, so the SPS bodies in the test are real `avc` encoder output of the same shape. The
+  fact the capture *did* settle — Annex-B, SPS then PPS, 4-byte start codes — is what the tests
+  are built on.
+- **The ❓ open question was not answered.** This implementation is what options 1 and 2 share:
+  `viewer:open`, `ViewerService` and `McpClient` are untouched, and the control is demoted rather
+  than deleted. Choosing between "keep it demoted" and "keep it until the control socket lands"
+  changes nothing in the code today and remains the product owner's call (§12.22).
 
 ## Verification
 

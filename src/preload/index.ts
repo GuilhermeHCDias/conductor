@@ -13,6 +13,8 @@ const api: ConductorApi = {
   deviceList: () => ipcRenderer.invoke(CHANNELS.deviceList),
   deviceAppInfo: (deviceId) => ipcRenderer.invoke(CHANNELS.deviceAppInfo, deviceId),
   viewerOpen: () => ipcRenderer.invoke(CHANNELS.viewerOpen),
+  mirrorStart: (deviceId) => ipcRenderer.invoke(CHANNELS.mirrorStart, deviceId),
+  mirrorStop: (sessionId) => ipcRenderer.invoke(CHANNELS.mirrorStop, sessionId),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -23,6 +25,18 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.deviceChanged, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.deviceChanged, forward);
+    };
+  },
+
+  // Same shape, and the unsubscribe matters more here: this one fires ~30 times
+  // a second, so a listener that outlives its view leaks at a framerate.
+  onMirrorEvent: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'mirror:event'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.mirrorEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.mirrorEvent, forward);
     };
   },
 };
