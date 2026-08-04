@@ -1,5 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ACTIVE_TAB_ID, OPEN_TABS } from '../fixtures/flows';
+import { OPEN_DOCUMENT } from '../fixtures/flows';
 import { setPrefersDark } from '../test-setup';
 import {
   APPEARANCE_KEY,
@@ -146,85 +146,45 @@ describe('sidebar', () => {
   });
 });
 
-/** Criteria 24 and 25 — document tabs. */
-describe('tabs', () => {
+/** Criteria 24 and 25 — the one open document. */
+describe('the open document', () => {
   it('starts on the fixture document', () => {
-    expect(ui().tabs).toEqual(OPEN_TABS);
-    expect(ui().activeTabId).toBe(ACTIVE_TAB_ID);
+    expect(ui().document).toEqual(OPEN_DOCUMENT);
   });
 
-  it('opens a flow from the sidebar and makes it active', () => {
+  it('replaces the open document when a flow is opened from the sidebar', () => {
     ui().openFlow('f-checkout');
 
-    expect(ui().activeTabId).toBe('f-checkout');
-    expect(ui().tabs.map((tab) => tab.id)).toEqual(['f-teste', 'f-checkout']);
-    expect(ui().tabs.at(-1)?.label).toBe('checkout.yaml');
+    expect(ui().document).toEqual({ id: 'f-checkout', label: 'checkout.yaml' });
   });
 
-  it('re-activates an already open flow instead of opening it twice', () => {
-    ui().openFlow('f-checkout');
-    ui().selectTab('f-teste');
-
+  // teste.yaml is the dirty one; nothing opened after it inherits that mark.
+  it('leaves none of the previous document behind', () => {
     ui().openFlow('f-checkout');
 
-    expect(ui().tabs).toHaveLength(2);
-    expect(ui().activeTabId).toBe('f-checkout');
+    expect(ui().document.dirty).toBeUndefined();
   });
 
   it('ignores a flow id that is not in the suite', () => {
     ui().openFlow('f-nope');
 
-    expect(ui().tabs).toHaveLength(1);
-    expect(ui().activeTabId).toBe('f-teste');
-  });
-
-  it('makes a selected tab the active document', () => {
-    ui().openFlow('f-login');
-
-    ui().selectTab('f-teste');
-
-    expect(ui().activeTabId).toBe('f-teste');
-  });
-
-  it('closes a tab', () => {
-    ui().openFlow('f-login');
-
-    ui().closeTab('f-login');
-
-    expect(ui().tabs.map((tab) => tab.id)).toEqual(['f-teste']);
-  });
-
-  it('activates a surviving tab when the active one is closed', () => {
-    ui().openFlow('f-login');
-    expect(ui().activeTabId).toBe('f-login');
-
-    ui().closeTab('f-login');
-
-    expect(ui().activeTabId).toBe('f-teste');
-  });
-
-  it('leaves the active document alone when another tab is closed', () => {
-    ui().openFlow('f-login');
-    ui().selectTab('f-teste');
-
-    ui().closeTab('f-login');
-
-    expect(ui().activeTabId).toBe('f-teste');
-  });
-
-  // There is always a document; an empty working area has nothing to show.
-  it('refuses to close the last remaining tab', () => {
-    ui().closeTab('f-teste');
-
-    expect(ui().tabs).toEqual(OPEN_TABS);
-    expect(ui().activeTabId).toBe('f-teste');
+    expect(ui().document).toEqual(OPEN_DOCUMENT);
   });
 
   it('opens a new empty document', () => {
-    ui().newTab();
+    ui().newFlow();
 
-    expect(ui().tabs).toHaveLength(2);
-    expect(ui().activeTabId).toBe(ui().tabs.at(-1)?.id);
+    expect(ui().document).toEqual({ id: 'f-new-1', label: 'novo-1.yaml' });
+  });
+
+  // Monotonic, so a new document never lands on the id of an earlier one.
+  it('never reuses a number', () => {
+    ui().newFlow();
+    ui().openFlow('f-login');
+
+    ui().newFlow();
+
+    expect(ui().document).toEqual({ id: 'f-new-2', label: 'novo-2.yaml' });
   });
 });
 

@@ -1,15 +1,14 @@
 import { create } from 'zustand';
 import {
-  ACTIVE_TAB_ID,
   AI_LINES,
   type ChatTurn,
   ERROR_LINES,
   FLOWS,
-  OPEN_TABS,
+  type FlowDocument,
+  OPEN_DOCUMENT,
   RUN_STEPS,
   RUNNING,
   type RunStep,
-  type Tab,
   THREAD,
 } from '../fixtures/flows';
 import { layoutForWidth } from '../lib/breakpoints';
@@ -64,8 +63,8 @@ export type UiData = {
   readonly windowWidth: number;
   /** `auto` follows the breakpoint; anything else is the user overriding it. */
   readonly sidebarPreference: SidebarPreference;
-  readonly tabs: readonly Tab[];
-  readonly activeTabId: string;
+  /** The working area shows one document; the sidebar is the list of the rest. */
+  readonly document: FlowDocument;
   readonly lowerPanel: LowerPanel;
   readonly query: string;
   /** Fixture-seeded: this spec renders run state but never produces it. */
@@ -75,8 +74,8 @@ export type UiData = {
   readonly aiLines: readonly number[];
   readonly errorLines: readonly number[];
   readonly thread: readonly ChatTurn[];
-  /** Monotonic, so a closed-then-reopened document never reuses an id. */
-  readonly nextTabNumber: number;
+  /** Monotonic, so a second new document never lands on the first one's id. */
+  readonly nextDocumentNumber: number;
 };
 
 /** What can change it. None of these crosses IPC; this spec has none to cross. */
@@ -84,10 +83,8 @@ export type UiActions = {
   toggleAppearance: () => void;
   setWindowWidth: (width: number) => void;
   toggleSidebar: () => void;
-  selectTab: (id: string) => void;
-  closeTab: (id: string) => void;
   openFlow: (id: string) => void;
-  newTab: () => void;
+  newFlow: () => void;
   setLowerPanel: (panel: LowerPanel) => void;
   toggleLowerPanel: () => void;
   setQuery: (query: string) => void;
@@ -103,8 +100,7 @@ function createUiData(): UiData {
     // The BrowserWindow opens at 1280; the shell corrects this on first measure.
     windowWidth: 1280,
     sidebarPreference: 'auto',
-    tabs: OPEN_TABS,
-    activeTabId: ACTIVE_TAB_ID,
+    document: OPEN_DOCUMENT,
     lowerPanel: 'assistant',
     query: '',
     running: RUNNING,
@@ -112,7 +108,7 @@ function createUiData(): UiData {
     aiLines: AI_LINES,
     errorLines: ERROR_LINES,
     thread: THREAD,
-    nextTabNumber: 1,
+    nextDocumentNumber: 1,
   };
 }
 
@@ -135,44 +131,21 @@ export const useUiStore = create<UiState>((set, get) => ({
     set({ sidebarPreference: selectSidebarVisible(get()) ? 'hidden' : 'shown' });
   },
 
-  selectTab: (activeTabId) => {
-    set({ activeTabId });
-  },
-
-  closeTab: (id) => {
-    const { tabs, activeTabId } = get();
-    // There is always a document: an empty working area has nothing to show.
-    if (tabs.length <= 1) {
-      return;
-    }
-    const remaining = tabs.filter((tab) => tab.id !== id);
-    const survivor = remaining[0];
-    if (remaining.length === tabs.length || survivor === undefined) {
-      return;
-    }
-    set({ tabs: remaining, activeTabId: id === activeTabId ? survivor.id : activeTabId });
-  },
-
+  // The whole document, replaced: carrying a field over from what was open is
+  // how the last file's unsaved mark ends up on this one.
   openFlow: (id) => {
     const flow = FLOWS.find((candidate) => candidate.id === id);
     if (flow === undefined) {
       return;
     }
-    const { tabs } = get();
-    const open = tabs.some((tab) => tab.id === id);
-    set({
-      tabs: open ? tabs : [...tabs, { id, label: flow.name }],
-      activeTabId: id,
-    });
+    set({ document: { id, label: flow.name } });
   },
 
-  newTab: () => {
-    const { tabs, nextTabNumber } = get();
-    const id = `f-new-${nextTabNumber}`;
+  newFlow: () => {
+    const { nextDocumentNumber } = get();
     set({
-      tabs: [...tabs, { id, label: `novo-${nextTabNumber}.yaml` }],
-      activeTabId: id,
-      nextTabNumber: nextTabNumber + 1,
+      document: { id: `f-new-${nextDocumentNumber}`, label: `novo-${nextDocumentNumber}.yaml` },
+      nextDocumentNumber: nextDocumentNumber + 1,
     });
   },
 

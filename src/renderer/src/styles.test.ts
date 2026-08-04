@@ -77,7 +77,6 @@ describe('region fills', () => {
 
   it.each([
     ['the sidebar search field', 'FlowList', '.searchField'],
-    ['the active document tab', 'FlowEditor', '.tab[data-active="true"]'],
     ['the segmented control track', '', ''],
     ['the composer', 'Composer', '.surface'],
   ])('recesses %s into --a-well', (_label, view, selector) => {
@@ -161,7 +160,7 @@ describe('truncation', () => {
     ['the toolbar subtitle', 'views/Toolbar/Toolbar.module.css', '.subtitle'],
     ['the device serial', 'views/DeviceMirror/DeviceMirror.module.css', '.serial'],
     ['a flow name', 'views/FlowList/FlowList.module.css', '.name'],
-    ['a tab label', 'views/FlowEditor/FlowEditor.module.css', '.tabLabel'],
+    ['the open document’s name', 'views/FlowEditor/FlowEditor.module.css', '.documentName'],
   ])('truncates %s', (_label, file, selector) => {
     const declarations = rule(cssOf(file), selector);
 
@@ -320,13 +319,12 @@ describe('what the criteria name', () => {
     );
   });
 
-  /** Criterion 23. */
-  it('lifts the active tab with a well and a hairline, and marks it dirty in accent', () => {
-    const active = rule(editor, '.tab[data-active="true"]');
+  /** Criterion 23 — a name and a glyph, no tab fill and no tab border. */
+  it('sets the document name in the accent glyph, and marks it dirty in accent', () => {
     const dirty = rule(editor, '.dirty');
 
-    expect(active).toContain('background: var(--a-well)');
-    expect(active).toContain('border-color: var(--a-hair)');
+    expect(rule(editor, '.documentGlyph')).toContain('color: var(--accent)');
+    expect(rule(editor, '.documentName')).toContain('color: var(--text-primary)');
     expect(dirty).toContain('background: var(--accent)');
     expect(dirty).toContain('width: 5px');
     expect(dirty).toContain('height: 5px');

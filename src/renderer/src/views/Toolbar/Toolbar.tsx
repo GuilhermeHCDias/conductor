@@ -23,9 +23,7 @@ export function Toolbar(): JSX.Element {
   const toggleAppearance = useUiStore((state) => state.toggleAppearance);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const sidebarVisible = useUiStore(selectSidebarVisible);
-  const title = useUiStore(
-    (state) => state.tabs.find((tab) => tab.id === state.activeTabId)?.label ?? 'Conductor',
-  );
+  const title = useUiStore((state) => state.document.label);
 
   return (
     <div className={styles.toolbar} role="toolbar" aria-label="Window">

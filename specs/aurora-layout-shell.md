@@ -45,12 +45,12 @@ src/renderer/src/
     mirror-fit.ts                           # bay size → { scale, width, height, outerWidth, outerHeight } (pure)
     yaml-tokens.ts                          # YAML line → token spans (pure, ported from YamlEditor.jsx)
   stores/
-    ui.store.ts                             # Zustand: theme, sidebar, tabs, lower panel, env
+    ui.store.ts                             # Zustand: theme, sidebar, open document, lower panel, env
   hooks/
     useWindowShortcuts.ts                   # ⌘B / ⌘J / ⌘\ key handling → store actions
     useElementWidth.ts                      # ResizeObserver → width, for the frame and the device header
   fixtures/
-    flows.ts                                # the flow list, the open tabs, the YAML, the thread, the steps, the device
+    flows.ts                                # the flow list, the open document, the YAML, the thread, the steps, the device
   components/
     Icon/Icon.tsx                           # inline Lucide paths, `currentColor`, stroke 1.75
     IconButton/IconButton.tsx
@@ -60,7 +60,7 @@ src/renderer/src/
   views/
     Toolbar/Toolbar.tsx                     # traffic-light inset, title, env, Run, appearance, save
     FlowList/FlowList.tsx                   # the sidebar: header, search, rows, bottom bar
-    FlowEditor/FlowEditor.tsx               # tab strip + YAML body
+    FlowEditor/FlowEditor.tsx               # document bar + YAML body
     RunPanel/RunPanel.tsx                   # step list + empty state
     AIPanel/AIPanel.tsx                     # thread + suggestion pills
     Composer/Composer.tsx                   # the footer input
@@ -192,17 +192,19 @@ style, and the pattern for extending it when `window.ts` changes.
 
 ### Working area
 
-22. The system shall render the working area as a five-row grid: tab strip (38px), YAML body
+22. The system shall render the working area as a five-row grid: document bar (38px), YAML body
     (`minmax(120px, 0.95fr)`), segmented control row (38px), lower panel (`minmax(0, 1.05fr)`),
     composer footer (auto) — with `gridTemplateColumns: minmax(0, 1fr)`.
-23. The system shall render one tab per open document, the active tab filled `var(--a-well)`
-    with a `var(--a-hair)` border, a 5px `var(--accent)` dot when the fixture marks it dirty,
-    a close button when active or hovered, a new-tab button after the last tab, and the static
-    label `YAML` right-aligned in `--type-mono-label`.
-24. When a tab is selected, the system shall make it the active document and update the
-    toolbar's title and the sidebar's selected row to match.
-25. When a tab's close button is activated, the system shall remove that tab, and shall refuse
-    to remove the last remaining tab.
+23. The system shall render the document bar as the one open document — the `file-code` glyph in
+    `var(--accent)`, the file name in `--type-code-sm` / `var(--text-primary)`, and a 5px
+    `var(--accent)` dot when the fixture marks it dirty — plus the static label `YAML`
+    right-aligned in `--type-mono-label`. The bar carries no tab chrome: no tab fill or border,
+    no close button, and no new-document button.
+24. When a flow row is activated in the sidebar, the system shall make that flow the open
+    document — replacing whatever was open, never opening a second one — and update the document
+    bar, the toolbar's title and the sidebar's selected row to match.
+25. When the sidebar's new-flow button is activated, the system shall open a new empty document
+    named `novo-<n>.yaml`, with `<n>` counting up from 1 and never reused.
 26. The system shall render the YAML body from `lib/yaml-tokens.ts`: a right-aligned gutter in
     `var(--editor-gutter)`, and each line's spans coloured `--syn-key` / `--syn-anchor` /
     `--syn-string` / `--syn-number` / `--syn-punct` / `--syn-comment`, at `font: var(--type-code)`.
@@ -375,7 +377,7 @@ style, and the pattern for extending it when `window.ts` changes.
   frame inside a frame. `titleBarStyle: 'hiddenInset'` gives the OS lights, and the wash paints
   the window itself.
 - **How interactive, given no integration?** → Real UI state, zero IPC: sidebar toggle (⌘B),
-  document tab switching and closing, the Run/Assistant segmented control (⌘J), sidebar search
+  opening a flow and starting a new one, the Run/Assistant segmented control (⌘J), sidebar search
   filtering, theme toggle with persistence, and every hover / focus / press state. Held in
   `stores/ui.store.ts` (Zustand), fed by `fixtures/flows.ts`.
 - **Which state layer?** → Zustand now, not `useState` + Context. `AGENTS.md` already contracts
@@ -431,9 +433,9 @@ style, and the pattern for extending it when `window.ts` changes.
 - **Tooltips are used in the toolbar only.** → The region headers clip their overflow so the
   serial can truncate (criterion 38); a tooltip inside one would be clipped with it. Every
   control still carries its own accessible name, which is what criterion 51 asks for.
-- **Controls that render but do nothing.** → Run/Stop, Save, the environment chip, New flow,
-  Settings, Run whole suite, New tab's document contents, Insert into flow, the suggestion pills
-  and Send. Each is drawn by the layout; none has anything to call in a spec with no IPC.
+- **Controls that render but do nothing.** → Run/Stop, Save, the environment chip, Settings,
+  Run whole suite, a new document's contents, Insert into flow, the suggestion pills and Send.
+  Each is drawn by the layout; none has anything to call in a spec with no IPC.
 - **The composer's draft is local state.** → It is ephemeral, no other view reads it, and there
   is no assistant to send it to. `ui.store.ts` holds what the window shares, not what one field
   is holding this second.
@@ -514,6 +516,11 @@ of them decisions rather than oversights:
   reported step fills it. That is the kit's formula, and criterion 12 specifies only that the
   line exists; a real run reports against a real flow, so this stops mattering the moment
   `RunPanel` is wired to Maestro.
-- **`closeTab` activates the first surviving tab, not the neighbouring one.** The kit does the
-  same and criterion 25 does not say; with three or more documents open, macOS would activate
-  the neighbour.
+- **One document at a time, and no tab strip.** Opening a flow replaces what is open instead of
+  adding to a strip, and the sidebar's new-flow button is the only way to start a document. The
+  kit drew a multi-tab strip, but the sidebar already lists every flow in the suite — a strip
+  beside it is a second, staler copy of the same list, and a close button on the only open
+  document has nothing to fall back to.
+- **A new document shows the fixture flow.** Criterion 25 specifies the document bar; the YAML
+  body renders `FLOW_YAML` whatever is open, because a shell with no editor and no file to read
+  has one flow's text and nothing else.

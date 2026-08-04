@@ -72,7 +72,8 @@ export function FlowList(): JSX.Element {
   const query = useUiStore((state) => state.query);
   const setQuery = useUiStore((state) => state.setQuery);
   const openFlow = useUiStore((state) => state.openFlow);
-  const activeTabId = useUiStore((state) => state.activeTabId);
+  const newFlow = useUiStore((state) => state.newFlow);
+  const openId = useUiStore((state) => state.document.id);
 
   const needle = query.trim().toLowerCase();
   const shown =
@@ -87,7 +88,8 @@ export function FlowList(): JSX.Element {
           {FLOWS.length} · {failing} failing
         </span>
         <span className={styles.spacer} />
-        <IconButton icon="plus" label="New flow" size="sm" />
+        {/* Criterion 25: the one control that starts a document. */}
+        <IconButton icon="plus" label="New flow" onClick={newFlow} size="sm" />
       </header>
 
       <div className={styles.searchRow}>
@@ -111,12 +113,7 @@ export function FlowList(): JSX.Element {
       ) : (
         <ul className={`${styles.rows} a-scroll`}>
           {shown.map((flow) => (
-            <FlowRow
-              flow={flow}
-              key={flow.id}
-              onOpen={openFlow}
-              selected={flow.id === activeTabId}
-            />
+            <FlowRow flow={flow} key={flow.id} onOpen={openFlow} selected={flow.id === openId} />
           ))}
         </ul>
       )}

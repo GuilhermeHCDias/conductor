@@ -21,88 +21,55 @@ describe('FlowEditor', () => {
     expect(screen.getByRole('region', { name: 'Editor' })).toBeInTheDocument();
   });
 
-  /** Criterion 23. */
-  describe('tab strip', () => {
-    it('renders one tab per open document, then the new-tab button', () => {
+  /** Criteria 23 and 24. */
+  describe('document bar', () => {
+    it('names the open document', () => {
       render(<FlowEditor />);
+
+      expect(
+        within(screen.getByTestId('document-bar')).getByText('teste.yaml'),
+      ).toBeInTheDocument();
+    });
+
+    it('swaps to the flow the sidebar opened, keeping nothing of the last one', () => {
+      render(<FlowEditor />);
+
       act(() => {
         ui().openFlow('f-login');
       });
 
-      const strip = screen.getByTestId('tab-strip');
-      const names = within(strip)
-        .getAllByRole('button')
-        .map((button) => button.getAttribute('aria-label') ?? button.textContent);
-
-      // login.yaml is the active document, so it is the one showing a close button.
-      expect(names).toEqual(['teste.yaml', 'login.yaml', 'Close tab', 'New tab']);
+      const bar = screen.getByTestId('document-bar');
+      expect(within(bar).getByText('login.yaml')).toBeInTheDocument();
+      expect(within(bar).queryByText('teste.yaml')).not.toBeInTheDocument();
     });
 
     it('marks the document with unsaved changes', () => {
       render(<FlowEditor />);
 
-      expect(screen.getByTestId('tab-f-teste')).toHaveAttribute('data-dirty', 'true');
+      expect(screen.getByTestId('document-bar')).toHaveAttribute('data-dirty', 'true');
     });
 
-    it('makes a tab the active document when it is selected', async () => {
+    it('drops the mark on a document with nothing unsaved', () => {
       render(<FlowEditor />);
+
       act(() => {
         ui().openFlow('f-login');
       });
 
-      await userEvent.click(screen.getByRole('button', { name: 'teste.yaml' }));
-
-      expect(ui().activeTabId).toBe('f-teste');
-      expect(screen.getByTestId('tab-f-teste')).toHaveAttribute('data-active', 'true');
+      expect(screen.getByTestId('document-bar')).not.toHaveAttribute('data-dirty');
     });
 
-    it('closes a tab', async () => {
+    // Criterion 23: the sidebar is the only place a document is opened or started.
+    it('carries no tab chrome of its own', () => {
       render(<FlowEditor />);
-      act(() => {
-        ui().openFlow('f-login');
-      });
-      const tab = screen.getByTestId('tab-f-login');
 
-      await userEvent.click(within(tab).getByRole('button', { name: 'Close tab' }));
-
-      expect(screen.queryByTestId('tab-f-login')).not.toBeInTheDocument();
+      expect(within(screen.getByTestId('document-bar')).queryAllByRole('button')).toEqual([]);
     });
 
-    // Criterion 25: an empty working area has nothing to show.
-    it('refuses to close the last remaining tab', async () => {
-      render(<FlowEditor />);
-      const tab = screen.getByTestId('tab-f-teste');
-
-      await userEvent.click(within(tab).getByRole('button', { name: 'Close tab' }));
-
-      expect(screen.getByTestId('tab-f-teste')).toBeInTheDocument();
-    });
-
-    it('shows the close button only on the active or hovered tab', async () => {
-      render(<FlowEditor />);
-      act(() => {
-        ui().openFlow('f-login');
-      });
-      const idle = screen.getByTestId('tab-f-teste');
-      expect(within(idle).queryByRole('button', { name: 'Close tab' })).not.toBeInTheDocument();
-
-      await userEvent.hover(idle);
-
-      expect(within(idle).getByRole('button', { name: 'Close tab' })).toBeInTheDocument();
-    });
-
-    it('opens a new document', async () => {
+    it('labels the bar with the language of the document', () => {
       render(<FlowEditor />);
 
-      await userEvent.click(screen.getByRole('button', { name: 'New tab' }));
-
-      expect(ui().tabs).toHaveLength(2);
-    });
-
-    it('labels the strip with the language of the document', () => {
-      render(<FlowEditor />);
-
-      expect(within(screen.getByTestId('tab-strip')).getByText('YAML')).toBeInTheDocument();
+      expect(within(screen.getByTestId('document-bar')).getByText('YAML')).toBeInTheDocument();
     });
   });
 

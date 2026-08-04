@@ -77,15 +77,35 @@ describe('FlowList', () => {
     expect(selected[0]).toHaveTextContent('teste.yaml');
   });
 
+  /** Criterion 24 — the row replaces the open document rather than adding one. */
   it('opens a flow when its row is activated', async () => {
     render(<FlowList />);
 
     await userEvent.click(screen.getByRole('button', { name: /checkout\.yaml/ }));
 
-    expect(ui().activeTabId).toBe('f-checkout');
+    expect(ui().document).toEqual({ id: 'f-checkout', label: 'checkout.yaml' });
+    expect(rows().filter((row) => row.getAttribute('data-selected') === 'true')).toHaveLength(1);
     expect(
       rows().filter((row) => row.getAttribute('data-selected') === 'true')[0],
     ).toHaveTextContent('checkout.yaml');
+  });
+
+  /** Criterion 25 — the sidebar is the only place a document is started. */
+  it('opens a new empty document when the new-flow button is activated', async () => {
+    render(<FlowList />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+
+    expect(ui().document).toEqual({ id: 'f-new-1', label: 'novo-1.yaml' });
+  });
+
+  // A brand-new document is not in the suite, so no row can claim it.
+  it('selects no row while a new document is open', async () => {
+    render(<FlowList />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+
+    expect(rows().filter((row) => row.getAttribute('data-selected') === 'true')).toEqual([]);
   });
 
   /** Criterion 18. */

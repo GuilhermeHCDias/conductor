@@ -23,7 +23,11 @@ export type Flow = {
   readonly aiAuthored?: boolean;
 };
 
-export type Tab = {
+/**
+ * The one document the working area is showing. Named for the file rather than
+ * for a tab: the sidebar is the list of flows, and the editor shows one of them.
+ */
+export type FlowDocument = {
   readonly id: string;
   readonly label: string;
   readonly dirty?: boolean;
@@ -118,10 +122,8 @@ export const FLOWS: readonly Flow[] = [
   },
 ];
 
-/** One document open, with unsaved changes — the screenshots' starting state. */
-export const OPEN_TABS: readonly Tab[] = [{ id: 'f-teste', label: 'teste.yaml', dirty: true }];
-
-export const ACTIVE_TAB_ID = 'f-teste';
+/** The document the window opens on, with unsaved changes — the screenshots' starting state. */
+export const OPEN_DOCUMENT: FlowDocument = { id: 'f-teste', label: 'teste.yaml', dirty: true };
 
 /** Lines the assistant wrote, and lines Maestro reported as failing. */
 export const AI_LINES: readonly number[] = [];

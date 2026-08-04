@@ -1,8 +1,7 @@
-import { type JSX, useState } from 'react';
+import type { JSX } from 'react';
 import { Icon } from '../../components/Icon/Icon';
-import { IconButton } from '../../components/IconButton/IconButton';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
-import { ASSISTANT_STATUS_LINE, FLOW_YAML, RUN_STATUS_LINE, type Tab } from '../../fixtures/flows';
+import { ASSISTANT_STATUS_LINE, FLOW_YAML, RUN_STATUS_LINE } from '../../fixtures/flows';
 import { tokenizeYamlLine } from '../../lib/yaml-tokens';
 import { useUiStore } from '../../stores/ui.store';
 import { AIPanel } from '../AIPanel/AIPanel';
@@ -13,62 +12,29 @@ import styles from './FlowEditor.module.css';
 /** The one panel the segmented control swaps, named once. */
 const PANEL_ID = 'lower-panel';
 
-type DocumentTabProps = {
-  readonly tab: Tab;
-  readonly active: boolean;
-  readonly onSelect: (id: string) => void;
-  readonly onClose: (id: string) => void;
-};
-
 /**
- * A document tab, macOS style: the active one is filled and lifted by a
- * hairline rather than by a shadow. Its close button appears while the tab is
- * active, hovered or focused (criterion 23) — a tab at rest is just a name.
+ * What the working area is showing, named (criterion 23). There is no tab
+ * chrome and no button here: the sidebar lists every flow and is the only place
+ * one is opened or started, so a strip beside it would be a staler second copy
+ * of that list.
  */
-function DocumentTab({ tab, active, onSelect, onClose }: DocumentTabProps): JSX.Element {
-  const [engaged, setEngaged] = useState(false);
+function DocumentBar(): JSX.Element {
+  // Not `document`: shadowing the DOM global inside a component is a trap for
+  // whoever next reaches for `document.querySelector` in here.
+  const flowDocument = useUiStore((state) => state.document);
 
   return (
-    <li
-      className={styles.tab}
-      data-active={active ? 'true' : undefined}
-      data-dirty={tab.dirty === true ? 'true' : undefined}
-      data-testid={`tab-${tab.id}`}
-      onBlur={() => {
-        setEngaged(false);
-      }}
-      onFocus={() => {
-        setEngaged(true);
-      }}
-      onMouseEnter={() => {
-        setEngaged(true);
-      }}
-      onMouseLeave={() => {
-        setEngaged(false);
-      }}
+    <div
+      className={styles.documentBar}
+      data-dirty={flowDocument.dirty === true ? 'true' : undefined}
+      data-testid="document-bar"
     >
-      <button
-        className={styles.tabOpen}
-        onClick={() => {
-          onSelect(tab.id);
-        }}
-        type="button"
-      >
-        <Icon className={styles.tabGlyph} name="file-code" size={12} />
-        <span className={styles.tabLabel}>{tab.label}</span>
-        {tab.dirty === true ? <span aria-hidden="true" className={styles.dirty} /> : null}
-      </button>
-      {active || engaged ? (
-        <IconButton
-          icon="x"
-          label="Close tab"
-          onClick={() => {
-            onClose(tab.id);
-          }}
-          size="sm"
-        />
-      ) : null}
-    </li>
+      <Icon className={styles.documentGlyph} name="file-code" size={12} />
+      <span className={styles.documentName}>{flowDocument.label}</span>
+      {flowDocument.dirty === true ? <span aria-hidden="true" className={styles.dirty} /> : null}
+      <span className={styles.spacer} />
+      <span className={styles.language}>YAML</span>
+    </div>
   );
 }
 
@@ -159,40 +125,18 @@ function YamlBody(): JSX.Element {
 }
 
 /**
- * The working area (criteria 22–30): document tabs over the flow, a segmented
- * control over the run report or the assistant thread, and the composer on a
- * hairline-topped footer.
+ * The working area (criteria 22–30): the open document named over the flow, a
+ * segmented control over the run report or the assistant thread, and the
+ * composer on a hairline-topped footer.
  */
 export function FlowEditor(): JSX.Element {
-  const tabs = useUiStore((state) => state.tabs);
-  const activeTabId = useUiStore((state) => state.activeTabId);
-  const selectTab = useUiStore((state) => state.selectTab);
-  const closeTab = useUiStore((state) => state.closeTab);
-  const newTab = useUiStore((state) => state.newTab);
   const lowerPanel = useUiStore((state) => state.lowerPanel);
   const setLowerPanel = useUiStore((state) => state.setLowerPanel);
   const running = useUiStore((state) => state.running);
 
   return (
     <section aria-label="Editor" className={styles.column}>
-      <div className={styles.tabStrip} data-testid="tab-strip">
-        <div className={styles.tabs}>
-          <ul className={styles.tabList}>
-            {tabs.map((tab) => (
-              <DocumentTab
-                active={tab.id === activeTabId}
-                key={tab.id}
-                onClose={closeTab}
-                onSelect={selectTab}
-                tab={tab}
-              />
-            ))}
-          </ul>
-          <IconButton icon="plus" label="New tab" onClick={newTab} size="sm" />
-        </div>
-        <span className={styles.spacer} />
-        <span className={styles.language}>YAML</span>
-      </div>
+      <DocumentBar />
 
       <div className={`${styles.body} a-scroll`}>
         <YamlBody />
