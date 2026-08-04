@@ -33,13 +33,18 @@ supersedes: criteria 25 and 26 of specs/device-identity-and-viewer.md
 > `npm run build` clean. `scrcpy-protocol.ts` carries 38 tests and `lib/h264.ts` 26, both driven
 > from the captured bytes below and from synthesised boundaries that capture could not reach.
 >
-> ⚠️ **The manual verification has NOT been run** — no Android device was attached to the machine
-> this was built on (`adb devices` reported an empty list). Every one of the six numbered steps
-> under *Verification* is outstanding, including the glass-to-glass latency measurement that is
-> `.context.md` §13 step 1. **`.context.md` §4.4's table is therefore still an estimate**, and was
-> deliberately left unamended rather than filled in with numbers nobody measured. The teardown of
-> criteria 22–24 is the step most worth running first: it is written against a failure that was
-> observed in the spike, and only a device can confirm the fix.
+> **Verified on hardware 2026-08-04**, against the Galaxy A07 (`SM-A075M`, Android 16), after one
+> real bug that only a device could surface — see *The connect race*, below. The mirror comes up in
+> 559–873 ms and streams **30,9 fps**; the teardown leaves no forward on the host and no
+> `app_process` on the device. `.context.md` §4.4 now carries the measured numbers, including the
+> `screencap` round trip that quantifies the discarded alternative at **~857 ms, a 1,2 fps ceiling**
+> — three times worse than the estimate the decision was originally made against.
+>
+> **Still outstanding:** the glass-to-glass latency of `.context.md` §13 step 1 (it needs a camera
+> filming the phone and the screen together — what was measured is frame cadence and start time,
+> not end-to-end delay); the *unauthorized* state, still never observed; `com.vtex.pnp` across all
+> four app states; the non-Samsung device of verification step 6; and whether 30 fps at
+> `max_size=1024` *looks* right in the 250 px column, which wants a human eye.
 
 ## Goal
 
@@ -534,6 +539,41 @@ are restated because the mirror depends on them, not because they are open work.
   against real captured SPS bytes). Parser tests for the `AdbBridge` additions against captured
   output. Fake-driven tests for `LocalGateway` and `DeviceService`. RTL for the inspector's states,
   mocking only `window.conductor`. No snapshot tests, no test that requires a device.
+
+### ⚠️ The connect race — the bug the first build shipped
+
+The first implementation failed on every start, with:
+
+> The scrcpy stream ended before the dummy byte, after 0 of 77 bytes.
+
+**`tunnel_forward=true` means adb accepts the TCP connection whether or not the server has bound
+its socket on the device, and then closes it again.** So "connected" proves nothing. The first byte
+proves everything — which is exactly what this document already said `send_dummy_byte` is *for*:
+
+> it is how a forward tunnel distinguishes "connected" from "adb accepted the connection but
+> nothing is listening".
+
+The first build read that sentence, implemented the dummy byte as a passive prefix byte, and never
+implemented the **retry it exists to drive**. It connected once, immediately, and reported the
+instant close as a terminal handshake failure.
+
+Measured on the A07, replaying the app's own sequence:
+
+```
+immediate      closed by peer, 0 bytes, after 6ms
++156ms …       closed by peer, 0 bytes    (eleven times)
++1882ms        77 bytes — the whole prefix, in one read
+```
+
+`app_process` needs **~2,3 s** to come up. The fix is scrcpy's own: reconnect every 100 ms until a
+byte actually arrives, bounded by the start deadline. The distinction the retry rests on is that a
+stream which said *something* and then died inside the prefix is **not** retried — that is a server
+that started and fell over (criterion 18's case, and the shape the 255-character abort takes), and
+retrying it would hide a real failure behind a timeout.
+
+The lesson is worth more than the fix: this document explained the *why* of the dummy byte, and the
+implementation still took it for a byte to parse rather than a signal to act on. A prefix that also
+carries a protocol's readiness handshake needs both halves written.
 
 ### Resolved during implementation, 2026-08-04
 

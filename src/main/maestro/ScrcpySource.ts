@@ -151,11 +151,18 @@ export type ScrcpySourceDeps = {
 };
 
 /**
- * Generous: the device may be pushing a 90 KB jar and starting a process on a
- * cold CPU. What it buys is that `mirror:start` always settles — a promise that
- * never does would leave the panel saying "starting" with no way out.
+ * Generous, and it has to be: the measured cost of a start on a Galaxy A07 is
+ * ~2.3 s, almost all of it `app_process` coming up. What the deadline buys is
+ * that `mirror:start` always settles — a promise that never does would leave
+ * the panel saying "starting" with no way out. It is also the only bound on the
+ * retry loop below, so there is one deadline rather than two budgets to keep in
+ * step. scrcpy's own client allows itself the same 10 s.
  */
 const DEFAULT_START_TIMEOUT_MS = 10_000;
+
+/** Between connection attempts. scrcpy uses the same, and the phone that was
+ * measured needed roughly twenty of them. */
+const CONNECT_RETRY_MS = 100;
 
 /** A session that could not be started. Carries the code the panel reads. */
 export class ScrcpyStartError extends Error {
@@ -206,6 +213,14 @@ class Session {
   /** Set the moment anything terminal happens, so a socket close racing a child
    * exit is one report, not two. */
   private over = false;
+  /** Connection attempts made. A forward tunnel makes the first one meaningless,
+   * so this is part of the diagnosis when the deadline passes. */
+  private attempts = 0;
+  /** Bytes the device has actually delivered. The dummy byte is the difference
+   * between "not listening yet" and "started and fell over". */
+  private bytesSeen = 0;
+  private retry: ReturnType<typeof setTimeout> | null = null;
+  private lastConnectError = 'the connection was closed with nothing on it';
   /** True once we asked for the stop ourselves: a teardown we ordered is not a
    * failure and must not paint one on the panel. */
   private stopping = false;
@@ -228,12 +243,15 @@ class Session {
     return new Promise<MirrorSession>((resolve, reject) => {
       this.settle = { resolve, reject };
 
+      const deadline = this.deps.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS;
       this.timer = setTimeout(() => {
         this.fail(
           ERROR_CODES.mirrorStartFailed,
-          `The device did not open a scrcpy stream within ${this.deps.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS}ms.`,
+          this.detail(
+            `The device did not open a scrcpy stream within ${deadline}ms, over ${this.attempts} connection ${this.attempts === 1 ? 'attempt' : 'attempts'}. Last: ${this.lastConnectError}.`,
+          ),
         );
-      }, this.deps.startTimeoutMs ?? DEFAULT_START_TIMEOUT_MS);
+      }, deadline);
       // A pending timer would hold the event loop open for the whole session.
       this.timer.unref?.();
 
@@ -269,6 +287,7 @@ class Session {
   }
 
   private openSocket(): void {
+    this.attempts += 1;
     this.deps
       .connect(this.port)
       .then((socket) => {
@@ -279,6 +298,7 @@ class Session {
         }
         this.socket = socket;
         socket.onData((chunk) => {
+          this.bytesSeen += chunk.length;
           this.receive(chunk);
         });
         socket.onEnd((error) => {
@@ -286,13 +306,35 @@ class Session {
         });
       })
       .catch((error: unknown) => {
-        this.fail(
-          ERROR_CODES.mirrorStartFailed,
-          this.detail(
-            `Could not reach the scrcpy server on port ${this.port}. ${messageOf(error)}`,
-          ),
-        );
+        // The forward is up but nothing answered. Same race as below, seen from
+        // the other side, and answered the same way.
+        this.lastConnectError = messageOf(error);
+        this.reconnect();
       });
+  }
+
+  /**
+   * ⚠️ The race a forward tunnel creates, and the whole reason `send_dummy_byte`
+   * exists. adb accepts the connection whether or not the server has bound its
+   * socket on the device, then closes it again — so **"connected" proves
+   * nothing, and the first byte proves everything.**
+   *
+   * Measured on a Galaxy A07 on 2026-08-04: `app_process` took ~2.3 s to bind,
+   * and every connection in that window came back accepted-and-closed with zero
+   * bytes on it. Connecting once and calling that close terminal fails every
+   * time. scrcpy's own client retries for the same reason.
+   */
+  private reconnect(): void {
+    if (this.over) {
+      return;
+    }
+    this.socket?.destroy();
+    this.socket = null;
+    this.retry = setTimeout(() => {
+      this.retry = null;
+      this.openSocket();
+    }, CONNECT_RETRY_MS);
+    this.retry.unref?.();
   }
 
   private receive(chunk: Uint8Array): void {
@@ -354,6 +396,19 @@ class Session {
       return;
     }
 
+    // Nothing at all arrived: adb accepted a connection to a socket the server
+    // has not bound yet, and closed it again. Try again rather than reporting a
+    // handshake that never began — see `reconnect`.
+    if (this.bytesSeen === 0) {
+      this.lastConnectError =
+        error === null ? 'the connection was closed with nothing on it' : error.message;
+      this.reconnect();
+      return;
+    }
+
+    // Something arrived and then it died inside the prefix. That is a server
+    // that started and fell over — a real truncation, and retrying it would
+    // hide it behind a timeout.
     try {
       this.parser.end();
       this.fail(
@@ -428,6 +483,12 @@ class Session {
     if (this.timer !== null) {
       clearTimeout(this.timer);
       this.timer = null;
+    }
+    // A retry that fires after the session is over would open a socket nobody
+    // owns, on a forward that has already been removed.
+    if (this.retry !== null) {
+      clearTimeout(this.retry);
+      this.retry = null;
     }
   }
 

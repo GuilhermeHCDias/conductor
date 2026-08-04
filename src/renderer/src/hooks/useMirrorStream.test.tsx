@@ -18,8 +18,34 @@ import { useMirrorStream } from './useMirrorStream';
 const PHONE = { id: 'R9QYC01EMXL', model: 'SM_G991B', state: 'device' as const };
 
 const START_4 = [0x00, 0x00, 0x00, 0x01];
-/** Constrained baseline, level 3.0 — profile 0x42, constraints 0xc0, level 0x1e. */
-const CONFIG_PAYLOAD = new Uint8Array([...START_4, 0x67, 0x42, 0xc0, 0x1e, 0xd9, 0x00]);
+/** The Galaxy A07's real config packet: High profile, level 3.2 -> avc1.640020. */
+const CONFIG_PAYLOAD = new Uint8Array([
+  ...START_4,
+  0x67,
+  0x64,
+  0x00,
+  0x20,
+  0xac,
+  0x1b,
+  0x1a,
+  0x81,
+  0xd0,
+  0x20,
+  0x69,
+  0xa8,
+  0x08,
+  0x08,
+  0x08,
+  0x3c,
+  0x22,
+  0x11,
+  0xa8,
+  ...START_4,
+  0x68,
+  0xea,
+  0x43,
+  0xcb,
+]);
 const IDR_PAYLOAD = new Uint8Array([...START_4, 0x65, 0x88, 0x84]);
 const DELTA_PAYLOAD = new Uint8Array([...START_4, 0x41, 0x9a, 0x02]);
 
@@ -301,7 +327,7 @@ describe('decoding', () => {
     push(frame(CONFIG_PAYLOAD, { config: true }));
 
     expect(decoders[0]?.configs).toEqual([
-      { codec: 'avc1.42c01e', codedWidth: 464, codedHeight: 1024, optimizeForLatency: true },
+      { codec: 'avc1.640020', codedWidth: 464, codedHeight: 1024, optimizeForLatency: true },
     ]);
   });
 
@@ -340,11 +366,11 @@ describe('decoding', () => {
     await mount();
     push(frame(CONFIG_PAYLOAD, { config: true }));
 
-    push(frame(new Uint8Array([...START_4, 0x67, 0x64, 0x00, 0x20]), { config: true }));
+    push(frame(new Uint8Array([...START_4, 0x67, 0x42, 0xc0, 0x1e]), { config: true }));
 
     expect(decoders[0]?.configs.map((config) => config.codec)).toEqual([
-      'avc1.42c01e',
       'avc1.640020',
+      'avc1.42c01e',
     ]);
   });
 

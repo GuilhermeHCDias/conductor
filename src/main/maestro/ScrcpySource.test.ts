@@ -432,11 +432,18 @@ describe('when starting fails', () => {
     expect(test.removed).toEqual([]);
   });
 
-  it('removes the forward when the server could not be reached', async () => {
-    const test = harness({ connect: () => Promise.reject(new Error('ECONNREFUSED')) });
+  it('removes the forward when the server was never reachable', async () => {
+    vi.useFakeTimers();
+    const test = harness({
+      connect: () => Promise.reject(new Error('ECONNREFUSED')),
+      startTimeoutMs: 500,
+    });
+    const pending = test.start();
+    const settled = expect(pending).rejects.toThrow(/ECONNREFUSED/);
 
-    await test.start().catch(() => {});
+    await vi.advanceTimersByTimeAsync(600);
 
+    await settled;
     expect(test.removed).toEqual([54556]);
     expect(test.child.killed).toBeGreaterThan(0);
   });
@@ -681,5 +688,168 @@ describe('the device id', () => {
       'session-token-from-a-remote-runner',
       'session-token-from-a-remote-runner',
     ]);
+  });
+});
+
+/**
+ * ⚠️ The race a forward tunnel creates, and the reason the dummy byte exists.
+ *
+ * With `tunnel_forward=true` adb accepts the TCP connection whether or not the
+ * server has bound its socket on the device — and then closes it again. So
+ * "connected" proves nothing; the first byte does.
+ *
+ * Measured on the Galaxy A07 on 2026-08-04, with the app's own sequence:
+ *
+ *   immediate     closed by peer, 0 bytes, after 6ms
+ *   +156ms …      closed by peer, 0 bytes   (eleven times)
+ *   +1882ms       77 bytes — the whole prefix, in one read
+ *
+ * `app_process` took ~2.3 s to come up. A client that connects once and treats
+ * the close as terminal fails every single time, which is exactly what shipped.
+ */
+describe('waiting for the server to bind', () => {
+  /**
+   * A socket per attempt, created up front so a test can await the *n*th one
+   * being wired before it decides what that attempt does. `handed` is how many
+   * attempts the session has actually made.
+   */
+  function pool(count = 40): {
+    connect: (port: number) => Promise<ScrcpySocket>;
+    sockets: FakeSocket[];
+    handed: FakeSocket[];
+  } {
+    const sockets = Array.from({ length: count }, () => new FakeSocket());
+    const handed: FakeSocket[] = [];
+    return {
+      sockets,
+      handed,
+      connect: () => {
+        const socket = sockets[handed.length] ?? new FakeSocket();
+        handed.push(socket);
+        return Promise.resolve(socket);
+      },
+    };
+  }
+
+  it('tries again when adb accepted the connection and closed it with nothing on it', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets, handed } = pool();
+    const test = harness({ connect });
+    const pending = test.start();
+    pending.catch(() => {});
+
+    await sockets[0]?.wired;
+    sockets[0]?.close();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(handed).toHaveLength(2);
+  });
+
+  it('keeps trying for as long as the deadline allows', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets, handed } = pool();
+    const test = harness({ connect, startTimeoutMs: 5000 });
+    const pending = test.start();
+    pending.catch(() => {});
+
+    // Eleven silent attempts is what the phone actually produced.
+    for (let attempt = 0; attempt < 11; attempt += 1) {
+      await sockets[attempt]?.wired;
+      sockets[attempt]?.close();
+      await vi.advanceTimersByTimeAsync(150);
+    }
+
+    expect(handed.length).toBeGreaterThan(11);
+  });
+
+  it('streams as soon as an attempt finds the server listening', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets } = pool();
+    const test = harness({ connect });
+    const pending = test.start();
+
+    await sockets[0]?.wired;
+    sockets[0]?.close();
+    await vi.advanceTimersByTimeAsync(200);
+    await sockets[1]?.wired;
+    sockets[1]?.send(prefixBytes());
+
+    await expect(pending).resolves.toMatchObject({ codec: 'h264', width: 464, height: 1024 });
+  });
+
+  it('leaves no socket behind from the attempts that failed', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets } = pool();
+    const test = harness({ connect });
+    const pending = test.start();
+    pending.catch(() => {});
+
+    await sockets[0]?.wired;
+    sockets[0]?.close();
+    await vi.advanceTimersByTimeAsync(200);
+
+    expect(sockets[0]?.destroyed).toBeGreaterThan(0);
+  });
+
+  /**
+   * The distinction the whole retry rests on. A stream that said *something* and
+   * then died inside the prefix is a real truncation — a server that started and
+   * fell over — and retrying it would hide that behind a timeout.
+   */
+  it('does not retry a stream that died after saying something', async () => {
+    const { connect, sockets, handed } = pool();
+    const test = harness({ connect });
+    const pending = test.start();
+
+    await sockets[0]?.wired;
+    sockets[0]?.send(prefixBytes().subarray(0, 40));
+    sockets[0]?.close();
+
+    await expect(pending).rejects.toMatchObject({ code: ERROR_CODES.mirrorHandshakeFailed });
+    expect(handed).toHaveLength(1);
+  });
+
+  it('stops trying once the session has been stopped', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets, handed } = pool();
+    const test = harness({ connect });
+    const pending = test.start();
+
+    await sockets[0]?.wired;
+    sockets[0]?.send(prefixBytes());
+    const session = await pending;
+    await session.stop();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(handed).toHaveLength(1);
+  });
+
+  it('gives up at the deadline, saying how long it waited and how often it tried', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets } = pool();
+    const test = harness({ connect, startTimeoutMs: 400 });
+    const pending = test.start();
+    const settled = expect(pending).rejects.toThrow(/attempt/i);
+
+    await sockets[0]?.wired;
+    sockets[0]?.close();
+    await vi.advanceTimersByTimeAsync(500);
+
+    await settled;
+  });
+
+  it('tears the whole session down when it gives up retrying', async () => {
+    vi.useFakeTimers();
+    const { connect, sockets } = pool();
+    const test = harness({ connect, startTimeoutMs: 400 });
+    const pending = test.start();
+    pending.catch(() => {});
+
+    await sockets[0]?.wired;
+    sockets[0]?.close();
+    await vi.advanceTimersByTimeAsync(500);
+
+    expect(test.child.killed).toBeGreaterThan(0);
+    expect(test.removed).toEqual([54556]);
   });
 });

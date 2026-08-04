@@ -6,16 +6,20 @@ import { codecString, decoderConfig, NAL_TYPE, nalType, nalUnits } from './h264'
  * with no device and no WebCodecs. jsdom has neither, which is exactly why every
  * decode *decision* lives here and the hook that uses them stays thin.
  *
- * The hardware capture of 2026-08-04 settled the one question this could not be
- * written without: the payload is **Annex-B**, and the config packet carries SPS
- * then PPS with 4-byte start codes —
+ * The bytes below are **the real config packet**, read off a Galaxy A07
+ * (`SM-A075M`, Android 16) on 2026-08-04 at `max_size=1024`:
  *
- *   packet 0 : len=31 config=1 key=0 pts=0us  00 00 00 01 67 …  -> SPS(4b), PPS(4b)
+ *   packet 0 : len=31 config=1 key=0 pts=0us  00 00 00 01 67 …  -> SPS(19b), PPS(4b)
  *
- * so the decoder is configured with no `description` and the `avcC` fallback is
- * dead code that never needed writing. The capture recorded that shape and those
- * first bytes; the full 31 were not transcribed, so the SPS bodies below are real
- * encoder output of the same shape rather than that exact packet.
+ * It settled the question this module could not be written without — the payload
+ * is **Annex-B**, SPS then PPS, 4-byte start codes — so the decoder is configured
+ * with no `description` and the `avcC` fallback is dead code that never needed
+ * writing.
+ *
+ * ⚠️ And it settled a second one that matters more. That phone encodes in
+ * **High profile at level 3.2**, not the constrained baseline everyone reaches
+ * for: a hardcoded `avc1.42E01E` would have been wrong on the very device this
+ * spec was verified against. That is criterion 34, in one fixture.
  */
 
 const bytes = (...values: number[]): Uint8Array => new Uint8Array(values);
@@ -23,61 +27,58 @@ const bytes = (...values: number[]): Uint8Array => new Uint8Array(values);
 const START_4 = [0x00, 0x00, 0x00, 0x01];
 const START_3 = [0x00, 0x00, 0x01];
 
-/** Constrained baseline, level 3.0 — what an Android `avc` encoder emits by
- * default. profile_idc 0x42, constraint flags 0xc0, level_idc 0x1e. */
-const SPS_BASELINE = bytes(
+/** Captured: High profile (0x64), no constraint flags (0x00), level 3.2 (0x20). */
+const SPS = bytes(
   0x67,
-  0x42,
-  0xc0,
-  0x1e,
-  0xd9,
+  0x64,
   0x00,
-  0xf0,
+  0x20,
+  0xac,
+  0x1b,
+  0x1a,
+  0x81,
+  0xd0,
+  0x20,
+  0x69,
+  0xa8,
+  0x08,
+  0x08,
+  0x08,
+  0x3c,
+  0x22,
   0x11,
-  0x7e,
-  0xf0,
-  0x11,
-  0x00,
-  0x00,
-  0x03,
-  0x00,
-  0x01,
-  0x00,
-  0x00,
-  0x03,
-  0x00,
-  0x32,
-  0x0f,
-  0x16,
-  0x2e,
-  0x48,
+  0xa8,
 );
 
-/** High profile, level 3.2. profile_idc 0x64, no constraint flags, level 0x20. */
-const SPS_HIGH = bytes(0x67, 0x64, 0x00, 0x20, 0xac, 0xd9, 0x40, 0x74, 0x02, 0x7e, 0x5c, 0x05);
+/** Captured, from the same packet. */
+const PPS = bytes(0x68, 0xea, 0x43, 0xcb);
 
-const PPS = bytes(0x68, 0xcb, 0x8c, 0xb2);
+/** A second encoder's SPS — constrained baseline, level 3.0 — so the tests can
+ * show the string actually tracks the stream instead of being a constant. */
+const SPS_BASELINE = bytes(0x67, 0x42, 0xc0, 0x1e, 0xd9, 0x00, 0xf0, 0x11, 0x7e);
+
 const IDR = bytes(0x65, 0x88, 0x84, 0x00, 0x21, 0xff);
 
-/** The config packet, assembled the way the phone sends it. */
-const CONFIG_PACKET = bytes(...START_4, ...SPS_BASELINE, ...START_4, ...PPS);
+/** The captured 31 bytes, exactly as the phone sent them. */
+const CONFIG_PACKET = bytes(...START_4, ...SPS, ...START_4, ...PPS);
 
 describe('splitting Annex-B', () => {
-  it('splits on four-byte start codes', () => {
-    expect(nalUnits(CONFIG_PACKET)).toEqual([SPS_BASELINE, PPS]);
+  it('splits the captured config packet into its SPS and its PPS', () => {
+    expect(CONFIG_PACKET).toHaveLength(31);
+    expect(nalUnits(CONFIG_PACKET)).toEqual([SPS, PPS]);
   });
 
   /** Both lengths are legal, and encoders mix them within one stream. */
   it('splits on three-byte start codes', () => {
-    const stream = bytes(...START_3, ...SPS_BASELINE, ...START_3, ...PPS);
+    const stream = bytes(...START_3, ...SPS, ...START_3, ...PPS);
 
-    expect(nalUnits(stream)).toEqual([SPS_BASELINE, PPS]);
+    expect(nalUnits(stream)).toEqual([SPS, PPS]);
   });
 
   it('splits a stream that mixes the two lengths', () => {
-    const stream = bytes(...START_4, ...SPS_BASELINE, ...START_3, ...PPS, ...START_4, ...IDR);
+    const stream = bytes(...START_4, ...SPS, ...START_3, ...PPS, ...START_4, ...IDR);
 
-    expect(nalUnits(stream)).toEqual([SPS_BASELINE, PPS, IDR]);
+    expect(nalUnits(stream)).toEqual([SPS, PPS, IDR]);
   });
 
   it('finds nothing in an empty payload', () => {
@@ -124,16 +125,24 @@ describe('the NAL type', () => {
  * encoder that chose differently.
  */
 describe('the codec string', () => {
-  it('reads profile, constraint flags and level out of a baseline SPS', () => {
+  /** The phone this spec was verified against encodes in High profile. */
+  it('reads High profile level 3.2 out of the captured SPS', () => {
+    expect(codecString(SPS)).toBe('avc1.640020');
+  });
+
+  it('reads constrained baseline out of another encoder’s SPS', () => {
     expect(codecString(SPS_BASELINE)).toBe('avc1.42c01e');
   });
 
-  it('reads them out of a high-profile SPS', () => {
-    expect(codecString(SPS_HIGH)).toBe('avc1.640020');
+  it('is not the same string for two different encoders', () => {
+    expect(codecString(SPS)).not.toBe(codecString(SPS_BASELINE));
   });
 
-  it('is not the same string for two different encoders', () => {
-    expect(codecString(SPS_BASELINE)).not.toBe(codecString(SPS_HIGH));
+  /** The bug criterion 34 exists to prevent, stated as a test: the constrained
+   * baseline everyone hardcodes is not what the verified device sends. */
+  it('is not the baseline profile everybody hardcodes', () => {
+    expect(codecString(SPS)).not.toBe('avc1.42e01e');
+    expect(codecString(SPS)).not.toBe('avc1.42001e');
   });
 
   it('pads each field to two hex digits', () => {
@@ -154,7 +163,7 @@ describe('the codec string', () => {
 describe('the decoder config', () => {
   it('is built from the config packet and the stream’s own size', () => {
     expect(decoderConfig(CONFIG_PACKET, 464, 1024)).toEqual({
-      codec: 'avc1.42c01e',
+      codec: 'avc1.640020',
       codedWidth: 464,
       codedHeight: 1024,
       optimizeForLatency: true,
@@ -185,9 +194,9 @@ describe('the decoder config', () => {
   });
 
   it('finds the SPS wherever in the packet it sits', () => {
-    const reordered = bytes(...START_4, ...PPS, ...START_4, ...SPS_HIGH);
+    const reordered = bytes(...START_4, ...PPS, ...START_4, ...SPS_BASELINE);
 
-    expect(decoderConfig(reordered, 464, 1024)?.codec).toBe('avc1.640020');
+    expect(decoderConfig(reordered, 464, 1024)?.codec).toBe('avc1.42c01e');
   });
 
   it('refuses a config packet that carries no SPS', () => {
