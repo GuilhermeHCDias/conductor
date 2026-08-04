@@ -1,0 +1,42 @@
+.dot {
+  background: var(--state-idle);
+  border-radius: var(--radius-pill);
+  display: inline-block;
+  flex: none;
+}
+
+.dot[data-size="sm"] {
+  height: 6px;
+  width: 6px;
+}
+
+.dot[data-size="md"] {
+  height: 7px;
+  width: 7px;
+}
+
+.dot[data-size="lg"] {
+  height: 8px;
+  width: 8px;
+}
+
+/* Pass, fail and running sit at least 30 degrees apart in hue so they stay
+   separable at 6px. */
+.dot[data-state="pass"],
+.dot[data-state="connected"] {
+  background: var(--state-pass);
+}
+
+.dot[data-state="fail"] {
+  background: var(--state-fail);
+}
+
+.dot[data-state="running"] {
+  background: var(--state-running);
+}
+
+.dot[data-state="idle"],
+.dot[data-state="never"],
+.dot[data-state="offline"] {
+  background: var(--state-idle);
+}

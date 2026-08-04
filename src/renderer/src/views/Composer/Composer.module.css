@@ -1,0 +1,43 @@
+.footer {
+  border-top: 1px solid var(--a-hair);
+  flex: none;
+  padding: 10px;
+}
+
+.surface {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-region);
+  display: grid;
+  padding: var(--space-4) var(--space-4) var(--space-3);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+/* Criterion 34: the composer speaks to the assistant, so it focuses blue —
+   never the violet accent the rest of the window focuses. */
+.surface:focus-within {
+  border-color: var(--ai-edge);
+  box-shadow: var(--glow-ai);
+}
+
+.input {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font: var(--type-body);
+  min-width: 0;
+  outline: none;
+  padding: var(--space-1) var(--space-2);
+  resize: none;
+}
+
+.input::placeholder {
+  color: var(--text-disabled);
+}
+
+.actions {
+  display: flex;
+  justify-content: flex-end;
+}
