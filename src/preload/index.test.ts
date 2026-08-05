@@ -88,7 +88,7 @@ describe('the bridge', () => {
   });
 });
 
-/** Criterion 32. At 30 frames a second, a listener left behind is a memory leak
+/** Criterion 32. At 60 frames a second, a listener left behind is a memory leak
  * with a framerate on it. */
 describe('a subscription', () => {
   it.each([

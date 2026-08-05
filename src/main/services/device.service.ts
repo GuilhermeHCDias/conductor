@@ -22,7 +22,7 @@ export type DeviceServiceDeps = {
   readonly appId: string;
   /** Pushes a snapshot at the renderer. Called only when something changed. */
   readonly emit: (payload: Result<DeviceSnapshot>) => void;
-  /** Pushes one mirror event. Frames come through here ~30 times a second, so
+  /** Pushes one mirror event. Frames come through here ~60 times a second, so
    * it is deliberately the cheapest thing in this file. */
   readonly emitMirror: (payload: Result<MirrorEvent>) => void;
   readonly intervalMs?: number;

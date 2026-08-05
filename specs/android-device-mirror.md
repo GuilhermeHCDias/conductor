@@ -43,8 +43,10 @@ supersedes: criteria 25 and 26 of specs/device-identity-and-viewer.md
 > **Still outstanding:** the glass-to-glass latency of `.context.md` §13 step 1 (it needs a camera
 > filming the phone and the screen together — what was measured is frame cadence and start time,
 > not end-to-end delay); the *unauthorized* state, still never observed; `com.vtex.pnp` across all
-> four app states; the non-Samsung device of verification step 6; and whether 30 fps at
-> `max_size=1024` *looks* right in the 250 px column, which wants a human eye.
+> four app states; the non-Samsung device of verification step 6; and whether 60 fps at
+> `max_size=1024` *looks* right in the 250 px column, which wants a human eye — 30 fps got that
+> look on 2026-08-04, read as stutter beside scrcpy's own uncapped default, and the cap moved
+> to 60 for it.
 
 ## Goal
 
@@ -54,7 +56,7 @@ whether the app under test — `CONFIG.APP_ID` — is on that phone and running.
 The identity half is done. The panel is not: it renders a bezel around an empty state that says
 the screen opens in a browser. This spec fills that bezel with the device's own framebuffer,
 streamed over adb by `scrcpy-server` as H.264 and decoded in the renderer with WebCodecs —
-roughly 30 fps at ~50–100 ms of latency, in the panel, not in a second window and not in a second
+roughly 60 fps at ~50–100 ms of latency, in the panel, not in a second window and not in a second
 application.
 
 It matters because every later spec looks at that picture. Snapshot, hover hit-test and selector
@@ -485,9 +487,9 @@ are restated because the mirror depends on them, not because they are open work.
 - **Why scrcpy rather than the `screencap` polling `.context.md` §5.5 specifies?** → The product
   owner's call, made explicitly against the alternative. `adb exec-out screencap -p` costs
   100–300 ms per frame, so the documented "fast cadence" tops out around 2–4 fps: enough to see
-  *that* the app changed, not enough to watch it respond. scrcpy delivers ~30 fps at ~50–100 ms
-  through a socket that is already there for adb, and its control channel is the natural next
-  step. The cost is accepted and recorded: it is an internal, version-locked protocol without a
+  *that* the app changed, not enough to watch it respond. scrcpy delivers the panel's own cadence
+  — capped here at 60 fps — at ~50–100 ms through a socket that is already there for adb, and its
+  control channel is the natural next step. The cost is accepted and recorded: it is an internal, version-locked protocol without a
   stability contract — the same class of risk `.context.md` §4.5 warns about. Pinning our own jar
   is what converts that risk from "breaks on someone's machine" to "breaks when we deliberately
   upgrade", which is why §4.5 rules out scraping Maestro's log but does not rule this out.
@@ -508,10 +510,15 @@ are restated because the mirror depends on them, not because they are open work.
 - **Why H.264 and not H.265 or AV1?** → `video_codec=h264` is the best-supported WebCodecs path in
   Chromium, and the Annex-B assumption below is H.264-specific. The other two would each need
   their own bitstream handling for no gain at 1024 px.
-- **Why `max_size=1024` and `max_fps=30`?** → The inspector column is 250–300 CSS px wide; 1024
+- **Why `max_size=1024` and `max_fps=60`?** → The inspector column is 250–300 CSS px wide; 1024
   leaves headroom for a wider window and for the future 1:1 inspect overlay without streaming a
-  1080×2400 framebuffer no one sees. 30 fps halves the encode and decode cost against 60 with no
-  perceptible loss for watching an app respond. Both are constants, both are cheap to raise.
+  1080×2400 framebuffer no one sees. The fps cap began at 30, reasoned as "halves the encode and
+  decode cost against 60 with no perceptible loss for watching an app respond" — and the loss was
+  perceptible: on 2026-08-04 the product owner put the panel beside scrcpy's own uncapped window
+  and the mirror read as stutter, not as half the rate. 60 matches the refresh rate most phones
+  drive; a cap survives at all so a 120 Hz panel cannot double the encode, IPC and decode bill
+  for motion invisible at this size. Both values are constants in `ScrcpySource.ts`, and 30→60
+  cost zero characters of criterion 17a's budget.
 - **Why poll `adb devices` instead of tracking?** → `adb track-devices` is the adb server's own
   smart-socket protocol, not a CLI subcommand — reaching it means speaking a second undocumented
   protocol for a feature worth one line of polling. Two seconds is imperceptible for plugging in
@@ -626,7 +633,7 @@ Manual, with a physical Android phone over USB — **this is also `.context.md` 
 latency spike that was never run**, and its numbers get written back into `.context.md` §4.4. The
 device used on 2026-08-04 was a Galaxy A07 (`SM-A075M`, Android 16, 720×1600 @ 300dpi):
 
-1. Mirror comes up, moves at ~30 fps, and the measured glass-to-glass latency is recorded.
+1. Mirror comes up, moves at ~60 fps, and the measured glass-to-glass latency is recorded.
 2. Unplug mid-session: the inspector returns to its disconnected state and does not stall on the
    last frame.
 3. Quit with a session live, then check that no `scrcpy` process survives on the device
@@ -653,7 +660,7 @@ never observed — the phone was already authorized before the spike, so the fir
 new user meets remains untested. `com.vtex.pnp` across all four states likewise needs a device
 where it is actually installed.
 
-Not covered by any automated test: whether 30 fps at `max_size=1024` *looks* right in the 250 px
+Not covered by any automated test: whether 60 fps at `max_size=1024` *looks* right in the 250 px
 column, and whether the app identity line reads clearly. There is no design-system drawing for
 that line — like `PRPanel` and `Doctor` before it, it is specified in words here and wants a
 visual review.

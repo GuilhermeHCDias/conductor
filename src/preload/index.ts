@@ -28,7 +28,7 @@ const api: ConductorApi = {
     };
   },
 
-  // Same shape, and the unsubscribe matters more here: this one fires ~30 times
+  // Same shape, and the unsubscribe matters more here: this one fires ~60 times
   // a second, so a listener that outlives its view leaks at a framerate.
   onMirrorEvent: (listener) => {
     const forward = (_event: IpcRendererEvent, payload: PushPayload<'mirror:event'>): void => {
