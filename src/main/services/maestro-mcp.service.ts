@@ -108,17 +108,7 @@ export class MaestroMcpService {
       throw new McpStartError(ERROR_CODES.mcpStartFailed, 'Conductor is shutting down.');
     }
 
-    let connection: Connection;
-    try {
-      connection = this.connect();
-      await connection.ready;
-    } catch (error) {
-      // A handshake that failed leaves nothing worth keeping: drop the child so
-      // the next call starts clean rather than talking to a corpse.
-      this.connection?.child.kill();
-      this.connection = null;
-      throw new McpStartError(startCode(error), message(error, 'The Maestro MCP server failed.'));
-    }
+    const connection = await this.connected();
 
     try {
       return await connection.session.callTool(INSPECT_TOOL, { device_id: deviceId });
@@ -135,6 +125,31 @@ export class MaestroMcpService {
     this.disposed = true;
     this.connection?.child.kill();
     this.connection = null;
+  }
+
+  /**
+   * The child, hand shaken and ready to be called.
+   *
+   * ⚠️ A handshake that failed leaves nothing worth keeping, so the child goes —
+   * but *which* child is decided by identity, never by whatever occupies the
+   * slot when the rejection lands. A slow handshake can outlive its own child:
+   * `onExit` clears the slot, the next call fills it with a healthy JVM, and
+   * only then does the first one give up. Killing the slot's current occupant
+   * there would take down a child that never failed.
+   */
+  private async connected(): Promise<Connection> {
+    let started: Connection | null = null;
+    try {
+      started = this.connect();
+      await started.ready;
+      return started;
+    } catch (error) {
+      if (started !== null && this.connection === started) {
+        started.child.kill();
+        this.connection = null;
+      }
+      throw new McpStartError(startCode(error), message(error, 'The Maestro MCP server failed.'));
+    }
   }
 
   /** Criterion 19: one child per session, started on first use and remembered

@@ -1,8 +1,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve as resolvePath } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import type { BinaryRunResult } from '../process/run';
-import { ScreenCapture, ScreenCaptureFailedError } from './ScreenCapture';
+import type { BinaryRunResult, RunOptions } from '../process/run';
+import { CAPTURE_TIMEOUT_MS, ScreenCapture, ScreenCaptureFailedError } from './ScreenCapture';
 
 /**
  * The still frame, with no JVM anywhere near it (§4.4b, §10.1 rule 13): a
@@ -18,7 +18,11 @@ const DEVICE = 'R9QYC01EMXL';
  * UTF-8 start byte, so anything that decodes this stream destroys it. */
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0xff, 0xfe, 0x80]);
 
-type Ran = { readonly command: string; readonly args: readonly string[] };
+type Ran = {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly options?: RunOptions;
+};
 
 function capture(
   overrides: { binary?: string | null; result?: Partial<BinaryRunResult>; reject?: Error } = {},
@@ -27,8 +31,8 @@ function capture(
 
   const screen = new ScreenCapture({
     adb: { resolve: () => (overrides.binary === undefined ? ADB : overrides.binary) },
-    run: (command, args) => {
-      ran.push({ command, args });
+    run: (command, args, options) => {
+      ran.push({ command, args, options });
       if (overrides.reject !== undefined) {
         return Promise.reject(overrides.reject);
       }
@@ -48,7 +52,31 @@ describe('capturing a frame', () => {
 
     await screen.capture(DEVICE);
 
-    expect(ran).toEqual([{ command: ADB, args: ['-s', DEVICE, 'exec-out', 'screencap', '-p'] }]);
+    expect(ran).toMatchObject([
+      { command: ADB, args: ['-s', DEVICE, 'exec-out', 'screencap', '-p'] },
+    ]);
+  });
+
+  /**
+   * ⚠️ `screencap` is the one adb call in this app that can hang rather than
+   * fail: a device that locks or rotates mid-capture leaves the pipe open with
+   * nothing coming down it. `run`'s siblings elsewhere buffer to completion, so
+   * without a ceiling the promise never settles and the core loop's frozen
+   * frame (§5.5) never arrives — no error, no picture, nothing to report.
+   */
+  it('gives the capture a finite deadline', async () => {
+    const { capture: screen, ran } = capture();
+
+    await screen.capture(DEVICE);
+
+    expect(ran[0]?.options?.timeout).toBe(CAPTURE_TIMEOUT_MS);
+    expect(CAPTURE_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+
+  it('reports a capture that ran out of time as a capture failure', async () => {
+    const { capture: screen } = capture({ reject: new Error('spawn ETIMEDOUT') });
+
+    await expect(screen.capture(DEVICE)).rejects.toMatchObject({ code: 'capture/failed' });
   });
 
   /** Criterion 12 — the bytes the device produced, and only those. */

@@ -246,6 +246,42 @@ describe('the maestro mcp child', () => {
 
     expect(h.spawns).toHaveLength(2);
   });
+
+  /**
+   * ⚠️ A failed handshake drops "the child", and which child that is has to be
+   * decided by identity, not by whatever is in the slot when the rejection
+   * lands. The old child can die and be replaced by a healthy one while the
+   * first call is still waiting — killing the slot's current occupant then
+   * takes down a JVM that never failed, and the caller who started it gets a
+   * corpse for no reason.
+   */
+  it('leaves a healthy newer child alone when an older handshake fails', async () => {
+    const gates: Array<{ resolve: () => void; reject: (error: Error) => void }> = [];
+    const h = makeService({
+      session: {
+        initialize: () =>
+          new Promise<void>((resolve, reject) => {
+            gates.push({ resolve, reject });
+          }),
+      },
+    });
+
+    const stalled = h.service.inspectScreen(DEVICE);
+    // The first JVM dies; the service forgets it, exactly as above.
+    h.spawns[0]?.exit();
+
+    // A second call brings up a fresh child, and this one hand shakes fine.
+    const healthy = h.service.inspectScreen(DEVICE);
+    gates[1]?.resolve();
+    await expect(healthy).resolves.toBe(TREE);
+
+    // Only now does the first call's handshake give up.
+    gates[0]?.reject(new Error('the first JVM never answered'));
+    await expect(stalled).rejects.toMatchObject({ code: 'mcp/start-failed' });
+
+    expect(h.spawns).toHaveLength(2);
+    expect(h.spawns[1]?.killed()).toBe(false);
+  });
 });
 
 describe('asking for the screen', () => {

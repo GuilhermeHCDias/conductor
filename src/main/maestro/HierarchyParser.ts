@@ -38,28 +38,6 @@ export class HierarchyParseError extends Error {
   }
 }
 
-/**
- * Wire name → field, after the response's own abbreviations have been expanded.
- * These are the *expanded* names the table maps to (`b` → `bounds`), plus the
- * five booleans the server abbreviates nothing for.
- */
-const STRING_FIELDS = {
-  text: 'text',
-  class: 'className',
-  'resource-id': 'resourceId',
-  'content-desc': 'contentDescription',
-  hintText: 'hintText',
-} as const;
-
-const BOOLEAN_FIELDS = {
-  scrollable: 'scrollable',
-  clickable: 'clickable',
-  enabled: 'enabled',
-  focused: 'focused',
-  selected: 'selected',
-  checked: 'checked',
-} as const;
-
 const BOUNDS_FIELD = 'bounds';
 const CHILDREN_FIELD = 'children';
 
@@ -102,11 +80,13 @@ export function parseHierarchy(text: string): TreeNode {
  * mention is already the name it means.
  */
 function expander(abbreviations: unknown): (key: string) => string {
-  if (abbreviations === undefined) {
-    return (key) => key;
-  }
+  // ⚠️ Absent is not `{}`. An empty table is a server spelling its keys out; a
+  // missing one leaves the abbreviated elements below unreadable, and treating
+  // every key as already-expanded would resolve them to an all-null node
+  // reported as success — criterion 10's partial tree, by way of criterion 8's
+  // silent mis-map.
   if (!isRecord(abbreviations)) {
-    throw new HierarchyParseError('Its ui_schema.abbreviations was not an object.');
+    throw new HierarchyParseError('Its ui_schema declared no abbreviation table.');
   }
 
   const table = new Map<string, string>();
@@ -131,11 +111,11 @@ function canonicalise(
   values: unknown,
   expand: (key: string) => string,
 ): ReadonlyMap<string, unknown> {
-  if (values === undefined) {
-    return new Map();
-  }
+  // Absent is rejected for the same reason as the table above: criterion 5 reads
+  // omitted fields *through* this map, so a missing one silently turns every
+  // default the server declared into "not reported".
   if (!isRecord(values)) {
-    throw new HierarchyParseError('Its ui_schema.defaults was not an object.');
+    throw new HierarchyParseError('Its ui_schema declared no defaults.');
   }
 
   const canonical = new Map<string, unknown>();
@@ -159,17 +139,28 @@ function readElement(
    * that field, else genuinely nothing. */
   const read = (field: string): unknown => (own.has(field) ? own.get(field) : defaults.get(field));
 
-  const node: Record<string, unknown> = {
+  /** The wire's *expanded* name is also what names the failure, so each field
+   * is read through one of these rather than paired up in a lookup table — the
+   * literal below is then checked against `TreeNode` directly, with no
+   * assertion to switch `strict` off on the way past. */
+  const str = (wire: string): string | null => readString(read(wire), wire);
+  const bool = (wire: string): boolean | null => readBoolean(read(wire), wire);
+
+  return {
     bounds: readBounds(read(BOUNDS_FIELD)),
+    className: str('class'),
+    text: str('text'),
+    resourceId: str('resource-id'),
+    contentDescription: str('content-desc'),
+    hintText: str('hintText'),
+    scrollable: bool('scrollable'),
+    clickable: bool('clickable'),
+    enabled: bool('enabled'),
+    focused: bool('focused'),
+    selected: bool('selected'),
+    checked: bool('checked'),
     children: readChildren(read(CHILDREN_FIELD), expand, defaults),
   };
-  for (const [wire, field] of Object.entries(STRING_FIELDS)) {
-    node[field] = readString(read(wire), wire);
-  }
-  for (const [wire, field] of Object.entries(BOOLEAN_FIELDS)) {
-    node[field] = readBoolean(read(wire), wire);
-  }
-  return node as unknown as TreeNode;
 }
 
 /**

@@ -1,5 +1,5 @@
 import { ERROR_CODES } from '@shared/ipc';
-import type { BinaryRunResult } from '../process/run';
+import type { BinaryRunResult, RunOptions } from '../process/run';
 import { AdbNotFoundError } from './AdbBridge';
 
 /**
@@ -27,8 +27,23 @@ export type CaptureAdb = {
 };
 
 /** `runBinary`. Typed structurally so this module never reaches for the
- * text-mode `run`, which would decode the PNG and destroy it. */
-export type BinaryRunner = (command: string, args: readonly string[]) => Promise<BinaryRunResult>;
+ * text-mode `run`, which would decode the PNG and destroy it. Unlike
+ * `AdbRunner` it keeps `RunOptions`: `devices` and `getprop` answer in
+ * milliseconds or not at all, while a capture can sit open (see the deadline
+ * below). */
+export type BinaryRunner = (
+  command: string,
+  args: readonly string[],
+  options?: RunOptions,
+) => Promise<BinaryRunResult>;
+
+/**
+ * Generous against a slow first `screencap` on a cold device — measured at
+ * 100–300 ms on this hardware — and still short enough that a capture which is
+ * never coming back is reported as a failure the person can act on rather than
+ * a spinner that never stops.
+ */
+export const CAPTURE_TIMEOUT_MS = 10_000;
 
 export type ScreenCaptureDeps = {
   readonly adb: CaptureAdb;
@@ -71,11 +86,11 @@ export class ScreenCapture {
     const args = ['-s', deviceId, 'exec-out', 'screencap', '-p'];
     let result: BinaryRunResult;
     try {
-      result = await this.deps.run(binary, args);
+      result = await this.deps.run(binary, args, { timeout: CAPTURE_TIMEOUT_MS });
     } catch (error) {
-      // The binary vanished between resolving and running, or the runner was
-      // aborted: there is no exit code to report, and it must not escape as an
-      // untyped throw.
+      // The binary vanished between resolving and running, the capture ran out
+      // of time, or the runner was aborted: there is no exit code to report,
+      // and it must not escape as an untyped throw.
       throw new ScreenCaptureFailedError(
         error instanceof Error ? error.message : 'adb could not be started.',
       );

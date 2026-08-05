@@ -157,8 +157,8 @@ export type SpawnOptions = {
 
 /**
  * The streaming counterpart to `run`, for the one child that must outlive a
- * single call: the `maestro mcp` process behind the Viewer. `run` buffers to
- * completion, which for a server on stdio means waiting forever.
+ * single call: the `maestro mcp` server behind `inspect_screen`. `run` buffers
+ * to completion, which for a server on stdio means waiting forever.
  *
  * Same rules as `run`: an argument array, never a shell, and a failure to start
  * is reported as a value rather than thrown at whoever happened to be awaiting.

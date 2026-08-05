@@ -476,6 +476,25 @@ describe('a response that is not the documented shape', () => {
   });
 
   /**
+   * ⚠️ Absent is not the same fact as `{}`. A table written out empty is a
+   * server saying "these keys are already their own names" and is read (above).
+   * A table *missing* is a payload we cannot read at all: the elements below
+   * still arrive abbreviated, and treating every key as already-expanded
+   * resolves `b`/`txt`/`cls`/`c` to nothing — one all-null node, no children,
+   * reported as success. That is criterion 10's "partial or best-guess tree",
+   * and it is the exact silent mis-map criterion 8 exists to prevent.
+   */
+  it('rejects a ui_schema declaring no abbreviations', () => {
+    const { abbreviations: _absent, ...schema } = SCHEMA;
+    rejects(response({ b: '[0,0][1,1]', txt: 'Entrar' }, schema));
+  });
+
+  it('rejects a ui_schema declaring no defaults', () => {
+    const { defaults: _absent, ...schema } = SCHEMA;
+    rejects(response({ b: '[0,0][1,1]', txt: 'Entrar' }, schema));
+  });
+
+  /**
    * `hierarchy()` answers with one `TreeNode`, so a payload that is not one
    * tree cannot be represented. Wrapping several roots in a node the device
    * never reported would put a fabricated element into the hit-test.
