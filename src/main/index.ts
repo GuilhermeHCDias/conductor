@@ -13,7 +13,7 @@ import { isExecutable } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
-import { createWindow } from './window';
+import { createWindow, ICON_PATH } from './window';
 
 /**
  * The composition root: it owns the service registry, registers the IPC
@@ -107,6 +107,13 @@ if (!app.requestSingleInstanceLock()) {
   });
 
   void app.whenReady().then(() => {
+    // Only `electron-builder` sets the packaged app's Dock icon; a dev run
+    // launches the bare Electron binary, so the Dock would otherwise show
+    // Electron's own icon instead of ours.
+    if (process.platform === 'darwin' && !app.isPackaged) {
+      app.dock?.setIcon(ICON_PATH);
+    }
+
     // The one place any of this is constructed. Every dependency is passed in,
     // which is what lets each class above be tested with fakes.
     const home = homedir();

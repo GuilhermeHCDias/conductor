@@ -13,6 +13,7 @@
       "!dist",
       "!**/node_modules",
       "!package-lock.json",
+      "!docs/Conductor Design System",
       "!src/renderer/src/styles/tokens",
       "!src/renderer/src/styles/utilities",
       "!src/main/maestro/inspect-screen.capture.json"

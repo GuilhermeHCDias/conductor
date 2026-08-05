@@ -14,8 +14,11 @@ export const CONFIG = {
   /** Branch base para novos PRs. */
   REPO_BASE_BRANCH: process.env.CONDUCTOR_BASE_BRANCH ?? 'main',
 
-  /** Pasta, dentro do repo, onde vivem os flows. */
-  FLOWS_DIR: '.maestro',
+  /**
+   * Pasta, na raiz do repo, onde vivem os flows — e o único lugar em que o
+   * Conductor escreve. Suporta subpastas (.context.md §7.1, §7.2).
+   */
+  FLOWS_DIR: 'conductor',
 
   /** Extensões reconhecidas como flow. */
   FLOW_EXTENSIONS: ['.yml', '.yaml'] as const,

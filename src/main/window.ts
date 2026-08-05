@@ -22,6 +22,11 @@ export function isRendererUrl(url: string): boolean {
   );
 }
 
+// electron-builder reads `build/icon.png` when packaging, but `electron-vite
+// dev` never runs that pipeline — the dev window and Dock have to point at
+// it themselves.
+export const ICON_PATH = join(__dirname, '../../build/icon.png');
+
 /** The one and only `BrowserWindow` factory — it carries the §9.3 flags. */
 export function createWindow(): BrowserWindow {
   const mainWindow = new BrowserWindow({
@@ -31,6 +36,7 @@ export function createWindow(): BrowserWindow {
     minHeight: 640,
     show: false,
     autoHideMenuBar: true,
+    icon: ICON_PATH,
     // The Aurora shell is one macOS window: the OS draws the traffic lights,
     // and the renderer's toolbar reserves the 70px they span. Drawing our own
     // would put a frame inside a frame.
