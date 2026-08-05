@@ -4,6 +4,7 @@ import type {
   DeviceProperties,
   DeviceSnapshot,
   MirrorEvent,
+  MirrorInput,
   Result,
 } from '@shared/ipc';
 import { ERROR_CODES } from '@shared/ipc';
@@ -43,6 +44,10 @@ const IDENTITY: AppIdentity = {
 type FakeSession = MirrorSession & {
   stops: number;
   handlers: MirrorHandlers;
+  /** Every input the service forwarded, in order. */
+  sent: MirrorInput[];
+  /** Set to make the next `send` refuse, the way a dead control socket does. */
+  sendFailure: Error | null;
 };
 
 type Gateway = MaestroGateway & {
@@ -90,8 +95,18 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
         codec: 'h264',
         width: 464,
         height: 1024,
+        control: true,
         stops: 0,
         handlers,
+        sent: [],
+        sendFailure: null,
+        send: (input) => {
+          if (session.sendFailure !== null) {
+            return Promise.reject(session.sendFailure);
+          }
+          session.sent.push(input);
+          return Promise.resolve();
+        },
         stop: () => {
           session.stops += 1;
           return Promise.resolve();
@@ -443,8 +458,23 @@ describe('mirroring a device', () => {
     expect(gateway.mirrorCalls).toEqual([PHONE.id]);
     expect(result).toEqual({
       ok: true,
-      data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024 },
+      data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024, control: true },
     });
+  });
+
+  /** Criterion 4 — a picture with no control is a session, not a failure. */
+  it('passes on that a session could not be driven, without failing the start', async () => {
+    const gateway = fakeGateway();
+    const start = gateway.startMirror.bind(gateway);
+    gateway.startMirror = async (deviceId, handlers) => ({
+      ...(await start(deviceId, handlers)),
+      control: false,
+    });
+    const { service } = makeService(gateway);
+
+    const result = await service.startMirror(PHONE.id);
+
+    expect(result).toMatchObject({ ok: true, data: { control: false } });
   });
 
   it('gives each session an id of its own', async () => {
@@ -588,6 +618,106 @@ describe('mirroring a device', () => {
     expect(await service.startMirror(PHONE.id)).toMatchObject({
       ok: false,
       error: { code: ERROR_CODES.adbNotFound },
+    });
+  });
+});
+
+/**
+ * The outbound half. The service forwards and nothing more — the encoding is the
+ * protocol module's and the socket is the session's, so what is worth pinning
+ * here is *which* session an input reaches and what happens when it cannot.
+ */
+describe('sending input at a mirror', () => {
+  const TAP = { type: 'tap', x: 232, y: 534, screenWidth: 464, screenHeight: 1024 } as const;
+  const PACKET = {
+    config: false,
+    keyFrame: true,
+    pts: 652021984203,
+    payload: new Uint8Array([0, 0, 0, 1, 0x65, 0x88]),
+  };
+
+  it('forwards the input to the session the renderer named', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+
+    const result = await service.sendInput('mirror-1', TAP);
+
+    expect(result).toEqual({ ok: true, data: { sessionId: 'mirror-1' } });
+    expect(gateway.sessions[0]?.sent).toEqual([TAP]);
+  });
+
+  /**
+   * A tap aimed at a session that has already been replaced must not land on
+   * whatever is streaming now — the coordinates were read off a different
+   * picture, and on a rotated phone they point somewhere else entirely.
+   */
+  it('refuses an input aimed at a session that is already gone', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    await service.stopMirror('mirror-1');
+
+    expect(await service.sendInput('mirror-1', TAP)).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.mirrorSessionNotFound },
+    });
+  });
+
+  it('reaches only the session named, when a second one has replaced it', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    await service.startMirror(PHONE.id);
+
+    expect(await service.sendInput('mirror-1', TAP)).toMatchObject({ ok: false });
+    expect(await service.sendInput('mirror-2', TAP)).toMatchObject({ ok: true });
+    expect(gateway.sessions[0]?.sent).toEqual([]);
+    expect(gateway.sessions[1]?.sent).toEqual([TAP]);
+  });
+
+  /** Criterion 16 — a control failure keeps its own code all the way up. */
+  it('passes a control failure up with the code the session gave it', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    const failure = Object.assign(new Error('the control socket is gone'), {
+      code: ERROR_CODES.mirrorControlFailed,
+    });
+    (gateway.sessions[0] as { sendFailure: Error | null }).sendFailure = failure;
+
+    expect(await service.sendInput('mirror-1', TAP)).toEqual({
+      ok: false,
+      error: {
+        code: ERROR_CODES.mirrorControlFailed,
+        message: 'the control socket is gone',
+      },
+    });
+  });
+
+  /** Criterion 4 — the picture is untouched by any of this. */
+  it('leaves the session running after an input it could not send', async () => {
+    const gateway = fakeGateway();
+    const { service, mirrored } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    (gateway.sessions[0] as { sendFailure: Error | null }).sendFailure = new Error('broken pipe');
+
+    await service.sendInput('mirror-1', TAP);
+    gateway.sessions[0]?.handlers.onPacket(PACKET);
+
+    expect(gateway.sessions[0]?.stops).toBe(0);
+    expect(mirrored.at(-1)).toMatchObject({ ok: true, data: { type: 'frame' } });
+  });
+
+  it('falls back to the control code when the thrower named none', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    (gateway.sessions[0] as { sendFailure: Error | null }).sendFailure = new Error('sideways');
+
+    expect(await service.sendInput('mirror-1', TAP)).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.mirrorControlFailed },
     });
   });
 });

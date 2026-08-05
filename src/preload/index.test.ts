@@ -58,6 +58,7 @@ describe('the bridge', () => {
       'configGet',
       'deviceAppInfo',
       'deviceList',
+      'mirrorInput',
       'mirrorStart',
       'mirrorStop',
       'onDeviceChanged',
@@ -76,15 +77,30 @@ describe('the bridge', () => {
   });
 
   it('forwards each invoke to its own channel, with the arguments untouched', async () => {
+    const tap = { type: 'tap', x: 232, y: 534, screenWidth: 464, screenHeight: 1024 } as const;
     await api.mirrorStart('R9QYC01EMXL');
     await api.mirrorStop('mirror-1');
     await api.deviceAppInfo('R9QYC01EMXL');
+    await api.mirrorInput('mirror-1', tap);
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
       { channel: CHANNELS.mirrorStop, args: ['mirror-1'] },
       { channel: CHANNELS.deviceAppInfo, args: ['R9QYC01EMXL'] },
+      { channel: CHANNELS.mirrorInput, args: ['mirror-1', tap] },
     ]);
+  });
+
+  /**
+   * §9.3 and criterion 5. Input is the one thing the renderer sends *at* the
+   * device, so it is worth saying out loud that it still crosses as a named
+   * function taking typed fields — never a command, never a composed string.
+   */
+  it('carries input as a structured value rather than anything command-shaped', async () => {
+    await api.mirrorInput('mirror-1', { type: 'text', text: '; rm -rf /' });
+
+    expect(invoked.at(-1)?.args[1]).toEqual({ type: 'text', text: '; rm -rf /' });
+    expect(typeof invoked.at(-1)?.args[1]).toBe('object');
   });
 });
 

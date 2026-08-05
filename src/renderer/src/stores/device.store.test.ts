@@ -2,11 +2,13 @@ import type { AppIdentity, ConductorApi, Device, DeviceSnapshot, Result } from '
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resetDeviceStore,
+  selectMirrorControl,
   selectMirrorError,
   selectMirrorHeight,
   selectMirrorStatus,
   selectMirrorWidth,
   selectSelectedId,
+  TEXT_BATCH_MS,
   useDeviceStore,
 } from './device.store';
 
@@ -44,6 +46,7 @@ let conductor: {
   viewerOpen: ReturnType<typeof vi.fn>;
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
+  mirrorInput: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
 };
 
@@ -56,10 +59,11 @@ beforeEach(() => {
     mirrorStart: vi.fn(() =>
       Promise.resolve({
         ok: true,
-        data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024 },
+        data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024, control: true },
       }),
     ),
     mirrorStop: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
+    mirrorInput: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
     onDeviceChanged: vi.fn(() => () => {}),
   };
   window.conductor = conductor as unknown as ConductorApi;
@@ -464,6 +468,7 @@ describe('the mirror selectors', () => {
     expect(selectMirrorWidth(state)).toBe(state.mirrorWidth);
     expect(selectMirrorHeight(state)).toBe(state.mirrorHeight);
     expect(selectMirrorError(state)).toBe(state.mirrorError);
+    expect(selectMirrorControl(state)).toBe(state.mirrorControl);
   });
 
   it('are stable across calls while the stream is unchanged', async () => {
@@ -472,5 +477,242 @@ describe('the mirror selectors', () => {
     expect(selectMirrorStatus(store())).toBe(selectMirrorStatus(store()));
     expect(selectMirrorWidth(store())).toBe(selectMirrorWidth(store()));
     expect(selectMirrorError(store())).toBe(selectMirrorError(store()));
+  });
+});
+
+/**
+ * Criteria 4–6 and 11–16, from the store's side. The batching is the delicate
+ * part: characters may be coalesced, but nothing may ever be *reordered*, and a
+ * run of text held for a few milliseconds must go out in front of whatever
+ * interrupts it.
+ */
+describe('driving the device', () => {
+  const TAP = { type: 'tap', x: 232, y: 534, screenWidth: 464, screenHeight: 1024 } as const;
+
+  /** Flushes the batch window and lets the send chain settle. */
+  const drain = async (): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(TEXT_BATCH_MS);
+    await vi.advanceTimersByTimeAsync(0);
+  };
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('reads whether the session it started can be driven', async () => {
+    await store().startMirror(PHONE.id);
+
+    expect(store().mirrorControl).toBe(true);
+  });
+
+  /** Criterion 4 — a picture with no control is a session, and the panel needs
+   * to know before it offers a tap target. */
+  it('records a session that arrived without control', async () => {
+    conductor.mirrorStart.mockResolvedValueOnce({
+      ok: true,
+      data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024, control: false },
+    });
+
+    await store().startMirror(PHONE.id);
+
+    expect(store().mirrorControl).toBe(false);
+    expect(store().mirrorStatus).toBe('streaming');
+  });
+
+  it('sends a tap at the session that is open', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput(TAP);
+    await drain();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', TAP);
+  });
+
+  /** Criterion 15 — there is nothing to reach when nothing is streaming. */
+  it('sends nothing when no session is open', async () => {
+    store().sendInput(TAP);
+    await drain();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('sends nothing at a session that arrived without control', async () => {
+    conductor.mirrorStart.mockResolvedValueOnce({
+      ok: true,
+      data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024, control: false },
+    });
+    await store().startMirror(PHONE.id);
+
+    store().sendInput(TAP);
+    await drain();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 11 — the protocol carries a whole string, so a run of typing is
+   * one message rather than one per keystroke. */
+  it('batches a contiguous run of characters into one message', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'h' });
+    store().sendInput({ type: 'text', text: 'i' });
+    store().sendInput({ type: 'text', text: '!' });
+    await drain();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledTimes(1);
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', { type: 'text', text: 'hi!' });
+  });
+
+  it('starts a new run once the last one has gone out', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'a' });
+    await drain();
+    store().sendInput({ type: 'text', text: 'b' });
+    await drain();
+
+    expect(conductor.mirrorInput.mock.calls.map((call) => call[1])).toEqual([
+      { type: 'text', text: 'a' },
+      { type: 'text', text: 'b' },
+    ]);
+  });
+
+  /**
+   * ⚠️ The trap batching creates. Holding 'abc' for a few milliseconds while
+   * Enter goes out immediately would submit an empty field and then type into
+   * whatever came next.
+   */
+  it('flushes held text in front of anything that interrupts it', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'a' });
+    store().sendInput({ type: 'text', text: 'b' });
+    store().sendInput({ type: 'key', key: 'enter' });
+    await drain();
+
+    expect(conductor.mirrorInput.mock.calls.map((call) => call[1])).toEqual([
+      { type: 'text', text: 'ab' },
+      { type: 'key', key: 'enter' },
+    ]);
+  });
+
+  it('flushes held text in front of a tap', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'x' });
+    store().sendInput(TAP);
+    await drain();
+
+    expect(conductor.mirrorInput.mock.calls.map((call) => call[1])).toEqual([
+      { type: 'text', text: 'x' },
+      TAP,
+    ]);
+  });
+
+  it('flushes held text in front of the back action', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'q' });
+    store().sendInput({ type: 'back' });
+    await drain();
+
+    expect(conductor.mirrorInput.mock.calls.map((call) => call[1])).toEqual([
+      { type: 'text', text: 'q' },
+      { type: 'back' },
+    ]);
+  });
+
+  /** The server reads a bounded buffer; a run longer than that goes out in
+   * pieces rather than being refused. */
+  it('breaks a run longer than the server will read', async () => {
+    await store().startMirror(PHONE.id);
+
+    for (let index = 0; index < 320; index += 1) {
+      store().sendInput({ type: 'text', text: 'a' });
+    }
+    await drain();
+
+    const texts = conductor.mirrorInput.mock.calls.map((call) => call[1].text);
+    expect(texts.length).toBeGreaterThan(1);
+    expect(texts.join('')).toBe('a'.repeat(320));
+    for (const text of texts) {
+      expect(text.length).toBeLessThanOrEqual(300);
+    }
+  });
+
+  /** Criterion 16 — control failing puts the tap target away, and says why. */
+  it('reports control as gone when a send comes back refused', async () => {
+    await store().startMirror(PHONE.id);
+    conductor.mirrorInput.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'mirror/control-failed', message: 'the control socket is gone' },
+    });
+
+    store().sendInput({ type: 'back' });
+    await drain();
+
+    expect(store().mirrorControl).toBe(false);
+    expect(store().mirrorControlError).toEqual({
+      code: 'mirror/control-failed',
+      message: 'the control socket is gone',
+    });
+  });
+
+  /** Criterion 4 — and the picture is untouched by any of it. */
+  it('leaves the stream alone when control fails', async () => {
+    await store().startMirror(PHONE.id);
+    conductor.mirrorInput.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'mirror/control-failed', message: 'gone' },
+    });
+
+    store().sendInput({ type: 'back' });
+    await drain();
+
+    expect(store().mirrorStatus).toBe('streaming');
+    expect(store().mirrorSessionId).toBe('mirror-1');
+    expect(store().mirrorError).toBeNull();
+  });
+
+  it('drops text held for a session that has been stopped', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'held' });
+    await store().stopMirror();
+    await drain();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('drops text held for a session that ended under it', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput({ type: 'text', text: 'held' });
+    store().mirrorEnded('mirror-1', { code: 'mirror/device-lost', message: 'gone' });
+    await drain();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** A new session starts clean: control is whatever *this* one reported, and
+   * the last one's failure is not this one's. */
+  it('forgets the last session’s control failure when a new one starts', async () => {
+    await store().startMirror(PHONE.id);
+    conductor.mirrorInput.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'mirror/control-failed', message: 'gone' },
+    });
+    store().sendInput({ type: 'back' });
+    await drain();
+
+    await store().stopMirror();
+    await store().startMirror(PHONE.id);
+
+    expect(store().mirrorControl).toBe(true);
+    expect(store().mirrorControlError).toBeNull();
   });
 });

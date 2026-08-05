@@ -19,6 +19,8 @@ const SESSION: MirrorSession = {
   codec: 'h264',
   width: 464,
   height: 1024,
+  control: true,
+  send: () => Promise.resolve(),
   stop: () => Promise.resolve(),
 };
 
