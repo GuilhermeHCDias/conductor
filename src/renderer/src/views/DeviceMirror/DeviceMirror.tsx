@@ -1,4 +1,4 @@
-import { type JSX, useRef } from 'react';
+import { type JSX, type KeyboardEvent, type PointerEvent, useRef } from 'react';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { StatusDot } from '../../components/StatusDot/StatusDot';
 import { useDeviceStream } from '../../hooks/useDeviceStream';
@@ -14,7 +14,11 @@ import {
   inspectorState,
 } from '../../lib/device-state';
 import { fitMirror } from '../../lib/mirror-fit';
+import { mirrorKeyInput } from '../../lib/mirror-keys';
+import { mirrorPoint } from '../../lib/mirror-point';
 import {
+  selectMirrorControl,
+  selectMirrorControlError,
   selectMirrorError,
   selectMirrorHeight,
   selectMirrorStatus,
@@ -59,11 +63,14 @@ export function DeviceMirror(): JSX.Element {
   const mirrorWidth = useDeviceStore(selectMirrorWidth);
   const mirrorHeight = useDeviceStore(selectMirrorHeight);
   const mirrorError = useDeviceStore(selectMirrorError);
+  const mirrorControl = useDeviceStore(selectMirrorControl);
+  const mirrorControlError = useDeviceStore(selectMirrorControlError);
   const viewerOpening = useDeviceStore((state) => state.viewerOpening);
   const viewerError = useDeviceStore((state) => state.viewerError);
   const openViewer = useDeviceStore((state) => state.openViewer);
   const refresh = useDeviceStore((state) => state.refresh);
   const pick = useDeviceStore((state) => state.pick);
+  const sendInput = useDeviceStore((state) => state.sendInput);
 
   const [headerRef, headerWidth] = useElementWidth(bayWidth);
   const [bayRef, bay] = useElementSize({ width: 0, height: 0 });
@@ -82,6 +89,73 @@ export function DeviceMirror(): JSX.Element {
 
   const device = headerDevice(devices, selectedId);
   const state = inspectorState({ devices, selectedId, deviceError, appIdentity, mirrorStatus });
+
+  /**
+   * Criterion 15. Control has no target unless a stream is actually up *and* the
+   * session came with a channel to reach it on — a mirror that is starting, has
+   * failed, or arrived without control is a picture and nothing more.
+   */
+  const drivable =
+    mirrorStatus === 'streaming' && mirrorControl && mirrorWidth !== null && mirrorHeight !== null;
+
+  /**
+   * Criteria 6–9. A click becomes a device pixel, or nothing at all.
+   *
+   * `getBoundingClientRect` is read here rather than in `lib/`: it is the one
+   * fact only the DOM has, and reading it at the moment of the click is what
+   * makes the answer right during a rotation — the box follows the fit, and the
+   * fit follows the stream.
+   */
+  const handlePointerDown = (event: PointerEvent<HTMLCanvasElement>): void => {
+    // Criterion 10: the click is what gives the mirror the keyboard, and that
+    // happens whether or not the click itself lands on the picture.
+    event.currentTarget.focus();
+    if (!drivable) {
+      return;
+    }
+
+    const box = event.currentTarget.getBoundingClientRect();
+    const point = mirrorPoint({
+      offsetX: event.clientX - box.left,
+      offsetY: event.clientY - box.top,
+      scale: fit.scale,
+      streamWidth: mirrorWidth,
+      streamHeight: mirrorHeight,
+    });
+    // Criterion 8 — outside the drawn picture is the app, not the phone.
+    if (point === null) {
+      return;
+    }
+
+    sendInput({
+      type: 'tap',
+      x: point.x,
+      y: point.y,
+      // The size travels with the tap: scrcpy drops a touch that names any size
+      // but the video's current one, and after a rotation this is the only side
+      // that knows it.
+      screenWidth: mirrorWidth,
+      screenHeight: mirrorHeight,
+    });
+  };
+
+  /**
+   * Criteria 11–13. `mirrorKeyInput` decides whose key it is; `null` means it is
+   * not the device's, and the event is left entirely alone — preventing the
+   * default on a shortcut is how a focused mirror would stop the person quitting
+   * the app.
+   */
+  const handleKeyDown = (event: KeyboardEvent<HTMLCanvasElement>): void => {
+    if (!drivable) {
+      return;
+    }
+    const input = mirrorKeyInput(event);
+    if (input === null) {
+      return;
+    }
+    event.preventDefault();
+    sendInput(input);
+  };
   const identity = appIdentityLine(appIdentity);
   const copy = stateCopy(state, {
     deviceMessage: deviceError?.message ?? '',
@@ -104,6 +178,19 @@ export function DeviceMirror(): JSX.Element {
           <span className={styles.identity}>{identity}</span>
         ) : null}
         <span className={styles.spacer} />
+        {/* Criteria 14–15. The device's own back action, in the same chrome as
+            the tools beside it — and gone when there is no session to send it
+            to, the way `Refresh` is gone when there is no room for it. */}
+        {drivable ? (
+          <IconButton
+            icon="chevron-left"
+            label="Back"
+            onClick={() => {
+              sendInput({ type: 'back' });
+            }}
+            size="sm"
+          />
+        ) : null}
         {header.tools ? (
           <IconButton icon="refresh-cw" label="Refresh" onClick={() => void refresh()} size="sm" />
         ) : null}
@@ -135,12 +222,22 @@ export function DeviceMirror(): JSX.Element {
                 {state === 'ready' ? (
                   /* Criterion 33 — the canvas carries the framebuffer's own
                      dimensions. Nothing rewrites them; the parent's transform is
-                     the whole of the fitting. */
+                     the whole of the fitting.
+
+                     Criterion 10 — and it is focusable now, because it is a
+                     surface rather than a picture. Named, because a tab stop
+                     that announces nothing is a trap: `aria-label` is what makes
+                     it findable, and the tab order is what makes the keyboard
+                     reach it at all. */
                   <canvas
+                    aria-label="Device screen"
                     className={styles.screen}
                     data-testid="mirror-canvas"
                     height={fit.height}
+                    onKeyDown={handleKeyDown}
+                    onPointerDown={handlePointerDown}
                     ref={canvas}
+                    tabIndex={0}
                     width={fit.width}
                   />
                 ) : (
@@ -175,10 +272,11 @@ export function DeviceMirror(): JSX.Element {
         </div>
       </div>
 
-      {/* Criterion 38 demotes the Viewer. The picture is here now; what the
-          Viewer still has that this does not is *interaction*, because this spec
-          ships `control=false`. So it survives as a footer, and its failures are
-          reported beside it rather than over the phone. */}
+      {/* Criterion 38 demoted the Viewer when the picture landed here. Tapping
+          and typing have now followed it, so the only line left to say about the
+          Viewer is that it is still there — the removal of this footer belongs
+          to `device-hierarchy-capture`, which owns what happens to the `maestro
+          mcp` session behind it. */}
       <footer className={styles.footer}>
         <button
           className={styles.viewer}
@@ -188,10 +286,15 @@ export function DeviceMirror(): JSX.Element {
         >
           {viewerOpening ? 'Starting Maestro…' : 'Open in Maestro Viewer'}
         </button>
+        {/* Criterion 16. A control failure is reported here rather than over the
+            phone: the picture is still arriving, and covering it would say the
+            mirror had stopped when only the tap had. */}
         {viewerError !== null ? (
           <p className={styles.footerNote}>{viewerError.message}</p>
+        ) : mirrorControlError !== null ? (
+          <p className={styles.footerNote}>{mirrorControlError.message}</p>
         ) : (
-          <p className={styles.footerNote}>Tapping and typing still happen there.</p>
+          <p className={styles.footerNote}>The full view hierarchy still lives there.</p>
         )}
       </footer>
     </section>

@@ -16,6 +16,7 @@ export const CHANNELS = {
   viewerOpen: 'viewer:open',
   mirrorStart: 'mirror:start',
   mirrorStop: 'mirror:stop',
+  mirrorInput: 'mirror:input',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -109,9 +110,84 @@ const mirrorStream = z.object({
   codec: z.string(),
   width: z.number().int(),
   height: z.number().int(),
+  /**
+   * Criterion 4. Whether this session can be driven as well as watched. A
+   * picture without control is a real state rather than a failure — the panel
+   * shows the phone and offers no tap target, instead of ending the session over
+   * a capability the person may not need every time.
+   */
+  control: z.boolean(),
 });
 
-const mirrorStopped = z.object({ sessionId: z.string() });
+/** Names the session an answer is about, and nothing else. Shared by every
+ * channel whose reply is just "that one" — `mirror:stop` and `mirror:input`. */
+const mirrorSessionRef = z.object({ sessionId: z.string() });
+
+/** The named keys criterion 12 routes as keycodes rather than as text. Android's
+ * own numbers stay in main: the renderer names the key, `SCRCPY_KEYCODES` maps
+ * it, and nothing above the Gateway learns what 67 means. */
+const mirrorKey = z.enum([
+  'backspace',
+  'enter',
+  'tab',
+  'escape',
+  'delete',
+  'arrow-up',
+  'arrow-down',
+  'arrow-left',
+  'arrow-right',
+]);
+
+/** `INJECT_TEXT_MAX_LENGTH` in scrcpy-server 3.3.4, read out of the pinned jar.
+ * Counted in **UTF-8 bytes** — it is the buffer the server allocates, not a
+ * character budget, so every layer that enforces it measures encoded length. */
+export const MAX_INPUT_TEXT_LENGTH = 300;
+
+/** What the wire counts. `String.length` counts UTF-16 code units, which is a
+ * different number for anything outside ASCII. */
+function textByteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
+
+/** A u16 on the wire, and a stream is never zero-sized. */
+const streamAxis = z.number().int().positive().max(65_535);
+
+/**
+ * Criterion 6. One tap is a touch-down and a touch-up at one point, so the
+ * renderer asks for the gesture and main expands it into the pair — a round trip
+ * per half would let the two straddle a session change.
+ *
+ * ⚠️ It carries the stream size it was aimed at because scrcpy's `PositionMapper`
+ * silently drops a touch whose declared size is not the video's current one, and
+ * after a rotation the renderer holds the only fresh size (main's is the codec
+ * header's, and that never changes again).
+ */
+const mirrorTap = z
+  .object({
+    type: z.literal('tap'),
+    x: z.number().int().nonnegative(),
+    y: z.number().int().nonnegative(),
+    screenWidth: streamAxis,
+    screenHeight: streamAxis,
+  })
+  .refine((tap) => tap.x < tap.screenWidth && tap.y < tap.screenHeight, {
+    message: 'The tap is outside the stream it names.',
+  });
+
+const mirrorInput = z.union([
+  mirrorTap,
+  z.object({
+    type: z.literal('text'),
+    text: z
+      .string()
+      .min(1)
+      .refine((text) => textByteLength(text) <= MAX_INPUT_TEXT_LENGTH, {
+        message: `Text is past the ${MAX_INPUT_TEXT_LENGTH} bytes the server will read.`,
+      }),
+  }),
+  z.object({ type: z.literal('key'), key: mirrorKey }),
+  z.object({ type: z.literal('back') }),
+]);
 
 /**
  * Criterion 29. The payload crosses as bytes, never as a path: the device may
@@ -153,7 +229,11 @@ export const IPC = {
   [CHANNELS.deviceAppInfo]: { request: z.tuple([z.string()]), response: appIdentity },
   [CHANNELS.viewerOpen]: { request: noArguments, response: viewerOpened },
   [CHANNELS.mirrorStart]: { request: z.tuple([z.string()]), response: mirrorStream },
-  [CHANNELS.mirrorStop]: { request: z.tuple([z.string()]), response: mirrorStopped },
+  [CHANNELS.mirrorStop]: { request: z.tuple([z.string()]), response: mirrorSessionRef },
+  [CHANNELS.mirrorInput]: {
+    request: z.tuple([z.string(), mirrorInput]),
+    response: mirrorSessionRef,
+  },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
@@ -177,6 +257,9 @@ export type AppIdentity = z.infer<typeof appIdentity>;
 export type MirrorStream = z.infer<typeof mirrorStream>;
 export type MirrorFrame = z.infer<typeof mirrorFrame>;
 export type MirrorEvent = z.infer<typeof mirrorEvent>;
+export type MirrorKey = z.infer<typeof mirrorKey>;
+export type MirrorTap = z.infer<typeof mirrorTap>;
+export type MirrorInput = z.infer<typeof mirrorInput>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -212,6 +295,13 @@ export const ERROR_CODES = {
   mirrorDeviceLost: 'mirror/device-lost',
   /** A stop naming a session that is already gone. */
   mirrorSessionNotFound: 'mirror/session-not-found',
+  /**
+   * Criterion 16. The control socket refused, died, or would not take a message.
+   * Its own code because the picture is untouched: the panel puts the tap target
+   * away and keeps showing the phone, rather than reading this as the stream
+   * ending the way `mirror/device-lost` means it.
+   */
+  mirrorControlFailed: 'mirror/control-failed',
   /** WebCodecs refused the stream. The renderer's only failure of the set — the
    * bytes arrived, and this Chromium would not decode them. */
   mirrorDecodeFailed: 'mirror/decode-failed',
@@ -230,6 +320,9 @@ export interface ConductorApi {
   viewerOpen: (...args: Request<'viewer:open'>) => Promise<Result<Response<'viewer:open'>>>;
   mirrorStart: (...args: Request<'mirror:start'>) => Promise<Result<Response<'mirror:start'>>>;
   mirrorStop: (...args: Request<'mirror:stop'>) => Promise<Result<Response<'mirror:stop'>>>;
+  /** Criterion 5 and §9.3: input crosses as a named function with typed fields,
+   * never as raw `ipcRenderer` and never as a composed string. */
+  mirrorInput: (...args: Request<'mirror:input'>) => Promise<Result<Response<'mirror:input'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;

@@ -1,4 +1,4 @@
-import type { AppIdentity, ErrorCode, MirrorEvent, MirrorStream } from '@shared/ipc';
+import type { AppIdentity, ErrorCode, MirrorEvent, MirrorInput, MirrorStream } from '@shared/ipc';
 import { type Device, type DeviceSnapshot, ERROR_CODES, type Result } from '@shared/ipc';
 import type { MaestroGateway, MirrorPacket, MirrorSession } from '../maestro/MaestroGateway';
 
@@ -145,10 +145,47 @@ export class DeviceService {
       backlog.length = 0;
       return {
         ok: true,
-        data: { sessionId, codec: session.codec, width: session.width, height: session.height },
+        data: {
+          sessionId,
+          codec: session.codec,
+          width: session.width,
+          height: session.height,
+          // Criterion 4: a picture the person cannot drive is still a picture,
+          // so this travels as a fact about the session rather than as a failure.
+          control: session.control,
+        },
       };
     } catch (error) {
       return failure(error, ERROR_CODES.mirrorStartFailed);
+    }
+  }
+
+  /**
+   * Criterion 5. Forwarding, and nothing else: the encoding belongs to the
+   * protocol module and the socket to the session, so all this layer decides is
+   * *which* session an input is for.
+   *
+   * Naming it matters. A tap carries coordinates read off one particular
+   * picture, and on a device that has since rotated — or under a session that
+   * has since been replaced — those coordinates point somewhere else entirely.
+   */
+  async sendInput(sessionId: string, input: MirrorInput): Promise<Result<{ sessionId: string }>> {
+    const session = this.sessions.get(sessionId);
+    if (session === undefined) {
+      return mirrorFailure(
+        ERROR_CODES.mirrorSessionNotFound,
+        `There is no mirror session ${sessionId}.`,
+      );
+    }
+
+    try {
+      await session.send(input);
+      return { ok: true, data: { sessionId } };
+    } catch (error) {
+      // Criterion 4: the session stays in the map. Control failing says nothing
+      // about the picture, and putting the session away over it would take the
+      // phone off the screen for a tap that missed.
+      return failure(error, ERROR_CODES.mirrorControlFailed);
     }
   }
 
