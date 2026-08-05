@@ -1,4 +1,4 @@
-import type { AppIdentity, Device, DeviceProperties, ErrorCode } from '@shared/ipc';
+import type { AppIdentity, Device, DeviceProperties, ErrorCode, MirrorInput } from '@shared/ipc';
 import type { TreeNode } from '@shared/types';
 
 /**
@@ -27,14 +27,30 @@ export type MirrorHandlers = {
   readonly onEnded: (failure: MirrorFailure) => void;
 };
 
-/** What a started mirror is, from above the Gateway: a size, a codec, and a way
- * to stop. Nothing here says the device is local. */
+/** What a started mirror is, from above the Gateway: a size, a codec, a way to
+ * drive it and a way to stop. Nothing here says the device is local. */
 export type MirrorSession = {
   readonly deviceName: string;
   /** As the stream declared it — `h264`. */
   readonly codec: string;
   readonly width: number;
   readonly height: number;
+  /**
+   * Criterion 4. Whether this session can be driven as well as watched. False
+   * means the picture is real and `send` will refuse — the mirror is not ended
+   * over a capability the person may not need every time.
+   */
+  readonly control: boolean;
+  /**
+   * Criterion 5. Sends one input at the device. It takes the typed input rather
+   * than bytes so the wire stays the Gateway's secret: a remote runner will
+   * encode on the far side, and nothing above here should have to change.
+   *
+   * Rejects with `mirror/control-failed` when there is no control channel, when
+   * the session is over, or when the input cannot be carried — never with a code
+   * that would read as the picture dying.
+   */
+  send: (input: MirrorInput) => Promise<void>;
   /** Idempotent, and leaves nothing behind on either side. */
   stop: () => Promise<void>;
 };

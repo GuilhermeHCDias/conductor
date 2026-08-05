@@ -1,9 +1,10 @@
 import { randomInt } from 'node:crypto';
 import { connect as connectTcp } from 'node:net';
 import { join } from 'node:path';
-import { ERROR_CODES, type ErrorCode } from '@shared/ipc';
+import { ERROR_CODES, type ErrorCode, type MirrorInput } from '@shared/ipc';
 import type { SpawnOptions, StreamingProcess } from '../process/run';
 import type { MirrorHandlers, MirrorSession } from './MaestroGateway';
+import { controlMessages, ScrcpyControlError } from './scrcpy-control-protocol';
 import { ScrcpyParser, ScrcpyProtocolError } from './scrcpy-protocol';
 
 /**
@@ -81,16 +82,23 @@ export const MAX_COMMAND_LENGTH = 255;
  * window without streaming a framebuffer nobody sees. */
 export const MIRROR_MAX_SIZE = 1024;
 
-/** Halves the encode and decode cost against 60, with no perceptible loss for
- * watching an app respond. */
-export const MIRROR_MAX_FPS = 30;
+/** 30 was tried first and read as stutter beside scrcpy's own uncapped
+ * default. 60 matches the refresh rate most phones drive; keeping a cap at all
+ * is what stops a 120 Hz panel from doubling the encode, IPC and decode bill
+ * for motion nobody can see at this size. */
+export const MIRROR_MAX_FPS = 60;
 
 /**
  * Criterion 17. **Only** the options that differ from the server's own defaults.
- * `video`, `video_codec`, `send_dummy_byte`, `send_device_meta`,
+ * `video`, `video_codec`, `control`, `send_dummy_byte`, `send_device_meta`,
  * `send_codec_meta`, `send_frame_meta`, `cleanup` and `log_level` already hold
  * the value this spec wants — spelling them out buys nothing and costs the
  * headroom that keeps the command line under criterion 17a's budget.
+ *
+ * Criterion 1: `control` joined that list rather than flipping to `true`.
+ * Control is the server's own default, so turning it on means dropping
+ * `control=false` — which takes the line from 165 characters to 151 and buys
+ * budget back instead of spending it.
  *
  * Returns an argument array, never a composed string: it travels to `execFile`
  * split, so nothing in it can become shell syntax (.context.md §12.19).
@@ -106,7 +114,6 @@ export function serverCommand(scid: string): readonly string[] {
     SCRCPY_VERSION,
     `scid=${scid}`,
     'audio=false',
-    'control=false',
     'tunnel_forward=true',
     `max_size=${MIRROR_MAX_SIZE}`,
     `max_fps=${MIRROR_MAX_FPS}`,
@@ -130,11 +137,17 @@ export type ScrcpyAdb = {
   shell: (deviceId: string, args: readonly string[], options?: SpawnOptions) => StreamingProcess;
 };
 
-/** The video socket, narrowed to what a session does with it. */
+/**
+ * One socket of a session, narrowed to what a session does with it. Both of them
+ * are this shape: the video socket only ever reads, and the control socket only
+ * ever writes, but they come from the same connector and there is no second
+ * thing for a second type to say.
+ */
 export type ScrcpySocket = {
   onData: (listener: (chunk: Uint8Array) => void) => void;
   /** Fires once, on a clean end or an error. */
   onEnd: (listener: (error: Error | null) => void) => void;
+  write: (chunk: Uint8Array) => void;
   destroy: () => void;
 };
 
@@ -209,6 +222,13 @@ class Session {
   private readonly parser = new ScrcpyParser();
   private child: StreamingProcess | null = null;
   private socket: ScrcpySocket | null = null;
+  /** The second socket, for everything going the other way. Null until the
+   * video socket has proven itself, and again the moment control is lost. */
+  private control: ScrcpySocket | null = null;
+  /** Opened at most once. The video socket can be retried a dozen times past
+   * the forward-tunnel race; the control socket is asked for exactly when the
+   * first of those turns out to be real. */
+  private controlRequested = false;
   private timer: ReturnType<typeof setTimeout> | null = null;
   /** Set the moment anything terminal happens, so a socket close racing a child
    * exit is one report, not two. */
@@ -299,6 +319,11 @@ class Session {
         this.socket = socket;
         socket.onData((chunk) => {
           this.bytesSeen += chunk.length;
+          // ⚠️ Criterion 2. The first byte — `send_dummy_byte` — is the only
+          // proof this socket is the server's and not one adb accepted against
+          // a socket nobody had bound yet. Only now can a second connection be
+          // opened without risking being handed over as the *video* one.
+          this.openControl();
           this.receive(chunk);
         });
         socket.onEnd((error) => {
@@ -335,6 +360,85 @@ class Session {
       this.openSocket();
     }, CONNECT_RETRY_MS);
     this.retry.unref?.();
+  }
+
+  /**
+   * ⚠️ Criterion 2, and the shape of this whole spec.
+   *
+   * `DesktopConnection.open()` accepts video, then audio, then control, and only
+   * *then* calls `sendDeviceMeta`. So with control enabled the device name and
+   * the codec header do not arrive until this connection lands: waiting for the
+   * handshake before opening control would deadlock on the very byte the connect
+   * is what unblocks. Measured on a Galaxy A07 on 2026-08-04 — the video socket
+   * sat at exactly one byte for 700 ms, then completed within 900 ms of this.
+   *
+   * One attempt, deliberately. By the time we are here the server has already
+   * bound and accepted, and is sitting inside `accept()` for this socket, so
+   * there is no race left to retry past — and a control connect that fails is a
+   * session whose picture was never going to arrive either, which the start
+   * deadline already reports.
+   */
+  private openControl(): void {
+    if (this.controlRequested || this.over) {
+      return;
+    }
+    this.controlRequested = true;
+
+    this.deps
+      .connect(this.port)
+      .then((socket) => {
+        if (this.over) {
+          socket.destroy();
+          return;
+        }
+        this.control = socket;
+        // Nothing is expected back — we send no clipboard message and create no
+        // UHID device. But `clipboard_autosync` is on by default, so the device
+        // pushes its clipboard when it changes, and a socket nobody reads from
+        // is a buffer that only grows. Read and drop.
+        socket.onData(() => {});
+        socket.onEnd(() => {
+          // Criterion 4: control is gone, the picture is not. Nothing here ends
+          // the session or reports a failure — the next `send` says so instead,
+          // to whoever actually tries to use it.
+          this.control = null;
+        });
+      })
+      .catch(() => {
+        // Same story: no control channel, and the video path is untouched.
+        this.control = null;
+      });
+  }
+
+  /**
+   * Criteria 5 and 16. Encodes with the pure protocol module and writes the
+   * result; every refusal carries the control code, because none of them mean
+   * the picture stopped.
+   */
+  private send(input: MirrorInput): Promise<void> {
+    const socket = this.control;
+    if (this.over || socket === null) {
+      return Promise.reject(
+        new ScrcpyControlError(
+          this.over
+            ? 'The mirror session is over, so there is nothing to send input at.'
+            : 'This mirror session has no control channel.',
+        ),
+      );
+    }
+
+    try {
+      for (const message of controlMessages(input)) {
+        socket.write(message);
+      }
+    } catch (error) {
+      return Promise.reject(
+        error instanceof ScrcpyControlError
+          ? error
+          : new ScrcpyControlError(`The device would not take the input. ${messageOf(error)}`),
+      );
+    }
+    return Promise.resolve();
   }
 
   private receive(chunk: Uint8Array): void {
@@ -376,6 +480,12 @@ class Session {
       codec: meta.codec,
       width: meta.width,
       height: meta.height,
+      // Criterion 4. True in practice for every session that gets this far —
+      // the server would not have sent this header with the control accept
+      // still pending — but read rather than assumed, so a Gateway that ever
+      // works differently reports itself honestly.
+      control: this.control !== null,
+      send: (input) => this.send(input),
       stop: () => this.stop(),
     });
   }
@@ -472,6 +582,10 @@ class Session {
     this.child = null;
     this.socket?.destroy();
     this.socket = null;
+    // Criterion 3 — one session, one lifecycle. A control socket that outlived
+    // its video would be a live channel into a device nothing is watching.
+    this.control?.destroy();
+    this.control = null;
     try {
       await this.deps.adb.removeForward(this.deviceId, this.port);
     } catch {
@@ -548,6 +662,13 @@ export function connectLoopback(port: number): Promise<ScrcpySocket> {
           socket.on('close', () => {
             once(null);
           });
+        },
+        write: (chunk) => {
+          // Backpressure is ignored on purpose: a control message is at most 32
+          // bytes and a person cannot type fast enough to fill a socket buffer.
+          // A write that genuinely fails arrives as an `error` event, which is
+          // already the session's signal that control is gone.
+          socket.write(chunk);
         },
         destroy: () => {
           socket.destroy();

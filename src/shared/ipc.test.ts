@@ -27,6 +27,7 @@ describe('the channels', () => {
       'device:app-info',
       'mirror:start',
       'mirror:stop',
+      'mirror:input',
     ]);
   });
 
@@ -80,6 +81,7 @@ describe('mirror:start', () => {
       codec: 'h264',
       width: 464,
       height: 1024,
+      control: true,
     });
 
     expect(parsed.success).toBe(true);
@@ -88,12 +90,128 @@ describe('mirror:start', () => {
   it('refuses a stream with no size', () => {
     expect(schema.response.safeParse({ sessionId: 'mirror-1', codec: 'h264' }).success).toBe(false);
   });
+
+  /** Criterion 4. A picture with no control is a real state, not a failure: the
+   * panel has to know which one it got before it offers a tap target. */
+  it('says whether the session can be driven as well as watched', () => {
+    const parsed = schema.response.safeParse({
+      sessionId: 'mirror-1',
+      codec: 'h264',
+      width: 464,
+      height: 1024,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
 });
 
 describe('mirror:stop', () => {
   it('takes the session id, not the device id', () => {
     expect(IPC[CHANNELS.mirrorStop].request.safeParse(['mirror-1']).success).toBe(true);
     expect(IPC[CHANNELS.mirrorStop].request.safeParse([]).success).toBe(false);
+  });
+});
+
+/**
+ * The outbound half. It names the session rather than the device: control
+ * belongs to the stream that is open, and a tap aimed at a session that has
+ * already been replaced must not reach the device under the new one.
+ */
+describe('mirror:input', () => {
+  const schema = IPC[CHANNELS.mirrorInput];
+  const tap = {
+    type: 'tap',
+    x: 232,
+    y: 534,
+    screenWidth: 464,
+    screenHeight: 1024,
+  };
+
+  it('takes the session id and one input', () => {
+    expect(schema.request.safeParse(['mirror-1', tap]).success).toBe(true);
+    expect(schema.request.safeParse([tap]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1']).success).toBe(false);
+  });
+
+  /**
+   * ⚠️ The screen size travels with the tap because `PositionMapper` drops any
+   * touch whose declared size is not the video's current one — and after a
+   * rotation the renderer is the only side that knows the new size.
+   */
+  it('carries the stream size the tap was aimed at', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, screenWidth: undefined }]).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a tap outside the stream it names', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, x: -1 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { ...tap, x: 464 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { ...tap, y: 1024 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { ...tap, x: 463, y: 1023 }]).success).toBe(true);
+  });
+
+  it('refuses a screen size the wire cannot carry as a u16', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, screenWidth: 70_000 }]).success).toBe(
+      false,
+    );
+    expect(schema.request.safeParse(['mirror-1', { ...tap, screenWidth: 0 }]).success).toBe(false);
+  });
+
+  it('carries typed text', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'text', text: 'hello' }]).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['mirror-1', { type: 'text', text: '' }]).success).toBe(false);
+  });
+
+  /** `INJECT_TEXT_MAX_LENGTH` in the pinned server. */
+  it('refuses more text than the server will read', () => {
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'a'.repeat(300) }]).success,
+    ).toBe(true);
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'a'.repeat(301) }]).success,
+    ).toBe(false);
+  });
+
+  /** The server's cap is on the bytes it allocates, so the boundary has to
+   * count what the encoder counts. Measuring characters here would pass a
+   * payload the encoder then refuses — the same limit, disagreeing with
+   * itself across two layers. */
+  it('measures the cap in bytes, the way the encoder does', () => {
+    // 200 characters, 400 UTF-8 bytes: under any character count, over the cap.
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'é'.repeat(200) }]).success,
+    ).toBe(false);
+    // 150 characters, 300 bytes: exactly the cap, and still allowed.
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'é'.repeat(150) }]).success,
+    ).toBe(true);
+  });
+
+  /** Criterion 12. The renderer names a key; Android's numbers stay in main. */
+  it('names a key rather than an Android keycode', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 'backspace' }]).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 67 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 'meta' }]).success).toBe(
+      false,
+    );
+  });
+
+  it('carries the back action with nothing else', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'back' }]).success).toBe(true);
+  });
+
+  it('refuses an input that is none of those four', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'swipe' }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { type: 'clipboard' }]).success).toBe(false);
+  });
+
+  it('answers with the session it reached', () => {
+    expect(schema.response.safeParse({ sessionId: 'mirror-1' }).success).toBe(true);
   });
 });
 
@@ -176,6 +294,17 @@ describe('the failure codes', () => {
       'mirror/protocol-failed',
       'mirror/device-lost',
     ]);
+  });
+
+  /**
+   * Criterion 16 of the control-socket spec. Control failing is its own
+   * condition: the picture is still there, so the panel must not read it as the
+   * stream dying. It is the one mirror code that leaves the video path
+   * untouched.
+   */
+  it('gives a control failure a code of its own', () => {
+    expect(ERROR_CODES.mirrorControlFailed).toBe('mirror/control-failed');
+    expect(ERROR_CODES.mirrorControlFailed).not.toBe(ERROR_CODES.mirrorDeviceLost);
   });
 
   /**

@@ -264,7 +264,7 @@ describe('starting and stopping', () => {
     expect(conductor.mirrorStart).not.toHaveBeenCalled();
   });
 
-  /** Criterion 32 — a listener at 30 fps that outlives its view is a memory
+  /** Criterion 32 — a listener at 60 fps that outlives its view is a memory
    * leak with a framerate. */
   it('unsubscribes when the view goes away', async () => {
     const view = await mount();

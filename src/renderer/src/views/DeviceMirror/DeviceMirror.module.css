@@ -185,3 +185,15 @@
   box-shadow: var(--glow-accent);
   outline: none;
 }
+
+/* What is left of the Viewer footer's note after criterion 23 removed the
+   footer: a control failure is said beside the phone, never over it, because
+   the picture is still arriving (control-socket criterion 16). It carries its
+   own top rule since there is no longer a footer to draw one. */
+.controlNote {
+  border-top: 1px solid var(--a-hair);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  padding: var(--space-3) var(--space-4);
+  text-align: center;
+}

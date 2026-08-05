@@ -5,7 +5,6 @@ import type { MirrorFailure, MirrorPacket } from './MaestroGateway';
 import {
   DEVICE_JAR_PATH,
   MAX_COMMAND_LENGTH,
-  MIRROR_MAX_FPS,
   MIRROR_MAX_SIZE,
   SCRCPY_JAR,
   SCRCPY_VERSION,
@@ -90,10 +89,17 @@ describe('the app_process command line', () => {
     expect(line().length).toBeLessThan(MAX_COMMAND_LENGTH);
   });
 
-  /** The measured value, pinned. If an edit pushes this up, the number moves in
-   * the same commit and somebody has to look at how much headroom is left. */
-  it('is the 165 characters that streamed on hardware', () => {
-    expect(line()).toHaveLength(165);
+  /**
+   * The measured value, pinned. If an edit pushes this up, the number moves in
+   * the same commit and somebody has to look at how much headroom is left.
+   *
+   * Criterion 1: it went 165 → 151 when `control=false` left. That option was
+   * the one thing here that differed from scrcpy's own default, so enabling
+   * control *shortens* the line rather than spending the budget criterion 17a
+   * guards. Re-measured on hardware 2026-08-04 at 151.
+   */
+  it('is the 151 characters that streamed on hardware', () => {
+    expect(line()).toHaveLength(151);
   });
 
   it('leaves real headroom, not one character of it', () => {
@@ -117,15 +123,25 @@ describe('the app_process command line', () => {
     expect(line()).not.toContain(option);
   });
 
-  it('passes exactly the six options that differ from the defaults', () => {
+  it('passes exactly the five options that differ from the defaults', () => {
     expect(serverCommand(SCID).slice(5)).toEqual([
       `scid=${SCID}`,
       'audio=false',
-      'control=false',
       'tunnel_forward=true',
       `max_size=${MIRROR_MAX_SIZE}`,
-      `max_fps=${MIRROR_MAX_FPS}`,
+      // Pinned as a literal: 30 was tried and read as stutter beside scrcpy's
+      // uncapped default, so 60 is a product decision, not a tuning knob.
+      'max_fps=60',
     ]);
+  });
+
+  /**
+   * Criterion 1. Control is the server's own default, so the way to turn it on
+   * is to stop turning it off — and saying `control=true` would cost 12
+   * characters to express the value the server already holds.
+   */
+  it('says nothing at all about control, so the server enables it', () => {
+    expect(line()).not.toContain('control=');
   });
 
   /** The entry point, and the version argument that must match the jar exactly. */
@@ -181,6 +197,13 @@ function packetBytes(payload: Uint8Array, config = false, keyFrame = false): Uin
 
 class FakeSocket implements ScrcpySocket {
   destroyed = 0;
+  /** Everything the session wrote at this socket, in order. The video socket's
+   * stays empty for the whole session — the picture only ever comes back. */
+  readonly written: Uint8Array[] = [];
+  /** Chunks this socket has delivered. The harness reads it to tell which
+   * connect is the video one and which is the control one: control is only ever
+   * opened once the video socket has produced its dummy byte. */
+  dataSeen = 0;
   /** Resolves once the session has attached its listeners. The push, the
    * forward and the connect are all async, so a test that sent bytes after a
    * fixed number of microtasks would be counting ticks instead of waiting. */
@@ -189,7 +212,7 @@ class FakeSocket implements ScrcpySocket {
   private data: ((chunk: Uint8Array) => void) | null = null;
   private end: ((error: Error | null) => void) | null = null;
 
-  constructor() {
+  constructor(private readonly onWrite: () => void = () => {}) {
     this.wired = new Promise((resolve) => {
       this.markWired = resolve;
     });
@@ -202,11 +225,16 @@ class FakeSocket implements ScrcpySocket {
   onEnd(listener: (error: Error | null) => void): void {
     this.end = listener;
   }
+  write(chunk: Uint8Array): void {
+    this.written.push(chunk);
+    this.onWrite();
+  }
   destroy(): void {
     this.destroyed += 1;
   }
 
   send(chunk: Uint8Array): void {
+    this.dataSeen += 1;
     this.data?.(chunk);
   }
   close(error: Error | null = null): void {
@@ -245,6 +273,9 @@ class FakeChild implements StreamingProcess {
 type Harness = {
   readonly source: ScrcpySource;
   readonly socket: FakeSocket;
+  /** The second socket, for control. It is handed out only after the video one
+   * has delivered a byte, which is the order the server itself accepts in. */
+  readonly control: FakeSocket;
   readonly child: FakeChild;
   readonly pushed: Array<{ deviceId: string; local: string; remote: string }>;
   readonly forwards: string[];
@@ -266,6 +297,7 @@ function harness(
   } = {},
 ): Harness {
   const socket = new FakeSocket();
+  const control = new FakeSocket();
   const child = new FakeChild();
   const pushed: Harness['pushed'] = [];
   const forwards: string[] = [];
@@ -295,7 +327,9 @@ function harness(
 
   const source = new ScrcpySource({
     adb,
-    connect: options.connect ?? (() => Promise.resolve(socket)),
+    // The device's own order: every connect before the video socket has spoken
+    // is a video attempt, and the one after it is control.
+    connect: options.connect ?? (() => Promise.resolve(socket.dataSeen > 0 ? control : socket)),
     jarPath: '/app/resources/scrcpy/scrcpy-server-3.3.4.jar',
     // Fixed, so the socket name and the command line are the same every run.
     scid: () => 0x1a2b3c4d,
@@ -305,6 +339,7 @@ function harness(
   return {
     source,
     socket,
+    control,
     child,
     pushed,
     forwards,
@@ -320,7 +355,20 @@ function harness(
   };
 }
 
-/** Starts a session and lets the handshake land, the way a device would. */
+/**
+ * Starts a session and lets the handshake land, in the order a device actually
+ * produces it.
+ *
+ * ⚠️ That order is the whole trap of this spec. `DesktopConnection.open()`
+ * accepts video, then control, and only *then* calls `sendDeviceMeta` — so with
+ * control enabled the dummy byte arrives **alone** and the device name and codec
+ * header do not follow until the control socket has connected. Measured on a
+ * Galaxy A07 on 2026-08-04: the video socket sat at exactly 1 byte for 700 ms,
+ * and completed within 900 ms of the control connect.
+ *
+ * Sending all 77 bytes at once, the way this helper used to, would describe a
+ * wire that cannot exist and would hide the ordering entirely.
+ */
 async function streaming(options: Parameters<typeof harness>[0] = {}): Promise<
   Harness & {
     session: Awaited<ReturnType<ScrcpySource['start']>>;
@@ -329,7 +377,9 @@ async function streaming(options: Parameters<typeof harness>[0] = {}): Promise<
   const test = harness(options);
   const pending = test.start();
   await test.socket.wired;
-  test.socket.send(prefixBytes());
+  test.socket.send(prefixBytes().subarray(0, 1));
+  await test.control.wired;
+  test.socket.send(prefixBytes().subarray(1));
   return { ...test, session: await pending };
 }
 
@@ -397,22 +447,209 @@ describe('starting a session', () => {
     expect(resolved).toBe(false);
   });
 
-  it('connects to the port adb allocated', async () => {
+  /** Criterion 2 — one forward, and both sockets go down it. */
+  it('connects both sockets to the one port adb allocated', async () => {
     const ports: number[] = [];
-    const socket = new FakeSocket();
+    const { control, socket } = harness({ forwardPort: 41234 });
     const test = harness({
       forwardPort: 41234,
       connect: (port) => {
         ports.push(port);
-        return Promise.resolve(socket);
+        return Promise.resolve(socket.dataSeen > 0 ? control : socket);
       },
     });
     const pending = test.start();
     await socket.wired;
-    socket.send(prefixBytes());
+    socket.send(prefixBytes().subarray(0, 1));
+    await control.wired;
+    socket.send(prefixBytes().subarray(1));
     await pending;
 
-    expect(ports).toEqual([41234]);
+    expect(ports).toEqual([41234, 41234]);
+  });
+});
+
+/**
+ * Criteria 2–4. One `mirror:start` is still one scrcpy process and one forward —
+ * the control socket joins the same session and the same teardown.
+ */
+describe('the control socket', () => {
+  /**
+   * ⚠️ Criterion 2, and the reason nothing here waits for the handshake first.
+   * The server accepts video, then control, and does not send the device name
+   * until both are in. Waiting for the codec header before opening control would
+   * deadlock: the header is what the control connect unblocks.
+   */
+  it('opens once the video socket has produced its first byte', async () => {
+    const test = harness();
+    void test.start();
+    await test.socket.wired;
+
+    test.socket.send(prefixBytes().subarray(0, 1));
+    await test.control.wired;
+
+    expect(test.control.dataSeen).toBe(0);
+  });
+
+  /**
+   * ⚠️ The other half of the ordering. adb accepts a connection whether or not
+   * the server has bound its socket, then closes it — so during that race a
+   * second connection would be handed to the server as its *video* socket. The
+   * dummy byte is the only proof the video socket is real, which is why it, and
+   * not the connect, is what opens control.
+   */
+  it('is not opened while the video socket is still racing the forward tunnel', async () => {
+    vi.useFakeTimers();
+    const connects: number[] = [];
+    const socket = new FakeSocket();
+    const control = new FakeSocket();
+    const test = harness({
+      connect: (port) => {
+        connects.push(port);
+        return Promise.resolve(socket.dataSeen > 0 ? control : socket);
+      },
+    });
+    void test.start();
+    await socket.wired;
+
+    // adb accepted, the server had not bound yet, and it closed with nothing on
+    // it — three times over, the way the phone that was measured behaved.
+    for (let attempt = 0; attempt < 3; attempt += 1) {
+      socket.close(null);
+      await vi.advanceTimersByTimeAsync(100);
+    }
+
+    expect(connects.length).toBeGreaterThan(1);
+    expect(control.dataSeen).toBe(0);
+    // Every one of those was another try at the video socket, never a control
+    // socket opened against a server that is not listening.
+    expect(socket.destroyed).toBeGreaterThan(0);
+    expect(control.destroyed).toBe(0);
+  });
+
+  /** Criterion 3 — one session, one lifecycle. */
+  it('is torn down with the session when it is stopped', async () => {
+    const { session, control, socket } = await streaming();
+
+    await session.stop();
+
+    expect(control.destroyed).toBe(1);
+    expect(socket.destroyed).toBe(1);
+  });
+
+  it('is torn down when the device goes away mid-session', async () => {
+    const { control, ended, socket } = await streaming();
+
+    socket.close(null);
+
+    expect(control.destroyed).toBe(1);
+    expect(ended[0]?.code).toBe(ERROR_CODES.mirrorDeviceLost);
+  });
+
+  it('never outlives the video socket', async () => {
+    const test = await streaming();
+
+    test.child.exit({ code: 1, error: null });
+
+    expect(test.control.destroyed).toBe(1);
+    expect(test.socket.destroyed).toBe(1);
+  });
+
+  /**
+   * Criterion 4. The picture is the expensive thing to get and the thing the
+   * person came for; control is a capability on top of it. Confirmed against the
+   * server's own shape: because it blocks accepting control before sending the
+   * codec header, a session that streams at all is a session whose control
+   * socket connected — so this is about control dying *later*, which is the only
+   * way the two can come apart.
+   */
+  it('leaves the picture streaming when it dies mid-session', async () => {
+    const { control, session, packets, socket, ended } = await streaming();
+
+    control.close(new Error('broken pipe'));
+    socket.send(packetBytes(new Uint8Array([1, 2, 3]), false, true));
+
+    expect(ended).toEqual([]);
+    expect(packets).toHaveLength(1);
+    await session.stop();
+  });
+
+  it('reports control as unavailable once it has died', async () => {
+    const { control, session } = await streaming();
+
+    control.close(new Error('broken pipe'));
+
+    await expect(session.send({ type: 'back' })).rejects.toMatchObject({
+      code: ERROR_CODES.mirrorControlFailed,
+    });
+    await session.stop();
+  });
+
+  /** Criterion 4 again, from the other side: a session that could not open one
+   * says so, rather than pretending a tap will land. */
+  it('says whether the session it opened can be driven', async () => {
+    const { session } = await streaming();
+
+    expect(session.control).toBe(true);
+    await session.stop();
+  });
+});
+
+/** Criteria 5 and 6 — what actually goes down the socket. */
+describe('sending input at an open session', () => {
+  it('writes the encoded messages at the control socket', async () => {
+    const { session, control } = await streaming();
+
+    await session.send({ type: 'back' });
+
+    expect(control.written.map((message) => [...message])).toEqual([
+      [4, 0],
+      [4, 1],
+    ]);
+    await session.stop();
+  });
+
+  /** A tap is a pair, and both halves go out together — a round trip between
+   * them would let a session change land in the middle of a press. */
+  it('expands a tap into a touch-down and a touch-up', async () => {
+    const { session, control } = await streaming();
+
+    await session.send({ type: 'tap', x: 10, y: 20, screenWidth: 464, screenHeight: 1024 });
+
+    expect(control.written).toHaveLength(2);
+    expect(control.written[0]?.[1]).toBe(0);
+    expect(control.written[1]?.[1]).toBe(1);
+    await session.stop();
+  });
+
+  /** The video socket is read-only for the whole session; writing at it would
+   * put control messages into the encoder's own stream. */
+  it('never writes at the video socket', async () => {
+    const { session, socket } = await streaming();
+
+    await session.send({ type: 'text', text: 'hello' });
+
+    expect(socket.written).toEqual([]);
+    await session.stop();
+  });
+
+  it('refuses a message the wire cannot carry, without touching the socket', async () => {
+    const { session, control } = await streaming();
+
+    await expect(
+      session.send({ type: 'tap', x: 999, y: 0, screenWidth: 464, screenHeight: 1024 }),
+    ).rejects.toMatchObject({ code: ERROR_CODES.mirrorControlFailed });
+    expect(control.written).toEqual([]);
+    await session.stop();
+  });
+
+  it('refuses to send at a session that has been stopped', async () => {
+    const { session } = await streaming();
+    await session.stop();
+
+    await expect(session.send({ type: 'back' })).rejects.toMatchObject({
+      code: ERROR_CODES.mirrorControlFailed,
+    });
   });
 });
 
@@ -806,7 +1043,11 @@ describe('waiting for the server to bind', () => {
     sockets[0]?.close();
 
     await expect(pending).rejects.toMatchObject({ code: ERROR_CODES.mirrorHandshakeFailed });
-    expect(handed).toHaveLength(1);
+    // Two connects, and neither is a retry: the video socket was tried once,
+    // and the bytes it produced are what opened the control socket beside it
+    // (criterion 2). A third would mean the truncated prefix was retried.
+    expect(handed).toHaveLength(2);
+    expect(handed[0]).toBe(sockets[0]);
   });
 
   it('stops trying once the session has been stopped', async () => {
@@ -821,7 +1062,10 @@ describe('waiting for the server to bind', () => {
     await session.stop();
     await vi.advanceTimersByTimeAsync(1000);
 
-    expect(handed).toHaveLength(1);
+    // The video socket and the control socket beside it, and nothing after the
+    // stop: a retry that fired late would open a socket nobody owns, on a
+    // forward that has already been removed.
+    expect(handed).toHaveLength(2);
   });
 
   it('gives up at the deadline, saying how long it waited and how often it tried', async () => {

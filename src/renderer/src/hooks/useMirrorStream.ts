@@ -7,7 +7,7 @@ import { selectSelectedId, useDeviceStore } from '../stores/device.store';
  * The picture: `mirror:event` in, a decoded frame on the canvas out.
  *
  * Mounted by the `DeviceMirror` view rather than by `App.tsx` (criterion 41), so
- * the subscription and the session both end when the panel does. At ~30 frames a
+ * the subscription and the session both end when the panel does. At ~60 frames a
  * second, a listener left behind is a memory leak with a framerate on it.
  *
  * Frames never pass through a store. They go from the subscription straight into

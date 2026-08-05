@@ -40,12 +40,19 @@ let conductor: {
   deviceAppInfo: ReturnType<typeof vi.fn>;
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
+  mirrorInput: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
   onMirrorEvent: ReturnType<typeof vi.fn>;
 };
 
 /** The stream the Galaxy A07 actually opened at `max_size=1024`. */
-const STREAM = { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024 };
+const STREAM = {
+  sessionId: 'mirror-1',
+  codec: 'h264',
+  width: 464,
+  height: 1024,
+  control: true,
+};
 
 beforeEach(() => {
   resetUiStore();
@@ -60,6 +67,7 @@ beforeEach(() => {
     deviceAppInfo: vi.fn(() => Promise.resolve({ ok: true, data: IDENTITY })),
     mirrorStart: vi.fn(() => Promise.resolve({ ok: true, data: STREAM })),
     mirrorStop: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
+    mirrorInput: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
     onDeviceChanged: vi.fn(() => () => {}),
     onMirrorEvent: vi.fn(() => () => {}),
   };
@@ -367,7 +375,7 @@ describe('the mirror', () => {
     });
   });
 
-  /** Nothing to listen for with no phone attached, and a listener at 30 fps is
+  /** Nothing to listen for with no phone attached, and a listener at 60 fps is
    * not something to hold open on the chance one arrives. */
   it('subscribes to nothing while no device is selected', async () => {
     await mount();
@@ -572,5 +580,271 @@ describe('the header status dot', () => {
     await waitFor(() => {
       expect(dot()).toHaveAttribute('data-state', 'fail');
     });
+  });
+});
+
+/**
+ * Criteria 6–15. The panel stops being a picture and becomes a surface: the
+ * canvas takes a pointer and the keyboard, and a back control joins the header
+ * beside `Refresh` and `Inspect`.
+ *
+ * The one seam is still `window.conductor`, so what these drive is the real
+ * store, the real coordinate math and the real key routing.
+ */
+describe('driving the device', () => {
+  /** Mounts, streams, and gives the bay a size so the mirror is actually drawn. */
+  async function streaming(): Promise<HTMLCanvasElement> {
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+    return screen.getByTestId('mirror-canvas') as HTMLCanvasElement;
+  }
+
+  /**
+   * jsdom lays nothing out, so the canvas' box has to be stated — and it has to
+   * be stated at the scale the view *actually* drew at, which is read back off
+   * the phone's own transform rather than assumed. A box and a scale that
+   * disagree would make this test pass on arithmetic the app never performs.
+   */
+  function drawAt(canvas: HTMLCanvasElement): number {
+    const scale = renderedScale();
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 40,
+        top: 100,
+        width: 464 * scale,
+        height: 1024 * scale,
+        right: 40 + 464 * scale,
+        bottom: 100 + 1024 * scale,
+        x: 40,
+        y: 100,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    return scale;
+  }
+
+  /** `fitMirror`'s scale, as the view put it on the phone. */
+  function renderedScale(): number {
+    const transform = screen.getByTestId('phone').style.transform;
+    return Number(/scale\(([\d.]+)\)/.exec(transform)?.[1]);
+  }
+
+  const settleInput = async (): Promise<void> => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 32));
+    });
+  };
+
+  /** Criterion 6 — a click is a touch at the device pixel under it. */
+  it('sends a tap at the device pixel the click landed on', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', {
+          bubbles: true,
+          clientX: 40 + 232 * scale,
+          clientY: 100 + 512 * scale,
+        }),
+      );
+    });
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+      type: 'tap',
+      x: 232,
+      y: 512,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+  });
+
+  /** Criterion 8 — the bezel and the bay gutter are the app, not the phone. */
+  it('sends nothing for a click outside the drawn picture', async () => {
+    const canvas = await streaming();
+    drawAt(canvas);
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }),
+      );
+    });
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 10 — the canvas takes focus, and only then does it take keys. */
+  it('is focusable, so the keyboard has somewhere to go', async () => {
+    const canvas = await streaming();
+
+    expect(canvas).toHaveAttribute('tabindex', '0');
+    // A tab stop that announces nothing is a trap, so it carries a name too.
+    expect(screen.getByLabelText('Device screen')).toBe(canvas);
+  });
+
+  it('takes focus when the picture is clicked', async () => {
+    const canvas = await streaming();
+    drawAt(canvas);
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, clientX: 100, clientY: 200 }),
+      );
+    });
+
+    expect(document.activeElement).toBe(canvas);
+  });
+
+  /** Criterion 11 — printable characters are text. */
+  it('sends typed characters as text', async () => {
+    const canvas = await streaming();
+    canvas.focus();
+
+    await userEvent.keyboard('hi');
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', { type: 'text', text: 'hi' });
+  });
+
+  it('routes no keystroke while the canvas does not hold focus', async () => {
+    await streaming();
+    document.body.focus();
+
+    await userEvent.keyboard('hi');
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 12 — a key with no character of its own is a keycode. */
+  it('sends a non-printable key as a keycode rather than as text', async () => {
+    const canvas = await streaming();
+    canvas.focus();
+
+    await userEvent.keyboard('{Backspace}');
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+      type: 'key',
+      key: 'backspace',
+    });
+  });
+
+  /** ⚠️ Criterion 13. Swallowing every key would take Cmd-Q away from the person
+   * while the mirror has focus — the window would stop being quittable. */
+  it('leaves a shortcut alone rather than claiming it for the device', async () => {
+    const canvas = await streaming();
+    canvas.focus();
+
+    await userEvent.keyboard('{Meta>}q{/Meta}');
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('stops the browser handling a key it routed to the device', async () => {
+    const canvas = await streaming();
+    canvas.focus();
+    const arrow = new KeyboardEvent('keydown', {
+      key: 'ArrowDown',
+      bubbles: true,
+      cancelable: true,
+    });
+    const shortcut = new KeyboardEvent('keydown', {
+      key: 'q',
+      metaKey: true,
+      bubbles: true,
+      cancelable: true,
+    });
+
+    act(() => {
+      canvas.dispatchEvent(arrow);
+      canvas.dispatchEvent(shortcut);
+    });
+
+    expect(arrow.defaultPrevented).toBe(true);
+    expect(shortcut.defaultPrevented).toBe(false);
+  });
+
+  /** Criterion 14 — beside `Refresh` and `Inspect`, in the same chrome. */
+  it('offers a back control in the header', async () => {
+    await streaming();
+
+    expect(screen.getByRole('button', { name: 'Back' })).toBeInTheDocument();
+  });
+
+  it('sends the back action when it is clicked', async () => {
+    await streaming();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', { type: 'back' });
+  });
+
+  /** Criterion 15 — none of it has a target when nothing is streaming. */
+  it('offers no back control before a stream is up', async () => {
+    await mount();
+
+    expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+  });
+
+  it('offers no back control once the mirror has failed', async () => {
+    conductor.mirrorStart.mockResolvedValue({
+      ok: false,
+      error: { code: 'mirror/start-failed', message: 'no' },
+    });
+    await mount();
+    await push(snapshot());
+
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('failed');
+    });
+    expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+  });
+
+  /** Criterion 4 — a picture that arrived without a control channel is still a
+   * picture; what goes away is the ability to drive it. */
+  it('offers no controls for a session that arrived without control', async () => {
+    conductor.mirrorStart.mockResolvedValue({ ok: true, data: { ...STREAM, control: false } });
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', {
+          bubbles: true,
+          clientX: 40 + 100 * scale,
+          clientY: 100 + 100 * scale,
+        }),
+      );
+    });
+    await settleInput();
+
+    expect(screen.queryByRole('button', { name: 'Back' })).not.toBeInTheDocument();
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+    expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
+  });
+
+  /** Criterion 16 — control failing says so beside the phone, and leaves the
+   * picture where it is. */
+  it('reports a control failure without taking the picture away', async () => {
+    await streaming();
+    conductor.mirrorInput.mockResolvedValue({
+      ok: false,
+      error: { code: 'mirror/control-failed', message: 'The control socket is gone.' },
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Back' }));
+    await settleInput();
+
+    expect(await screen.findByText(/control socket is gone/i)).toBeInTheDocument();
+    expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
+    expect(device().mirrorStatus).toBe('streaming');
   });
 });
