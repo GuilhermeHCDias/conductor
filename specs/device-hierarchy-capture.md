@@ -308,6 +308,30 @@ hit-testing are the next spec's job (§13 step 4), not this one.
   `inspect-screen.capture.json` stays byte-identical to what the server actually sent. A
   pretty-printed capture is still valid input, but it is no longer *the* capture.
 
+### Settled in review
+
+- **Criterion 10 also covers a `ui_schema` that declares no `abbreviations` or no `defaults`.** The
+  first pass rejected both when they were the *wrong type* but accepted both when they were
+  *absent*, falling back to identity and an empty map. That combination reads the real capture's
+  abbreviated elements as unknown keys and answers with one all-`null` node, no children, reported
+  as success — the "partial or best-guess tree" the criterion forbids, arriving by exactly the
+  silent mis-map criterion 8 exists to prevent. Absence is now rejected; `{}` written out
+  explicitly is still the legitimate case it always was, and still tested.
+- **`ScreenCapture` passes a 10 s deadline.** `BinaryRunner` was typed without `RunOptions`, so
+  `runBinary`'s `timeout` was unreachable. `screencap` is the one `adb` call here that can hang
+  rather than fail (a device that locks or rotates mid-capture), and it sits on §5.5's critical
+  path, so a never-settling promise is a spinner that never stops. `AdbBridge` keeps its
+  options-free runner deliberately: `devices` and `getprop` answer in milliseconds or not at all.
+- **A failed handshake drops its own child, by identity.** The `catch` killed whatever occupied the
+  connection slot. A slow handshake can outlive its own child — `onExit` clears the slot, the next
+  call fills it with a healthy JVM — so the rejection could kill a child that never failed.
+- **`.context.md` was amended for the four reversals this spec makes** (§4.3.2, §4.3.7, §5.2,
+  §12 rules 9/10/11), plus §10.1's rule 1a/1b lists and its `biome.json` snippet, and §5.2's scale
+  formula now carries the root-has-no-bounds warning. `AGENTS.md` followed. The spec changed the
+  code and left the source of truth describing the opposite; `AGENTS.md` requires both move together.
+- **`HierarchyParser` builds a typed literal instead of `node as unknown as TreeNode`.** The double
+  assertion switched `strict` off on the module carrying this project's highest trap density.
+
 ### Verified on the hardware, after implementation
 
 Re-run end to end against the same Galaxy A07 (`R9QYC01EMXL`) on 2026-08-04, through the real

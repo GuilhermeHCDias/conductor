@@ -56,8 +56,8 @@
           "level": "error",
           "options": {
             "paths": {
-              "node:child_process": "Somente CliRunner e ScreenCapture podem criar processos. Ver .context.md §10.1.",
-              "child_process": "Use o especificador 'node:'. E somente em CliRunner/ScreenCapture. Ver §10.1."
+              "node:child_process": "Somente run.ts e CliRunner criam processos — os demais recebem o runner por injeção. Ver .context.md §10.1.",
+              "child_process": "Use o especificador 'node:'. E somente em run.ts/CliRunner. Ver §10.1."
             }
           }
         }
