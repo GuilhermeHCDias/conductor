@@ -1,4 +1,5 @@
 import type { AppIdentity, Device, DeviceProperties, ErrorCode, MirrorInput } from '@shared/ipc';
+import type { TreeNode } from '@shared/types';
 
 /**
  * One encoded frame, as it came off whatever wire the Gateway is speaking. The
@@ -60,14 +61,14 @@ export type MirrorSession = {
  * the day execution moves to a remote runner there is one seam to replace
  * (§10.1).
  *
- * Device capabilities only, for now. `hierarchy`, `screenshot`, `runFlow` and
- * `checkSyntax` are named in §4.3.7 and arrive with the specs that need them;
- * declaring them here before anything can implement them would be a contract
- * nobody honours.
+ * Reading the device, for now. `runFlow`, `checkSyntax` and `startDevice` are
+ * named in §4.3.7 and arrive with the specs that need them; declaring them here
+ * before anything can implement them would be a contract nobody honours.
  *
- * The lone exception on the other side of this door is `maestro mcp`, which is
- * not a Gateway concern: the AI layer's child belongs to Claude Code, and the
- * Viewer's belongs to `ViewerService`.
+ * The lone exception on the other side of this door is the AI layer's `maestro
+ * mcp`, which is not a Gateway concern: that child belongs to Claude Code
+ * (§4.3.7). Ours is `MaestroMcpService`, and it is behind this door — a
+ * `RemoteGateway` will answer `hierarchy` from somewhere else entirely.
  */
 export interface MaestroGateway {
   /** Every attached device, in whatever state adb reports it. */
@@ -76,6 +77,24 @@ export interface MaestroGateway {
   deviceProperties(deviceId: string): Promise<DeviceProperties>;
   /** The app under test on that device, identified by `appId` alone. */
   appIdentity(deviceId: string, appId: string): Promise<AppIdentity>;
+  /**
+   * What is on the screen: every element Maestro can see, as one tree.
+   *
+   * ⚠️ It must be *Maestro's* view of the screen and no other, because the
+   * selectors written from it are executed by Maestro. Inspecting by any other
+   * path produces selectors that look right in Conductor and fail in `maestro
+   * test`, which §5.1 names as the worst failure mode this product has.
+   */
+  hierarchy(deviceId: string): Promise<TreeNode>;
+  /**
+   * One still frame, as bytes (§10.1 rule 2) — never a path, because the device
+   * may share no filesystem with us today and no machine at all tomorrow.
+   *
+   * ⚠️ It never goes through Maestro (§10.1 rule 13, §4.4b). The picture is on
+   * the critical path of the core loop and costs 100–300ms through the OS
+   * against seconds through anything that starts a JVM.
+   */
+  screenshot(deviceId: string): Promise<Buffer>;
   /**
    * Opens a live picture of the device. Resolves as soon as the stream declares
    * its size — the frames themselves arrive on `handlers.onPacket`, because a

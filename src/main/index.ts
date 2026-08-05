@@ -2,17 +2,17 @@ import { homedir } from 'node:os';
 import { optimizer } from '@electron-toolkit/utils';
 import { CONFIG } from '@shared/config';
 import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
-import { app, BrowserWindow, shell } from 'electron';
+import { app, BrowserWindow } from 'electron';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
-import { registerViewerIpc } from './ipc/viewer';
 import { AdbBridge } from './maestro/AdbBridge';
 import { LocalGateway } from './maestro/LocalGateway';
 import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
+import { ScreenCapture } from './maestro/ScreenCapture';
 import { isExecutable } from './process/executable';
-import { run, spawnStreaming } from './process/run';
+import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
-import { ViewerService } from './services/viewer.service';
+import { MaestroMcpService } from './services/maestro-mcp.service';
 import { createWindow } from './window';
 
 /**
@@ -130,8 +130,23 @@ if (!app.requestSingleInstanceLock()) {
         appPath: app.getAppPath(),
       }),
     });
+    // The one persistent `maestro mcp` child, and the source of the view
+    // hierarchy: ~180ms per `inspect_screen` on a warm session against ~3.83s
+    // for `maestro hierarchy`, which is why it stays up rather than being
+    // started per call.
+    const mcp = new MaestroMcpService({
+      spawn: spawnStreaming,
+      isExecutable,
+      env: process.env,
+      home,
+      configuredPath: CONFIG.MAESTRO_PATH,
+    });
+    // Bytes, and never through Maestro (§10.1 rule 13): `runBinary` rather than
+    // `run`, because the latter decodes stdout as UTF-8 and a PNG does not
+    // survive it.
+    const capture = new ScreenCapture({ adb, run: runBinary });
     const device = new DeviceService({
-      gateway: new LocalGateway(adb, scrcpy),
+      gateway: new LocalGateway(adb, scrcpy, mcp, capture),
       appId: CONFIG.APP_ID,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.deviceChanged, payload);
@@ -140,21 +155,10 @@ if (!app.requestSingleInstanceLock()) {
         broadcast(PUSH_CHANNELS.mirrorEvent, payload);
       },
     });
-    const viewer = new ViewerService({
-      spawn: spawnStreaming,
-      isExecutable,
-      env: process.env,
-      home,
-      configuredPath: CONFIG.MAESTRO_PATH,
-      // §9.3: the URL is validated inside the service before it gets here, and
-      // the renderer never sees a navigation of its own.
-      openExternal: (url) => shell.openExternal(url),
-    });
-    services.push(device, viewer);
+    services.push(device, mcp);
 
     registerAppIpc();
     registerDeviceIpc({ device });
-    registerViewerIpc({ viewer });
 
     watchRenderer(createWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.

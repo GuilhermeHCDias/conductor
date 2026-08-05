@@ -12,7 +12,6 @@ const api: ConductorApi = {
   configGet: () => ipcRenderer.invoke(CHANNELS.configGet),
   deviceList: () => ipcRenderer.invoke(CHANNELS.deviceList),
   deviceAppInfo: (deviceId) => ipcRenderer.invoke(CHANNELS.deviceAppInfo, deviceId),
-  viewerOpen: () => ipcRenderer.invoke(CHANNELS.viewerOpen),
   mirrorStart: (deviceId) => ipcRenderer.invoke(CHANNELS.mirrorStart, deviceId),
   mirrorStop: (sessionId) => ipcRenderer.invoke(CHANNELS.mirrorStop, sessionId),
   mirrorInput: (sessionId, input) => ipcRenderer.invoke(CHANNELS.mirrorInput, sessionId, input),

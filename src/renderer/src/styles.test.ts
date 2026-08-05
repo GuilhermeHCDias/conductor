@@ -425,17 +425,15 @@ describe('what the criteria name', () => {
   });
 
   /**
-   * `.viewer` used to be on that list, for the reason above: it sat on the
-   * phone's screen. Criterion 38 moved it off — the screen is the mirror now,
-   * and the control is a footer under the bay. So it takes the app's chrome, and
-   * that it *stops* taking the phone's is the thing worth pinning: a control
-   * painted in the device's palette outside the device reads as part of it.
+   * `.viewer` was on that list, then moved off the phone into a footer under
+   * the bay. Criterion 23 removes it outright — the `maestro mcp` child behind
+   * it answers `inspect_screen` now, and nothing in the app opens a viewer URL
+   * — so the rules go with the markup rather than lingering as dead CSS that
+   * the next reader has to prove is unused.
    */
-  it('paints .viewer from the app’s chrome, now that it is off the phone', () => {
-    const viewer = rule(mirror, '.viewer');
-
-    expect(viewer).toContain('background: var(--a-fill)');
-    expect(viewer).not.toContain('var(--phone-');
+  it('carries no rules for the removed viewer control', () => {
+    expect(mirror).not.toContain('.viewer');
+    expect(mirror).not.toContain('.footer');
   });
 
   it('gives the phone its own drop shadow', () => {

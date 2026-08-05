@@ -43,6 +43,12 @@ const BAY_PADDING = 40;
  *
  * The mirror subscription is mounted here rather than in `App.tsx` (criterion
  * 41): it fires ~60 times a second, and it must stop when this panel does.
+ *
+ * The Viewer control that used to sit under the bay is gone (criterion 23). It
+ * survived the mirror spec because it still offered *interaction*; the
+ * `maestro mcp` child behind it answers `inspect_screen` now, nothing in the
+ * app opens a viewer URL, and interaction arrived on the mirror itself with the
+ * control-socket spec.
  */
 export function DeviceMirror(): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -65,9 +71,6 @@ export function DeviceMirror(): JSX.Element {
   const mirrorError = useDeviceStore(selectMirrorError);
   const mirrorControl = useDeviceStore(selectMirrorControl);
   const mirrorControlError = useDeviceStore(selectMirrorControlError);
-  const viewerOpening = useDeviceStore((state) => state.viewerOpening);
-  const viewerError = useDeviceStore((state) => state.viewerError);
-  const openViewer = useDeviceStore((state) => state.openViewer);
   const refresh = useDeviceStore((state) => state.refresh);
   const pick = useDeviceStore((state) => state.pick);
   const sendInput = useDeviceStore((state) => state.sendInput);
@@ -272,31 +275,15 @@ export function DeviceMirror(): JSX.Element {
         </div>
       </div>
 
-      {/* Criterion 38 demoted the Viewer when the picture landed here. Tapping
-          and typing have now followed it, so the only line left to say about the
-          Viewer is that it is still there — the removal of this footer belongs
-          to `device-hierarchy-capture`, which owns what happens to the `maestro
-          mcp` session behind it. */}
-      <footer className={styles.footer}>
-        <button
-          className={styles.viewer}
-          disabled={selectedId === null || viewerOpening}
-          onClick={() => void openViewer()}
-          type="button"
-        >
-          {viewerOpening ? 'Starting Maestro…' : 'Open in Maestro Viewer'}
-        </button>
-        {/* Criterion 16. A control failure is reported here rather than over the
-            phone: the picture is still arriving, and covering it would say the
-            mirror had stopped when only the tap had. */}
-        {viewerError !== null ? (
-          <p className={styles.footerNote}>{viewerError.message}</p>
-        ) : mirrorControlError !== null ? (
-          <p className={styles.footerNote}>{mirrorControlError.message}</p>
-        ) : (
-          <p className={styles.footerNote}>The full view hierarchy still lives there.</p>
-        )}
-      </footer>
+      {/* Criterion 16 of the control-socket spec, which reported this from
+          inside the Viewer footer. That footer is gone (criterion 23), but the
+          reason it reported here has not changed: the picture is still
+          arriving, and saying so over the phone would claim the mirror had
+          stopped when only the tap had. So the note outlives its container, and
+          appears only when there is something to say. */}
+      {mirrorControlError !== null ? (
+        <p className={styles.controlNote}>{mirrorControlError.message}</p>
+      ) : null}
     </section>
   );
 }

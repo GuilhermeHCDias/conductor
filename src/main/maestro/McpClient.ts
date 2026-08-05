@@ -3,13 +3,13 @@ import type { ExitReason } from '../process/run';
 /**
  * A JSON-RPC client speaking MCP over a child's stdio.
  *
- * It exists because there is no other supported way to reach the Maestro Viewer
- * URL: the transport is stdio-only, the port is undocumented, and the URL is
- * returned by a tool. That makes the UI an MCP client — a deliberate carve-out
- * in `.context.md` §12 rule 11, and the reason this client is as small as it
- * is. It knows how to hand shake, list tool names and call one tool. It has no
- * notion of what the tools do, and it is not, and must not become, the AI
- * layer's MCP path (.context.md §4.3.7).
+ * It exists because the device's view hierarchy is ~14× cheaper through
+ * `inspect_screen` than through the raw CLI (~250–300 ms against ~3.83 s), and
+ * that tool is reachable only over stdio JSON-RPC. That makes the UI an MCP
+ * client — a deliberate carve-out in `.context.md` §12 rule 11, and the reason
+ * this client is as small as it is. It knows how to hand shake, list tool names
+ * and call one tool. It has no notion of what the tools do, and it is not, and
+ * must not become, the AI layer's MCP path (.context.md §4.3.7).
  *
  * The transport arrives injected and is a subset of `StreamingProcess`, so the
  * framing below is drivable from captured bytes with nothing installed.

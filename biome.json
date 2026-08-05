@@ -14,7 +14,8 @@
       "!**/node_modules",
       "!package-lock.json",
       "!src/renderer/src/styles/tokens",
-      "!src/renderer/src/styles/utilities"
+      "!src/renderer/src/styles/utilities",
+      "!src/main/maestro/inspect-screen.capture.json"
     ]
   },
   "formatter": {
@@ -55,8 +56,8 @@
           "level": "error",
           "options": {
             "paths": {
-              "node:child_process": "Somente CliRunner e ScreenCapture podem criar processos. Ver .context.md §10.1.",
-              "child_process": "Use o especificador 'node:'. E somente em CliRunner/ScreenCapture. Ver §10.1."
+              "node:child_process": "Somente run.ts e CliRunner criam processos — os demais recebem o runner por injeção. Ver .context.md §10.1.",
+              "child_process": "Use o especificador 'node:'. E somente em run.ts/CliRunner. Ver §10.1."
             }
           }
         }
@@ -65,11 +66,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "src/main/maestro/CliRunner.ts",
-        "src/main/maestro/ScreenCapture.ts",
-        "src/main/process/run.ts"
-      ],
+      "includes": ["src/main/maestro/CliRunner.ts", "src/main/process/run.ts"],
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     }
   ]

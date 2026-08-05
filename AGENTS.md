@@ -73,7 +73,7 @@ view / store action (renderer)
   → window.conductor.<fn>()               preload — the only bridge
   → ipc/<domain>.ts                       main — sender check + Zod parse
   → service · MaestroGateway              main — business logic
-  → run.ts | CliRunner | ScreenCapture    the only 3 process creators (§10.1)
+  → run.ts | CliRunner                    the only 2 process creators (§10.1)
   → maestro · gh · git · claude · adb · simctl
 ```
 
@@ -86,7 +86,7 @@ The product's core loop (§5.5) as a worked example: mirror frames stream in che
 - **`index.ts` is the composition root** — the only place services are constructed, wired together (plain constructor injection) and registered. No module-level singletons: a class you cannot instantiate in a test with fakes is shaped wrong.
 - **`ipc/` modules are thin controllers.** Validate, call one service method, shape the result. Business logic in a handler is in the wrong layer.
 - **Services own one domain each** and hold the business logic. They may use the Gateway and `run.ts`; they never import `child_process` (Biome enforces it, §10.1).
-- **`MaestroGateway` is the only door to Maestro** (§4.3.7). `LocalGateway` implements it via `CliRunner` (always `--no-reinstall-driver` + `MAESTRO_CLI_NO_ANALYTICS=1`, §12.10) and `ScreenCapture` (`adb`/`simctl`, §12.13). Keep the contract remote-safe: screenshots as bytes, `deviceId` opaque, everything async (§10.1's six rules).
+- **`MaestroGateway` is the only door to Maestro** (§4.3.7). `LocalGateway` implements it via `CliRunner` (always `--no-reinstall-driver` + `MAESTRO_CLI_NO_ANALYTICS=1`, §12.10), `ScreenCapture` (`adb`/`simctl`, §12.13) and `MaestroMcpService` (the one persistent `maestro mcp` child, which owns its own lifecycle — §12.9's amendment). Keep the contract remote-safe: screenshots as bytes, `deviceId` opaque, everything async (§10.1's six rules).
 - **`HierarchyParser` and `SelectorSynth` are pure** — no I/O, no Electron imports (§9.2). They read the top-level booleans of `TreeNode`, not `attributes` strings, and treat `null` as "not reported" (§5.2).
 - **Long work is streamed, never awaited in a handler.** A start invoke returns an id immediately; progress arrives as push events; cancellation is its own channel (`run:start` → `run:event` → `run:cancel`; same shape for `ai:*`). Never block main, and never use `sendSync` anywhere.
 - **Every service holding a process, session or watcher implements `dispose()`**, called from `before-quit`. No orphaned JVMs, `claude` sessions or chokidar watchers.
@@ -174,7 +174,7 @@ Import by full path — `@renderer/views/FlowEditor/FlowEditor`. There is no `in
 
 - Biome is the only linter and formatter: `biome.json` at the root. Do not introduce ESLint or Prettier, and delete either if a template ships it.
 - TypeScript runs in `strict` mode across all three tsconfigs. Rather than widening a type or reaching for `any` to clear an error, narrow at the boundary with a type guard, or derive the type from the channel's Zod schema.
-- When `noRestrictedImports` fires, you have put process creation in the wrong file. Move the code behind `src/main/process/run.ts`, `src/main/maestro/CliRunner.ts` or `src/main/maestro/ScreenCapture.ts` — the only three files that may create OS processes. Adding a Biome exception is almost always wrong (§10.1, §12.20).
+- When `noRestrictedImports` fires, you have put process creation in the wrong file. Move the code behind `src/main/process/run.ts` or `src/main/maestro/CliRunner.ts` — the only two files that may create OS processes. A module that merely *names* `adb`/`maestro` and takes its runner by constructor injection (`AdbBridge`, `ScrcpySource`, `ScreenCapture`) creates nothing and needs no exception. Adding a Biome exception is almost always wrong (§10.1, §12.20).
 
 ## Commits & branches
 

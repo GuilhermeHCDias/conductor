@@ -38,7 +38,6 @@ const snapshot = (over: Partial<DeviceSnapshot> = {}): Result<DeviceSnapshot> =>
 let conductor: {
   deviceList: ReturnType<typeof vi.fn>;
   deviceAppInfo: ReturnType<typeof vi.fn>;
-  viewerOpen: ReturnType<typeof vi.fn>;
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
   mirrorInput: ReturnType<typeof vi.fn>;
@@ -66,7 +65,6 @@ beforeEach(() => {
       }),
     ),
     deviceAppInfo: vi.fn(() => Promise.resolve({ ok: true, data: IDENTITY })),
-    viewerOpen: vi.fn(() => Promise.resolve({ ok: true, data: { url: 'http://127.0.0.1:9999/' } })),
     mirrorStart: vi.fn(() => Promise.resolve({ ok: true, data: STREAM })),
     mirrorStop: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
     mirrorInput: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
@@ -512,82 +510,43 @@ describe('what the panel says instead', () => {
     });
     expect(screen.queryByTestId('mirror-canvas')).not.toBeInTheDocument();
   });
-
-  /**
-   * Criterion 38 — the two states that belonged to the demoted control are gone.
-   * A Maestro that is not installed no longer takes the picture off the panel,
-   * because the picture never came from Maestro.
-   */
-  it.each([
-    ['viewer/maestro-not-found', 'The Maestro CLI is not installed.'],
-    ['viewer/handshake-timeout', 'Maestro did not answer in time.'],
-  ])('no longer turns %s into a state of the whole panel', async (code, message) => {
-    conductor.viewerOpen.mockResolvedValue({ ok: false, error: { code, message } });
-    await mount();
-    await push(snapshot());
-    await waitFor(() => {
-      expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
-    });
-
-    await userEvent.click(screen.getByRole('button', { name: 'Open in Maestro Viewer' }));
-
-    expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
-    expect(screen.queryByTestId('device-state')).not.toBeInTheDocument();
-  });
 });
 
 /**
- * Criterion 38 demotes the Viewer: the mirror is the panel now, and the Viewer
- * is what still offers *interaction*, since this spec ships `control=false`. So
- * the control survives, out of the way, and reports its own failures beside
- * itself rather than over the picture.
+ * Criterion 23. The Viewer survived the mirror spec as a footer control,
+ * because it still offered the one thing the mirror did not: interaction. It
+ * does not survive this one — the `maestro mcp` child it stood on now answers
+ * `inspect_screen`, nothing in the app opens a viewer URL, and a button whose
+ * whole backend was deleted is a button that fails.
+ *
+ * Interaction is not lost, only deferred: the sibling `scrcpy-control-socket`
+ * spec puts tapping and typing on the mirror itself, where the person is
+ * already looking.
  */
-describe('the demoted viewer control', () => {
-  it('sits outside the phone, not on its screen', async () => {
+describe('the viewer control that used to sit in the footer', () => {
+  it('is gone', async () => {
     await mount();
     await push(snapshot());
 
-    const control = screen.getByRole('button', { name: 'Open in Maestro Viewer' });
-    expect(screen.getByTestId('phone').contains(control)).toBe(false);
+    expect(screen.queryByRole('button', { name: /viewer/i })).not.toBeInTheDocument();
   });
 
-  it('is disabled while no device is selected', async () => {
-    await mount();
-    await push(snapshot({ devices: [], selectedId: null, properties: null }));
-
-    expect(screen.getByRole('button', { name: 'Open in Maestro Viewer' })).toBeDisabled();
-  });
-
-  it('asks main to open it', async () => {
+  it('takes its note with it', async () => {
     await mount();
     await push(snapshot());
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open in Maestro Viewer' }));
-
-    expect(conductor.viewerOpen).toHaveBeenCalledTimes(1);
+    expect(screen.queryByText(/Tapping and typing still happen there/i)).not.toBeInTheDocument();
   });
 
-  it('shows progress while the child starts', async () => {
-    conductor.viewerOpen.mockReturnValue(new Promise(() => {}));
+  /** The picture and the states around it are untouched: this spec is
+   * subtractive on the footer and nowhere else. */
+  it('leaves the mirror itself alone', async () => {
     await mount();
     await push(snapshot());
 
-    await userEvent.click(screen.getByRole('button', { name: 'Open in Maestro Viewer' }));
-
-    expect(screen.getByRole('button', { name: 'Starting Maestro…' })).toBeDisabled();
-  });
-
-  it('reports its own failure beside itself', async () => {
-    conductor.viewerOpen.mockResolvedValue({
-      ok: false,
-      error: { code: 'viewer/maestro-not-found', message: 'The Maestro CLI is not installed.' },
+    await waitFor(() => {
+      expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
     });
-    await mount();
-    await push(snapshot());
-
-    await userEvent.click(screen.getByRole('button', { name: 'Open in Maestro Viewer' }));
-
-    expect(screen.getByText('The Maestro CLI is not installed.')).toBeInTheDocument();
   });
 });
 

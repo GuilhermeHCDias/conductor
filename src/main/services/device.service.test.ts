@@ -115,6 +115,11 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
       gateway.sessions.push(session);
       return Promise.resolve(session);
     },
+    // The Gateway grew these; this service does not use them, and a fake that
+    // pretended otherwise would let a real call slip past unnoticed. They are
+    // here to satisfy the interface and to fail loudly if that ever changes.
+    hierarchy: () => Promise.reject(new Error('DeviceService does not read the hierarchy.')),
+    screenshot: () => Promise.reject(new Error('DeviceService does not take screenshots.')),
   };
   return gateway;
 }

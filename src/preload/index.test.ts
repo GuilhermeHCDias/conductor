@@ -63,8 +63,13 @@ describe('the bridge', () => {
       'mirrorStop',
       'onDeviceChanged',
       'onMirrorEvent',
-      'viewerOpen',
     ]);
+  });
+
+  /** Criterion 24 — no surface of the Viewer is left reachable from the
+   * renderer, the bridge included. */
+  it('exposes no way to open a viewer', () => {
+    expect(api as unknown as Record<string, unknown>).not.toHaveProperty('viewerOpen');
   });
 
   it('exposes no ipcRenderer, send or invoke of its own', () => {

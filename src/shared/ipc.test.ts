@@ -9,18 +9,34 @@ import { CHANNELS, ERROR_CODES, IPC, PUSH, PUSH_CHANNELS } from './ipc';
  */
 
 describe('the channels', () => {
-  /** Criterion 27 — the mirror's three, beside the four that were already here. */
+  /**
+   * `viewer:open` is gone with the feature behind it (criterion 24).
+   *
+   * ⚠️ Nothing was added in its place. `hierarchy` and `screenshot` are Gateway
+   * capabilities this spec keeps in main on purpose (criterion 3): there is no
+   * renderer code that calls them yet, and a channel with no caller is surface
+   * that has to be maintained before anyone knows what shape it wants. The
+   * snapshot spec is the one that needs this data in the renderer, and it is
+   * where the channels belong.
+   */
   it('are exactly the invokes this app declares', () => {
     expect(Object.values(CHANNELS)).toEqual([
       'app:info',
       'config:get',
       'device:list',
       'device:app-info',
-      'viewer:open',
       'mirror:start',
       'mirror:stop',
       'mirror:input',
     ]);
+  });
+
+  /** Criterion 3, stated where a future reader would otherwise add one out of
+   * tidiness. */
+  it('declares no channel for the hierarchy or the screenshot yet', () => {
+    const channels: string[] = [...Object.values(CHANNELS), ...Object.values(PUSH_CHANNELS)];
+
+    expect(channels.filter((channel) => /hierarchy|screenshot|snapshot/.test(channel))).toEqual([]);
   });
 
   it('are exactly the pushes this app declares', () => {
@@ -281,12 +297,51 @@ describe('the failure codes', () => {
   });
 
   /**
-   * Criterion 16. Control failing is its own condition: the picture is still
-   * there, so the panel must not read it as the stream dying. It is the one
-   * mirror code that leaves the video path untouched.
+   * Criterion 16 of the control-socket spec. Control failing is its own
+   * condition: the picture is still there, so the panel must not read it as the
+   * stream dying. It is the one mirror code that leaves the video path
+   * untouched.
    */
   it('gives a control failure a code of its own', () => {
     expect(ERROR_CODES.mirrorControlFailed).toBe('mirror/control-failed');
     expect(ERROR_CODES.mirrorControlFailed).not.toBe(ERROR_CODES.mirrorDeviceLost);
+  });
+
+  /**
+   * Criterion 22. The `maestro mcp` child's failures used to be namespaced
+   * `viewer/`, from when that child existed to open one. Nothing opens a viewer
+   * now, and a code naming a feature the app does not have tells whoever reads
+   * it next exactly the wrong thing.
+   */
+  it('name the mcp session rather than a viewer', () => {
+    expect(Object.values(ERROR_CODES).filter((code) => code.startsWith('viewer/'))).toEqual([]);
+    expect([
+      ERROR_CODES.maestroNotFound,
+      ERROR_CODES.mcpStartFailed,
+      ERROR_CODES.mcpHandshakeTimeout,
+      ERROR_CODES.mcpToolMissing,
+      ERROR_CODES.mcpCallFailed,
+    ]).toEqual([
+      'mcp/maestro-not-found',
+      'mcp/start-failed',
+      'mcp/handshake-timeout',
+      'mcp/tool-missing',
+      'mcp/call-failed',
+    ]);
+  });
+
+  /** There is no URL to trust once nothing opens one (criterion 22). */
+  it('no longer carries a code for an untrusted URL', () => {
+    expect(Object.values(ERROR_CODES)).not.toContain('viewer/untrusted-url');
+  });
+
+  /** The two this spec adds, each distinct from the other and from adb's —
+   * three different failures with three different fixes (criteria 10, 15). */
+  it('tell a bad hierarchy, a failed capture and a missing adb apart', () => {
+    expect([
+      ERROR_CODES.hierarchyParseFailed,
+      ERROR_CODES.captureFailed,
+      ERROR_CODES.adbNotFound,
+    ]).toEqual(['hierarchy/parse-failed', 'capture/failed', 'device/adb-not-found']);
   });
 });
