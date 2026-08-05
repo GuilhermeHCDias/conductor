@@ -31,6 +31,10 @@ function idleConductor(): ConductorApi {
     mirrorStop: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     mirrorInput: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    maestroSnapshot: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    maestroSynthesizeSelector: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     onDeviceChanged: () => () => {},
     onMirrorEvent: () => () => {},
   };

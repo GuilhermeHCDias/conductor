@@ -14,6 +14,7 @@ import {
   scrcpyJarPath,
   serverCommand,
 } from './ScrcpySource';
+import { DOUBLE_TAP_PAUSE_MS, LONG_PRESS_HOLD_MS } from './scrcpy-control-protocol';
 import { PREFIX_BYTES } from './scrcpy-protocol';
 
 /**
@@ -650,6 +651,86 @@ describe('sending input at an open session', () => {
     await expect(session.send({ type: 'back' })).rejects.toMatchObject({
       code: ERROR_CODES.mirrorControlFailed,
     });
+  });
+});
+
+/**
+ * Criterion 40 — the timed gestures. The pacing is the encoder's
+ * (`controlSteps` says where the holds are); what belongs to the session is
+ * honouring them against a socket that can die mid-hold.
+ */
+describe('a timed gesture', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('holds a long press down for the pause before releasing', async () => {
+    vi.useFakeTimers();
+    const { session, control } = await streaming();
+
+    const sent = session.send({
+      type: 'long-press',
+      x: 10,
+      y: 20,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    // The down is out and the up is waiting on the hold — a synchronous pair
+    // would be an ordinary tap.
+    expect(control.written).toHaveLength(1);
+    expect(control.written[0]?.[1]).toBe(0);
+
+    await vi.advanceTimersByTimeAsync(LONG_PRESS_HOLD_MS);
+    await sent;
+    expect(control.written).toHaveLength(2);
+    expect(control.written[1]?.[1]).toBe(1);
+    await session.stop();
+  });
+
+  it('spaces the two taps of a double tap by the gap', async () => {
+    vi.useFakeTimers();
+    const { session, control } = await streaming();
+
+    const sent = session.send({
+      type: 'double-tap',
+      x: 10,
+      y: 20,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(control.written).toHaveLength(2);
+
+    await vi.advanceTimersByTimeAsync(DOUBLE_TAP_PAUSE_MS);
+    await sent;
+    expect(control.written).toHaveLength(4);
+    expect(control.written.map((message) => message[1])).toEqual([0, 1, 0, 1]);
+    await session.stop();
+  });
+
+  /** ⚠️ The hold spans real time, and the session can end inside it. The
+   * release half must not be written into a socket that is gone — nor
+   * swallowed: the caller hears the control code. */
+  it('does not release into a session that ended mid-hold', async () => {
+    vi.useFakeTimers();
+    const { session, control } = await streaming();
+
+    const sent = session.send({
+      type: 'long-press',
+      x: 10,
+      y: 20,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(control.written).toHaveLength(1);
+
+    await session.stop();
+    await vi.advanceTimersByTimeAsync(LONG_PRESS_HOLD_MS);
+
+    await expect(sent).rejects.toMatchObject({ code: ERROR_CODES.mirrorControlFailed });
+    expect(control.written).toHaveLength(1);
   });
 });
 

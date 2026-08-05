@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import type { SnapshotView, TreeNode } from './types';
 
 /**
  * The single IPC contract: channel names, one Zod schema per channel payload,
@@ -16,6 +17,8 @@ export const CHANNELS = {
   mirrorStart: 'mirror:start',
   mirrorStop: 'mirror:stop',
   mirrorInput: 'mirror:input',
+  maestroSnapshot: 'maestro:snapshot',
+  maestroSynthesizeSelector: 'maestro:synthesize-selector',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -149,27 +152,45 @@ const streamAxis = z.number().int().positive().max(65_535);
 /**
  * Criterion 6. One tap is a touch-down and a touch-up at one point, so the
  * renderer asks for the gesture and main expands it into the pair — a round trip
- * per half would let the two straddle a session change.
+ * per half would let the two straddle a session change. The long press and the
+ * double tap are the same shape expanded the same way, timing included: nothing
+ * above the Gateway learns what a long press is made of.
  *
- * ⚠️ It carries the stream size it was aimed at because scrcpy's `PositionMapper`
- * silently drops a touch whose declared size is not the video's current one, and
- * after a rotation the renderer holds the only fresh size (main's is the codec
- * header's, and that never changes again).
+ * ⚠️ Every touch carries the stream size it was aimed at because scrcpy's
+ * `PositionMapper` silently drops a touch whose declared size is not the
+ * video's current one, and after a rotation the renderer holds the only fresh
+ * size (main's is the codec header's, and that never changes again).
  */
+const touchFields = {
+  x: z.number().int().nonnegative(),
+  y: z.number().int().nonnegative(),
+  screenWidth: streamAxis,
+  screenHeight: streamAxis,
+} as const;
+
+type TouchLike = { x: number; y: number; screenWidth: number; screenHeight: number };
+
+const insideStream = (touch: TouchLike): boolean =>
+  touch.x < touch.screenWidth && touch.y < touch.screenHeight;
+
+const outsideStream = { message: 'The touch is outside the stream it names.' };
+
 const mirrorTap = z
-  .object({
-    type: z.literal('tap'),
-    x: z.number().int().nonnegative(),
-    y: z.number().int().nonnegative(),
-    screenWidth: streamAxis,
-    screenHeight: streamAxis,
-  })
-  .refine((tap) => tap.x < tap.screenWidth && tap.y < tap.screenHeight, {
-    message: 'The tap is outside the stream it names.',
-  });
+  .object({ type: z.literal('tap'), ...touchFields })
+  .refine(insideStream, outsideStream);
+
+const mirrorLongPress = z
+  .object({ type: z.literal('long-press'), ...touchFields })
+  .refine(insideStream, outsideStream);
+
+const mirrorDoubleTap = z
+  .object({ type: z.literal('double-tap'), ...touchFields })
+  .refine(insideStream, outsideStream);
 
 const mirrorInput = z.union([
   mirrorTap,
+  mirrorLongPress,
+  mirrorDoubleTap,
   z.object({
     type: z.literal('text'),
     text: z
@@ -216,6 +237,70 @@ const mirrorEnded = z.object({
 
 const mirrorEvent = z.discriminatedUnion('type', [mirrorFrame, mirrorEnded]);
 
+/** `[x1,y1][x2,y2]` as numbers. Negative coordinates are real — an element can
+ * sit partly off-screen — so only integrality is enforced. */
+const bounds = z.object({
+  x1: z.number().int(),
+  y1: z.number().int(),
+  x2: z.number().int(),
+  y2: z.number().int(),
+});
+
+/**
+ * The recursive tree, spelled to match `TreeNode` exactly — `z.lazy` because a
+ * node's children are nodes. Typed explicitly so a drift between this schema
+ * and the shared type is a compile error here, not a runtime surprise in a
+ * handler.
+ */
+const treeNode: z.ZodType<TreeNode> = z.lazy(() =>
+  z.object({
+    bounds: bounds.nullable(),
+    className: z.string().nullable(),
+    text: z.string().nullable(),
+    resourceId: z.string().nullable(),
+    contentDescription: z.string().nullable(),
+    hintText: z.string().nullable(),
+    scrollable: z.boolean().nullable(),
+    clickable: z.boolean().nullable(),
+    enabled: z.boolean().nullable(),
+    focused: z.boolean().nullable(),
+    selected: z.boolean().nullable(),
+    checked: z.boolean().nullable(),
+    children: z.array(treeNode).readonly(),
+  }),
+);
+
+/** Criterion 6 rides in the shape itself: there is no field for the
+ * screenshot's bytes, so they cannot cross by accident. */
+const snapshotView: z.ZodType<SnapshotView> = z.object({
+  snapshotId: z.string(),
+  tree: treeNode,
+  screenshotWidth: z.number().int().positive(),
+  screenshotHeight: z.number().int().positive(),
+  scale: z.number().positive(),
+});
+
+/** The node a synthesis is about: its path of child indices in the snapshot's
+ * tree — the renderer hit-tested it there, and main resolves the same path
+ * against the same tree (criterion 5). */
+const treePath = z.array(z.number().int().nonnegative()).readonly();
+
+/** §5.4's ladder, named rung by rung. `point` is the last resort and the only
+ * fragile one — criterion 27 makes warning about it mandatory. */
+const selectorLevel = z.enum(['id', 'text', 'text-index', 'relational', 'point']);
+
+/**
+ * Criterion 35. What `SelectorSynth` answers with: the rung it stopped on, the
+ * selector as a YAML fragment (relatively indented — `lib/command-templates`
+ * re-homes it under whichever command the person picks), and whether §5.4
+ * obliges the UI to warn before it is written.
+ */
+const synthesizedSelector = z.object({
+  level: selectorLevel,
+  selector: z.string(),
+  fragile: z.boolean(),
+});
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
@@ -226,6 +311,11 @@ export const IPC = {
   [CHANNELS.mirrorInput]: {
     request: z.tuple([z.string(), mirrorInput]),
     response: mirrorSessionRef,
+  },
+  [CHANNELS.maestroSnapshot]: { request: z.tuple([z.string()]), response: snapshotView },
+  [CHANNELS.maestroSynthesizeSelector]: {
+    request: z.tuple([z.string(), treePath]),
+    response: synthesizedSelector,
   },
 } as const;
 
@@ -253,6 +343,8 @@ export type MirrorEvent = z.infer<typeof mirrorEvent>;
 export type MirrorKey = z.infer<typeof mirrorKey>;
 export type MirrorTap = z.infer<typeof mirrorTap>;
 export type MirrorInput = z.infer<typeof mirrorInput>;
+export type SelectorLevel = z.infer<typeof selectorLevel>;
+export type SynthesizedSelector = z.infer<typeof synthesizedSelector>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -311,6 +403,23 @@ export const ERROR_CODES = {
   /** WebCodecs refused the stream. The renderer's only failure of the set — the
    * bytes arrived, and this Chromium would not decode them. */
   mirrorDecodeFailed: 'mirror/decode-failed',
+  /** No node of the captured tree carries bounds, so there is nothing to
+   * calibrate scale against (§5.2) — and a guessed scale is a hit-test that
+   * silently selects the wrong element. */
+  snapshotNoBounds: 'snapshot/no-bounds',
+  /**
+   * Criterion 5. The named snapshot was replaced by a newer capture of that
+   * device. The renderer re-captures and retries — a selector synthesised from
+   * a tree the user is no longer seeing would look right and tap wrong.
+   */
+  snapshotStale: 'snapshot/stale',
+  /** A synthesis naming a path the snapshot's tree does not have. The renderer
+   * and main disagree about the tree, which criterion 5 resolves by
+   * re-capturing — never by guessing which node was meant. */
+  selectorNodeMissing: 'selector/node-missing',
+  /** §5.4's 0-match case: no rung of the ladder can name the element. A bug by
+   * definition — logged, and nothing is written. */
+  selectorNoMatch: 'selector/no-match',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -328,6 +437,17 @@ export interface ConductorApi {
   /** Criterion 5 and §9.3: input crosses as a named function with typed fields,
    * never as raw `ipcRenderer` and never as a composed string. */
   mirrorInput: (...args: Request<'mirror:input'>) => Promise<Result<Response<'mirror:input'>>>;
+  /** The frozen snapshot the hover hit-tests against (§5.5). Requested on
+   * stream start, after inputs settle, on rotation and on demand — never per
+   * mousemove: hover costs zero IPC by design (criterion 46). */
+  maestroSnapshot: (
+    ...args: Request<'maestro:snapshot'>
+  ) => Promise<Result<Response<'maestro:snapshot'>>>;
+  /** Synthesis runs in main, against the same tree the renderer hit-tested —
+   * the snapshotId says which, and a stale one is refused (criterion 5). */
+  maestroSynthesizeSelector: (
+    ...args: Request<'maestro:synthesize-selector'>
+  ) => Promise<Result<Response<'maestro:synthesize-selector'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;

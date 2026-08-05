@@ -47,12 +47,25 @@ it('finds the renderer’s CSS modules', () => {
   expect(MODULES.length).toBeGreaterThan(10);
 });
 
-/** Criterion 1 — one blur, at the window, and nowhere else. */
+/**
+ * Criterion 1 — one blur for the window, and no region frosting inside it.
+ *
+ * ⏸️ Amended by the inspect spec: the window still owns the single blur of the
+ * shell, but the two *floating* layers the design system ships — the command
+ * menu and the dialog — carry their own, because layers above the window read
+ * their depth through it ("Dialogs blur heavier than any other layer"). The
+ * failure mode this guards — frost nested inside the window's panes — is
+ * still forbidden: no view or region module may join this list.
+ */
 describe('the single blur', () => {
-  it('is declared exactly once across the app’s own CSS', () => {
+  it('is declared only by the window and the floating layers', () => {
     const declaring = MODULES.filter((module) => module.css.includes('backdrop-filter'));
 
-    expect(declaring.map((module) => module.name)).toEqual(['App.module.css']);
+    expect(declaring.map((module) => module.name).sort()).toEqual([
+      'App.module.css',
+      'components/ContextMenu/ContextMenu.module.css',
+      'components/Dialog/Dialog.module.css',
+    ]);
   });
 
   it('is the window’s, and is built from the --a-* tokens', () => {
@@ -139,15 +152,18 @@ describe('motion', () => {
     expect(css).not.toMatch(/transform:\s*scale\(\s*[\d.]/);
   });
 
-  // The one animation in the shell is the editor caret, whose 1s blink has no
-  // token to come from. `utilities/animation.css` neutralises it under reduced
+  // The caret's 1s blink has no token to come from; everything else that
+  // animates is a DS entrance on token clocks (the inspect spec's floating
+  // layers). `utilities/animation.css` neutralises all of it under reduced
   // motion (`animation-duration: .01ms !important`), which is what criterion 9
-  // is protecting; nothing else may animate on a hardcoded clock.
-  it.each(MODULES)('$name animates only the caret, on its own clock', ({ css }) => {
+  // is protecting; nothing may animate on any other hardcoded clock.
+  it.each(MODULES)('$name animates only the caret or a DS entrance, on tokens', ({ css }) => {
     const animations = css.match(/animation:[^;]*/g) ?? [];
 
     for (const declaration of animations) {
-      expect(declaration).toBe('animation: cd-caret 1s steps(1) infinite');
+      expect(declaration).toMatch(
+        /^animation: (cd-caret 1s steps\(1\) infinite|cd-(fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\))$/,
+      );
     }
   });
 });

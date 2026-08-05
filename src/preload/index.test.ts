@@ -58,6 +58,8 @@ describe('the bridge', () => {
       'configGet',
       'deviceAppInfo',
       'deviceList',
+      'maestroSnapshot',
+      'maestroSynthesizeSelector',
       'mirrorInput',
       'mirrorStart',
       'mirrorStop',
@@ -87,12 +89,16 @@ describe('the bridge', () => {
     await api.mirrorStop('mirror-1');
     await api.deviceAppInfo('R9QYC01EMXL');
     await api.mirrorInput('mirror-1', tap);
+    await api.maestroSnapshot('R9QYC01EMXL');
+    await api.maestroSynthesizeSelector('snapshot-1', [1, 2, 0]);
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
       { channel: CHANNELS.mirrorStop, args: ['mirror-1'] },
       { channel: CHANNELS.deviceAppInfo, args: ['R9QYC01EMXL'] },
       { channel: CHANNELS.mirrorInput, args: ['mirror-1', tap] },
+      { channel: CHANNELS.maestroSnapshot, args: ['R9QYC01EMXL'] },
+      { channel: CHANNELS.maestroSynthesizeSelector, args: ['snapshot-1', [1, 2, 0]] },
     ]);
   });
 

@@ -426,6 +426,69 @@ describe('the mirror selectors', () => {
  * run of text held for a few milliseconds must go out in front of whatever
  * interrupts it.
  */
+/**
+ * Criterion 19's trigger. The inspector recaptures after an interaction
+ * settles, so the store counts deliveries — and only the ones the device
+ * actually took: a refused tap changed nothing worth re-photographing.
+ */
+describe('inputs settling', () => {
+  const TAP = { type: 'tap', x: 232, y: 534, screenWidth: 464, screenHeight: 1024 } as const;
+
+  beforeEach(() => {
+    vi.useFakeTimers();
+  });
+
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  const drain = async (): Promise<void> => {
+    await vi.advanceTimersByTimeAsync(TEXT_BATCH_MS);
+    await vi.advanceTimersByTimeAsync(0);
+  };
+
+  it('counts an input the device took', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().sendInput(TAP);
+    store().sendInput({ type: 'back' });
+    await drain();
+
+    expect(store().inputsSettled).toBe(2);
+  });
+
+  it('does not count a refused input', async () => {
+    conductor.mirrorInput.mockResolvedValue({
+      ok: false,
+      error: { code: 'mirror/control-failed', message: 'gone' },
+    });
+    await store().startMirror(PHONE.id);
+
+    store().sendInput(TAP);
+    await drain();
+
+    expect(store().inputsSettled).toBe(0);
+  });
+
+  it('does not count an input whose session was replaced mid-flight', async () => {
+    let release: (value: { ok: true; data: { sessionId: string } }) => void = () => {};
+    conductor.mirrorInput.mockReturnValueOnce(
+      new Promise((resolve) => {
+        release = resolve;
+      }),
+    );
+    await store().startMirror(PHONE.id);
+
+    store().sendInput(TAP);
+    await drain();
+    store().mirrorEnded('mirror-1', { code: 'mirror/device-lost', message: 'gone' });
+    release({ ok: true, data: { sessionId: 'mirror-1' } });
+    await drain();
+
+    expect(store().inputsSettled).toBe(0);
+  });
+});
+
 describe('driving the device', () => {
   const TAP = { type: 'tap', x: 232, y: 534, screenWidth: 464, screenHeight: 1024 } as const;
 

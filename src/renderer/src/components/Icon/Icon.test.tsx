@@ -1,6 +1,7 @@
 import { render } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
-import { Icon } from './Icon';
+import { COMMAND_GROUPS } from '../../lib/command-templates';
+import { ACTION_ICONS, Icon } from './Icon';
 
 describe('Icon', () => {
   it('draws the named glyph at the requested size', () => {
@@ -28,5 +29,29 @@ describe('Icon', () => {
     const { container } = render(<Icon name="sparkles" />);
 
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
+  });
+
+  /** Criterion 24 — every command the menu offers has its DS glyph, drawable.
+   * The mapping is the design system's `ACTION_ICONS`, verbatim. */
+  it('maps every menu command to a glyph it can draw', () => {
+    for (const group of COMMAND_GROUPS) {
+      for (const command of group.commands) {
+        const name = ACTION_ICONS[command];
+
+        const { container, unmount } = render(<Icon name={name} />);
+        expect(
+          container.querySelector('svg path, svg circle, svg line, svg rect'),
+          `${command} → ${name}`,
+        ).toBeInTheDocument();
+        unmount();
+      }
+    }
+  });
+
+  it('follows the DS mapping for the signature commands', () => {
+    expect(ACTION_ICONS.tapOn).toBe('mouse-pointer-click');
+    expect(ACTION_ICONS.longPressOn).toBe('hand');
+    expect(ACTION_ICONS.inputText).toBe('text-cursor-input');
+    expect(ACTION_ICONS.assertVisible).toBe('eye');
   });
 });

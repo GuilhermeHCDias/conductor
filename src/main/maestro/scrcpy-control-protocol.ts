@@ -26,6 +26,11 @@ import {
  *                         u16 screenWidth, u16 screenHeight, u16 pressure,
  *                         i32 actionButton, i32 buttons
  *   BACK_OR_SCREEN_ON (4) u8 action
+ *
+ * The protocol itself has no press duration, so a gesture that is *held* — a
+ * long press, the gap inside a double tap — exists only as timing between
+ * messages. That timing is part of what the gesture is, so it travels beside
+ * the bytes it paces, as the `pauseAfterMs` of a step.
  */
 
 /** The type byte, from the 18-entry switch the server dispatches on. Only the
@@ -60,6 +65,22 @@ export const POINTER_ID_FINGER = -2n;
 const PRESSURE_FULL = 0xffff;
 
 /**
+ * How long a long press holds the finger down. `ViewConfiguration`'s default
+ * long-press timeout is 400ms; 800 clears it with room for a device where the
+ * person raised it, without feeling stuck.
+ */
+export const LONG_PRESS_HOLD_MS = 800;
+
+/**
+ * ⚠️ The pause between a double tap's two taps. `GestureDetector` refuses a
+ * second tap closer than `DOUBLE_TAP_MIN_TIME` (40ms — jitter, not a tap) and
+ * later than `DOUBLE_TAP_TIMEOUT` (300ms), so back-to-back writes at ~0ms
+ * would be rejected by the very views the gesture exists for. 80ms sits
+ * comfortably inside the window.
+ */
+export const DOUBLE_TAP_PAUSE_MS = 80;
+
+/**
  * Android's own numbers, read out of the platform `android.jar` rather than
  * remembered. They live here so nothing above the Gateway ever learns them: the
  * renderer names a key, and this is the only table that knows what 67 means.
@@ -92,30 +113,63 @@ export class ScrcpyControlError extends Error {
   }
 }
 
+/** One message of a gesture, and how long the caller holds before the next.
+ * Zero everywhere except inside the timed gestures — never after the last
+ * message, so no send lingers past its own bytes. */
+export type ControlStep = {
+  readonly bytes: Uint8Array;
+  readonly pauseAfterMs: number;
+};
+
 /**
- * The one door: an input the renderer asked for, as the messages the wire
+ * The one door: an input the renderer asked for, as the steps the wire
  * carries. A gesture that is a pair on the wire — a tap, a key, the back action
  * — comes back as two, in order, so the caller writes them together and neither
- * half can straddle a session change.
+ * half can straddle a session change. The timed gestures come back the same
+ * way, with the holds that make them what they are.
  *
  * Returns buffers built field by field from an argument list; nothing here ever
  * composes a string (.context.md §12.19, applied to encoding).
  */
-export function controlMessages(input: MirrorInput): Uint8Array[] {
+export function controlSteps(input: MirrorInput): ControlStep[] {
   switch (input.type) {
     case 'tap':
-      return [touchMessage(input, ACTION.down), touchMessage(input, ACTION.up)];
+      return [now(touchMessage(input, ACTION.down)), now(touchMessage(input, ACTION.up))];
+    case 'long-press':
+      return [
+        hold(touchMessage(input, ACTION.down), LONG_PRESS_HOLD_MS),
+        now(touchMessage(input, ACTION.up)),
+      ];
+    case 'double-tap':
+      return [
+        now(touchMessage(input, ACTION.down)),
+        hold(touchMessage(input, ACTION.up), DOUBLE_TAP_PAUSE_MS),
+        now(touchMessage(input, ACTION.down)),
+        now(touchMessage(input, ACTION.up)),
+      ];
     case 'text':
-      return [textMessage(input.text)];
+      return [now(textMessage(input.text))];
     case 'key':
       return [
-        keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.down),
-        keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.up),
+        now(keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.down)),
+        now(keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.up)),
       ];
     case 'back':
-      return [backMessage(ACTION.down), backMessage(ACTION.up)];
+      return [now(backMessage(ACTION.down)), now(backMessage(ACTION.up))];
   }
 }
+
+function now(bytes: Uint8Array): ControlStep {
+  return { bytes, pauseAfterMs: 0 };
+}
+
+function hold(bytes: Uint8Array, pauseAfterMs: number): ControlStep {
+  return { bytes, pauseAfterMs };
+}
+
+/** A touch is a touch whatever gesture it belongs to — the tap, the long
+ * press and the double tap all press these same 32 bytes. */
+type TouchPoint = Pick<MirrorTap, 'x' | 'y' | 'screenWidth' | 'screenHeight'>;
 
 /**
  * ⚠️ The declared screen size is not decoration. `PositionMapper.map` returns
@@ -123,10 +177,10 @@ export function controlMessages(input: MirrorInput): Uint8Array[] {
  * video's current size, and the touch is dropped. The caller supplies the size
  * because after a rotation only the renderer holds a fresh one.
  */
-function touchMessage(tap: MirrorTap, action: number): Uint8Array {
+function touchMessage(tap: TouchPoint, action: number): Uint8Array {
   if (tap.x < 0 || tap.x >= tap.screenWidth || tap.y < 0 || tap.y >= tap.screenHeight) {
     throw new ScrcpyControlError(
-      `A tap at (${tap.x}, ${tap.y}) is outside the ${tap.screenWidth}x${tap.screenHeight} stream it names.`,
+      `A touch at (${tap.x}, ${tap.y}) is outside the ${tap.screenWidth}x${tap.screenHeight} stream it names.`,
     );
   }
 

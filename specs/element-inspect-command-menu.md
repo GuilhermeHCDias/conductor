@@ -1,6 +1,6 @@
 # Element inspection & command menu
 
-status: todo
+status: doing
 created: 2026-08-05
 
 ## Goal
