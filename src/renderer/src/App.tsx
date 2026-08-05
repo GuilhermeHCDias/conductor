@@ -1,9 +1,11 @@
 import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
-import { FLOW_YAML } from './fixtures/flows';
 import { useElementWidth } from './hooks/useElementWidth';
+import { useRunEvents } from './hooks/useRunEvents';
 import { useWindowShortcuts } from './hooks/useWindowShortcuts';
 import { countCommands } from './lib/yaml-tokens';
+import { selectYaml, useFlowStore } from './stores/flow.store';
+import { selectRunning, selectSettledStepCount, useRunStore } from './stores/run.store';
 import { selectSidebarVisible, useUiStore } from './stores/ui.store';
 import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
 import { FlowEditor } from './views/FlowEditor/FlowEditor';
@@ -24,13 +26,17 @@ const INITIAL_WIDTH = 1280;
  */
 export function App(): JSX.Element {
   const dark = useUiStore((state) => state.dark);
-  const running = useUiStore((state) => state.running);
-  const reported = useUiStore((state) => state.steps.length);
+  // Run criterion 24 — the real run, over the open flow's own command count.
+  const running = useRunStore(selectRunning);
+  const settled = useRunStore(selectSettledStepCount);
+  const yaml = useFlowStore(selectYaml);
   const setWindowWidth = useUiStore((state) => state.setWindowWidth);
   const sidebarVisible = useUiStore(selectSidebarVisible);
   const [frameRef, frameWidth] = useElementWidth(INITIAL_WIDTH);
 
   useWindowShortcuts();
+  // App-wide, not view-scoped: the run outlives whichever lower tab is open.
+  useRunEvents();
 
   // A layout effect, not a plain one: the appearance has to be on the document
   // before the first paint, or the window flashes light and then goes dark
@@ -43,8 +49,8 @@ export function App(): JSX.Element {
     setWindowWidth(frameWidth);
   }, [frameWidth, setWindowWidth]);
 
-  const total = Math.max(countCommands(FLOW_YAML), 1);
-  const progress = Math.min(100, Math.round((reported / total) * 100));
+  const total = Math.max(countCommands(yaml), 1);
+  const progress = Math.min(100, Math.round((settled / total) * 100));
 
   return (
     <div className={styles.desktop} data-testid="window-frame" ref={frameRef}>

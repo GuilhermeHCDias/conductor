@@ -1,6 +1,6 @@
 # Flow run execution & live logs
 
-status: todo
+status: done
 created: 2026-08-05
 
 ## Goal
@@ -211,3 +211,43 @@ opened: the user writes the test by using the app, then watches it run.
   confusing.
 - **`--device <id>`** (assumed): the selected device from `device.store` is passed
   explicitly; never rely on Maestro's single-device default.
+- **Preload names follow the house domain-first style** (implementation):
+  `runStart` / `runCancel` / `onRunEvent`, matching `mirrorStart`/`onMirrorEvent` — the
+  spec's own "the mirror shape is the pattern" instruction outranks the `startRun`
+  spelling its context section used.
+- **Mid-run captures are refused, not queued** (implementation): `SnapshotService`
+  answers `run/active` while suspended; criterion 13's automatic end-of-run recapture
+  makes a deferral queue redundant. The renderer also stops *scheduling*
+  interaction-driven captures while a run is live, so the overlay stays quietly stale
+  instead of collecting refusals per tap.
+- **`runFlow` is handler-shaped, not an AsyncIterable** (implementation): the
+  `startMirror` pattern (`onProgress` with typed `RunProgress`, `onExit` with the
+  exit reason, a `kill()` handle). Parsing runs inside `LocalGateway`, so the Gateway
+  contract stays remote-safe at the event level — a `RemoteGateway` serves the same
+  events off a different wire.
+- **`spawnStreaming` settles on `close`, and learned `killTree`** (implementation):
+  exit is reported only after stdio drains, so the terminal event is guaranteed to be
+  terminal; the opt-in `killTree` spawns a POSIX process group and SIGTERMs it whole —
+  criterion 9's "process tree" — used only by `CliRunner`. Verified against the real
+  JVM on the reference device: a mid-assert kill settles in ~0.5 s with exit 143.
+- **Maestro binary resolution extracted to `maestro/resolve-maestro.ts`**
+  (implementation), shared by `MaestroMcpService` and `CliRunner` — one ladder, so the
+  two spawners can never disagree about where maestro is.
+- **The non-TTY format, captured live** (implementation, maestro 2.8.0 on the
+  reference device — `maestro-test.capture.json`): a step's label arrives as a partial
+  line ending `...` the moment the step starts; ` COMPLETED`/` FAILED` + newline land
+  on settle; syntax-class failures print one stderr line, no steps, exit 1; SIGTERM
+  exits 143. The parser therefore detects step starts on the *partial* buffer, and
+  unknown verdict words (`SKIPPED`…) degrade to plain log.
+- **Log cap = 5000 lines** (implementation), newest kept, with the visible
+  "… earlier output dropped" marker the constraint demands.
+- **Step durations and canceled-step state** (implementation): the renderer stamps
+  `m:ss` on a step when its verdict lands; a step still running when a canceled run
+  settles reads `idle` — it neither passed nor failed.
+- **The Run click switches the lower panel immediately** (implementation): progress
+  lands there if the run starts, and the failure lands there if it refuses
+  (criterion 22) — waiting for the response would leave a refused click showing
+  nothing.
+- **No per-domain IPC registrar test** (implementation): the guarded seam is
+  `handle.ts`, which carries the tests — the `run.ts` registrar is thin exactly like
+  `device.ts`/`maestro.ts`, which have none either.

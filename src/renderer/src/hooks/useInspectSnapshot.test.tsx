@@ -8,6 +8,7 @@ import {
   resetInspectStore,
   useInspectStore,
 } from '../stores/inspect.store';
+import { resetRunStore, useRunStore } from '../stores/run.store';
 import { useInspectSnapshot } from './useInspectSnapshot';
 
 /**
@@ -53,6 +54,7 @@ let conductor: {
 beforeEach(() => {
   resetDeviceStore();
   resetInspectStore();
+  resetRunStore();
   conductor = {
     maestroSnapshot: vi.fn(() => Promise.resolve<Result<SnapshotView>>({ ok: true, data: VIEW })),
     mirrorInput: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
@@ -191,5 +193,72 @@ describe('the snapshot cadence', () => {
     unmount();
 
     expect(inspect().snapshot).toBeNull();
+  });
+});
+
+/** Run criteria 11 and 13 — the inspector during and after a flow run. */
+describe('while a flow runs', () => {
+  /** The renderer half of criterion 11: main refuses mid-run captures anyway,
+   * but the polite client never schedules them — the overlay stays quietly
+   * stale instead of collecting refusals per tap. */
+  it('schedules no recapture for inputs while the run is active', async () => {
+    renderHook(() => {
+      useInspectSnapshot();
+    });
+    await streaming();
+    await waitFor(() => {
+      expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      useRunStore.setState({ running: true, runId: 'run-1' });
+    });
+
+    vi.useFakeTimers();
+    act(() => {
+      device().sendInput({ type: 'back' });
+    });
+    await act(async () => {
+      await vi.advanceTimersByTimeAsync(INTERACTION_DEBOUNCE_MS * 2);
+    });
+
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  /** Criterion 13 — the §5.5 end-of-flow recapture, automatic: the overlay
+   * recovers without the person touching anything. */
+  it('recaptures the moment the run ends', async () => {
+    renderHook(() => {
+      useInspectSnapshot();
+    });
+    await streaming();
+    await waitFor(() => {
+      expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      useRunStore.setState({ running: true, runId: 'run-1' });
+    });
+
+    act(() => {
+      useRunStore.getState().applyEvent({
+        ok: true,
+        data: { type: 'finished', runId: 'run-1', outcome: 'passed', message: null },
+      });
+    });
+
+    await waitFor(() => {
+      expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  it('captures nothing for a run that ended with no mirror on screen', async () => {
+    renderHook(() => {
+      useInspectSnapshot();
+    });
+
+    act(() => {
+      useRunStore.setState({ completedRuns: 1 });
+    });
+
+    expect(conductor.maestroSnapshot).not.toHaveBeenCalled();
   });
 });

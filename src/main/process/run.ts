@@ -144,7 +144,12 @@ export interface StreamingProcess {
   write: (chunk: string) => void;
   onStdout: (listener: (chunk: string) => void) => void;
   onStderr: (listener: (chunk: string) => void) => void;
-  /** Fires exactly once — on exit, or on a failure to start. */
+  /**
+   * Fires exactly once — after the child stopped *and* its stdio drained, or
+   * on a failure to start. Draining first is load-bearing for the run path:
+   * the terminal `run:event` goes out on this callback, and a tail of log
+   * arriving after "the run is over" would be a lie about order.
+   */
   onExit: (listener: (reason: ExitReason) => void) => void;
   /** Idempotent, and safe on a child that already exited. */
   kill: () => void;
@@ -153,12 +158,22 @@ export interface StreamingProcess {
 export type SpawnOptions = {
   readonly cwd?: string;
   readonly env?: NodeJS.ProcessEnv;
+  /**
+   * Makes `kill` take down the child's whole process tree, not just the child
+   * (run criterion 9): the child is spawned as its own POSIX process group and
+   * the signal goes to the group. `maestro`'s launcher `exec`s into the JVM,
+   * but whatever the JVM spawns must die with it — a JVM is exactly the kind
+   * of orphan `before-quit` exists to prevent. No-op on Windows, where process
+   * groups do not exist; the plain kill still lands on the child itself.
+   */
+  readonly killTree?: boolean;
 };
 
 /**
- * The streaming counterpart to `run`, for the one child that must outlive a
- * single call: the `maestro mcp` server behind `inspect_screen`. `run` buffers
- * to completion, which for a server on stdio means waiting forever.
+ * The streaming counterpart to `run`, for a child that must outlive a single
+ * call: the `maestro mcp` server behind `inspect_screen`, and the `maestro
+ * test` run behind the Run button. `run` buffers to completion, which for a
+ * server on stdio means waiting forever.
  *
  * Same rules as `run`: an argument array, never a shell, and a failure to start
  * is reported as a value rather than thrown at whoever happened to be awaiting.
@@ -168,12 +183,15 @@ export function spawnStreaming(
   args: readonly string[],
   options: SpawnOptions = {},
 ): StreamingProcess {
+  const grouped = options.killTree === true && process.platform !== 'win32';
   const child = spawn(command, [...args], {
     cwd: options.cwd,
     env: options.env,
     shell: false,
     windowsHide: true,
     stdio: ['pipe', 'pipe', 'pipe'],
+    // A group of its own, so `kill` can signal the whole tree at once.
+    detached: grouped,
   });
 
   child.stdout.setEncoding('utf8');
@@ -199,7 +217,10 @@ export function spawnStreaming(
   child.on('error', (error) => {
     settle({ code: null, error });
   });
-  child.on('exit', (code) => {
+  // `close`, not `exit`: `exit` fires the moment the process dies, while its
+  // last output can still be sitting in the pipe — `close` waits for both.
+  // A failed start emits `error` first, and the one-shot settle keeps it.
+  child.on('close', (code) => {
     settle({ code, error: null });
   });
   // A child that dies with its stdin still open makes the write below emit
@@ -230,9 +251,21 @@ export function spawnStreaming(
       exitListeners.add(listener);
     },
     kill: () => {
-      if (reason === null) {
-        child.kill();
+      if (reason !== null) {
+        return;
       }
+      if (grouped && typeof child.pid === 'number') {
+        try {
+          // The negative pid addresses the group — the child and every
+          // process it started, however deep.
+          process.kill(-child.pid, 'SIGTERM');
+          return;
+        } catch {
+          // The group is already gone, or never came to exist. The plain
+          // kill below still reports honestly against the child itself.
+        }
+      }
+      child.kill();
     },
   };
 }

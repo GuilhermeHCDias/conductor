@@ -18,6 +18,8 @@ const api: ConductorApi = {
   maestroSnapshot: (deviceId) => ipcRenderer.invoke(CHANNELS.maestroSnapshot, deviceId),
   maestroSynthesizeSelector: (snapshotId, path) =>
     ipcRenderer.invoke(CHANNELS.maestroSynthesizeSelector, snapshotId, path),
+  runStart: (deviceId, yaml) => ipcRenderer.invoke(CHANNELS.runStart, deviceId, yaml),
+  runCancel: (runId) => ipcRenderer.invoke(CHANNELS.runCancel, runId),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -40,6 +42,17 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.mirrorEvent, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.mirrorEvent, forward);
+    };
+  },
+
+  // Same shape once more — a run's log alone can be thousands of events.
+  onRunEvent: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'run:event'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.runEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.runEvent, forward);
     };
   },
 };

@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { SnapshotView, TreeNode } from './types';
+import type { RunEvent, SnapshotView, TreeNode } from './types';
 
 /**
  * The single IPC contract: channel names, one Zod schema per channel payload,
@@ -19,6 +19,8 @@ export const CHANNELS = {
   mirrorInput: 'mirror:input',
   maestroSnapshot: 'maestro:snapshot',
   maestroSynthesizeSelector: 'maestro:synthesize-selector',
+  runStart: 'run:start',
+  runCancel: 'run:cancel',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -27,6 +29,7 @@ export const CHANNELS = {
 export const PUSH_CHANNELS = {
   deviceChanged: 'device:changed',
   mirrorEvent: 'mirror:event',
+  runEvent: 'run:event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -318,6 +321,31 @@ const synthesizedSelector = z.object({
   fragile: z.boolean(),
 });
 
+/** Names the run an answer or an event is about. What `run:start` gives back
+ * is deliberately only this — progress is pushed, never awaited (criterion 1). */
+const runRef = z.object({ runId: z.string() });
+
+/** Criterion 7's vocabulary — see `RunOutcome` in `shared/types.ts`. */
+const runOutcome = z.enum(['passed', 'failed', 'canceled', 'error']);
+
+/**
+ * Criterion 6. Typed explicitly so a drift between this schema and the shared
+ * `RunEvent` is a compile error here, the way `treeNode` pins `TreeNode`.
+ */
+const runEvent: z.ZodType<RunEvent> = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('started'), runId: z.string() }),
+  z.object({ type: z.literal('step-started'), runId: z.string(), label: z.string() }),
+  z.object({ type: z.literal('step-passed'), runId: z.string(), label: z.string() }),
+  z.object({ type: z.literal('step-failed'), runId: z.string(), label: z.string() }),
+  z.object({ type: z.literal('log'), runId: z.string(), lines: z.array(z.string()).readonly() }),
+  z.object({
+    type: z.literal('finished'),
+    runId: z.string(),
+    outcome: runOutcome,
+    message: z.string().nullable(),
+  }),
+]);
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
@@ -334,12 +362,21 @@ export const IPC = {
     request: z.tuple([z.string(), treePath]),
     response: synthesizedSelector,
   },
+  // The device id and the open flow's YAML text — what you see is what runs
+  // (criterion 15), and an empty flow is refused at the boundary the way the
+  // Run button already disables it (criterion 17).
+  [CHANNELS.runStart]: {
+    request: z.tuple([z.string(), z.string().min(1)]),
+    response: runRef,
+  },
+  [CHANNELS.runCancel]: { request: z.tuple([z.string()]), response: runRef },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
 export const PUSH = {
   [PUSH_CHANNELS.deviceChanged]: deviceSnapshot,
   [PUSH_CHANNELS.mirrorEvent]: mirrorEvent,
+  [PUSH_CHANNELS.runEvent]: runEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -438,6 +475,27 @@ export const ERROR_CODES = {
   /** §5.4's 0-match case: no rung of the ladder can name the element. A bug by
    * definition — logged, and nothing is written. */
   selectorNoMatch: 'selector/no-match',
+  /**
+   * A run is already active. Both faces of §4.3.2's exclusion wear it: a second
+   * `run:start` is refused (criterion 4), and a snapshot capture asked for
+   * mid-run is refused too — the renderer reads it as "stale until the run
+   * ends", never as the inspector breaking (criterion 11).
+   */
+  runActive: 'run/active',
+  /**
+   * Criterion 3. The `maestro` binary could not be resolved, answered on
+   * `run:start` itself. Distinct from the mcp child's `mcp/maestro-not-found`
+   * because it surfaces on a different path — and distinct by construction
+   * from a mid-run failure, which travels as a terminal event, not a code.
+   */
+  runMaestroNotFound: 'run/maestro-not-found',
+  /** Criterion 9. A cancel naming a run that is unknown or already finished —
+   * refused, and nothing is emitted for it. */
+  runNotFound: 'run/not-found',
+  /** The run could not begin — the temp file would not write, the spawn threw.
+   * The honest fallback for `run:start`, the way `capture/failed` is for the
+   * snapshot path. */
+  runStartFailed: 'run/start-failed',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -466,10 +524,20 @@ export interface ConductorApi {
   maestroSynthesizeSelector: (
     ...args: Request<'maestro:synthesize-selector'>
   ) => Promise<Result<Response<'maestro:synthesize-selector'>>>;
+  /** Starts the open flow on the device and answers with the run id the moment
+   * the child is spawned — progress arrives on `onRunEvent`, never here
+   * (criterion 1). */
+  runStart: (...args: Request<'run:start'>) => Promise<Result<Response<'run:start'>>>;
+  /** Criterion 9. Cancellation is its own channel: a push against a device that
+   * hangs must never be what stands between the person and the Stop button. */
+  runCancel: (...args: Request<'run:cancel'>) => Promise<Result<Response<'run:cancel'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
   /** Criterion 32. Same rule, and it bites harder here: this one fires 30 times
    * a second, so a listener left behind is a memory leak with a framerate. */
   onMirrorEvent: (listener: (payload: PushPayload<'mirror:event'>) => void) => () => void;
+  /** Criterion 25. Same rule again — a run's log can be thousands of lines,
+   * and the subscription is consumed in one app-wide hook's effect cleanup. */
+  onRunEvent: (listener: (payload: PushPayload<'run:event'>) => void) => () => void;
 }

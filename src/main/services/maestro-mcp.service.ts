@@ -1,6 +1,6 @@
-import { delimiter, join } from 'node:path';
 import { ERROR_CODES, type ErrorCode } from '@shared/ipc';
 import { McpClient, McpTimeoutError } from '../maestro/McpClient';
+import { resolveMaestro } from '../maestro/resolve-maestro';
 import type { SpawnOptions, StreamingProcess } from '../process/run';
 
 /**
@@ -75,17 +75,10 @@ export class MaestroMcpService {
     this.deps = deps;
   }
 
-  /** The configured path, `PATH`, then where the Maestro installer puts it. */
+  /** The configured path, `PATH`, then where the Maestro installer puts it —
+   * the one ladder `resolve-maestro` holds for this child and `CliRunner`. */
   resolve(): string | null {
-    const { configuredPath, env, home, isExecutable } = this.deps;
-    const candidates = [
-      ...(configuredPath === '' ? [] : [configuredPath]),
-      ...(env.PATH ?? '')
-        .split(delimiter)
-        .flatMap((dir) => (dir === '' ? [] : [join(dir, 'maestro')])),
-      join(home, '.maestro', 'bin', 'maestro'),
-    ];
-    return candidates.find((candidate) => isExecutable(candidate)) ?? null;
+    return resolveMaestro(this.deps);
   }
 
   /**
