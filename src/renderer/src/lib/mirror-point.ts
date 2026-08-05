@@ -35,13 +35,8 @@ export type MirrorPoint = {
   readonly y: number;
 };
 
-export function mirrorPoint({
-  offsetX,
-  offsetY,
-  scale,
-  streamWidth,
-  streamHeight,
-}: MirrorClick): MirrorPoint | null {
+export function mirrorPoint(click: MirrorClick): MirrorPoint | null {
+  const { offsetX, offsetY, scale, streamWidth, streamHeight } = click;
   // Nothing is drawn, so nothing was clicked. Dividing by this would give
   // Infinity, and clamping Infinity would silently pick a corner.
   if (scale <= 0 || streamWidth <= 0 || streamHeight <= 0) {
@@ -57,10 +52,34 @@ export function mirrorPoint({
     return null;
   }
 
-  // Criterion 9. The bounds check is on CSS pixels and this is the result of a
-  // floating-point division, so the clamp is what actually guarantees the range:
-  // a click a hair inside the edge must not divide out to `streamWidth`, which
-  // the device would accept and misplace rather than reject.
+  return mirrorPointClamped(click);
+}
+
+/**
+ * The same mapping, for a point that may have left the picture — the far end of
+ * a drag, and nothing else so far.
+ *
+ * The two differ by one policy, deliberately. A *click* in the gutter is a
+ * click on the app, so `mirrorPoint` refuses it. A *finger* cannot leave the
+ * glass mid-drag: on a real phone, dragging past the edge keeps the touch
+ * pinned at the edge until you lift, so pinning is the faithful answer and
+ * refusing would throw away the scroll the person actually performed.
+ */
+export function mirrorPointClamped({
+  offsetX,
+  offsetY,
+  scale,
+  streamWidth,
+  streamHeight,
+}: MirrorClick): MirrorPoint | null {
+  if (scale <= 0 || streamWidth <= 0 || streamHeight <= 0) {
+    return null;
+  }
+
+  // Criterion 9. The bounds check above is on CSS pixels and this is the result
+  // of a floating-point division, so the clamp is what actually guarantees the
+  // range: a click a hair inside the edge must not divide out to `streamWidth`,
+  // which the device would accept and misplace rather than reject.
   return {
     x: clamp(Math.floor(offsetX / scale), streamWidth),
     y: clamp(Math.floor(offsetY / scale), streamHeight),

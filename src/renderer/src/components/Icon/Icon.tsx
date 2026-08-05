@@ -1,4 +1,5 @@
 import type { JSX, ReactElement } from 'react';
+import type { MenuCommand } from '../../lib/command-templates';
 import styles from './Icon.module.css';
 
 /**
@@ -36,6 +37,18 @@ const ICONS = {
       <path d="m15 18-6-6 6-6" />
     </>
   ),
+  'chevrons-up-down': (
+    <>
+      <path d="m7 15 5 5 5-5" />
+      <path d="m7 9 5-5 5 5" />
+    </>
+  ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </>
+  ),
   'circle-stop': (
     <>
       <circle cx="12" cy="12" r="10" />
@@ -71,6 +84,20 @@ const ICONS = {
       <circle cx="5" cy="12" r="1" />
     </>
   ),
+  eye: (
+    <>
+      <path d="M2.062 12.348a1 1 0 0 1 0-.696 10.75 10.75 0 0 1 19.876 0 1 1 0 0 1 0 .696 10.75 10.75 0 0 1-19.876 0" />
+      <circle cx="12" cy="12" r="3" />
+    </>
+  ),
+  'eye-off': (
+    <>
+      <path d="M10.733 5.076a10.744 10.744 0 0 1 11.205 6.575 1 1 0 0 1 0 .696 10.747 10.747 0 0 1-1.444 2.49" />
+      <path d="M14.084 14.158a3 3 0 0 1-4.242-4.242" />
+      <path d="M17.479 17.499a10.75 10.75 0 0 1-15.417-5.151 1 1 0 0 1 0-.696 10.75 10.75 0 0 1 4.446-5.143" />
+      <path d="m2 2 20 20" />
+    </>
+  ),
   'file-code': (
     <>
       <path d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z" />
@@ -79,9 +106,26 @@ const ICONS = {
       <path d="m14 12.5 2 2.5-2 2.5" />
     </>
   ),
+  hand: (
+    <>
+      <path d="M18 11V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2" />
+      <path d="M14 10V4a2 2 0 0 0-2-2a2 2 0 0 0-2 2v2" />
+      <path d="M10 10.5V6a2 2 0 0 0-2-2a2 2 0 0 0-2 2v8" />
+      <path d="M18 8a2 2 0 1 1 4 0v6a8 8 0 0 1-8 8h-2c-2.8 0-4.5-.86-5.99-2.34l-3.6-3.6a2 2 0 0 1 2.83-2.82L7 15" />
+    </>
+  ),
   moon: (
     <>
       <path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
+    </>
+  ),
+  'mouse-pointer-click': (
+    <>
+      <path d="M14 4.1 12 6" />
+      <path d="m5.1 8-2.9-.8" />
+      <path d="m6 12-1.9 2" />
+      <path d="M7.2 2.2 8 5.1" />
+      <path d="M9.037 9.69a.498.498 0 0 1 .653-.653l11 4.5a.5.5 0 0 1-.074.949l-4.349 1.041a1 1 0 0 0-.74.739l-1.04 4.35a.5.5 0 0 1-.95.074z" />
     </>
   ),
   'panel-left': (
@@ -109,10 +153,30 @@ const ICONS = {
       <path d="M8 16H3v5" />
     </>
   ),
+  'rotate-cw': (
+    <>
+      <path d="M21 12a9 9 0 1 1-9-9c2.52 0 4.93 1 6.74 2.74L21 8" />
+      <path d="M21 3v5h-5" />
+    </>
+  ),
   search: (
     <>
       <path d="m21 21-4.34-4.34" />
       <circle cx="11" cy="11" r="8" />
+    </>
+  ),
+  'square-dashed-mouse-pointer': (
+    <>
+      <path d="M12.034 12.681a.498.498 0 0 1 .647-.647l9 3.5a.5.5 0 0 1-.033.943l-3.444 1.068a1 1 0 0 0-.66.66l-1.067 3.443a.5.5 0 0 1-.943.033z" />
+      <path d="M5 3a2 2 0 0 0-2 2" />
+      <path d="M19 3a2 2 0 0 1 2 2" />
+      <path d="M5 21a2 2 0 0 1-2-2" />
+      <path d="M9 3h1" />
+      <path d="M9 21h2" />
+      <path d="M14 3h1" />
+      <path d="M3 9v1" />
+      <path d="M21 9v2" />
+      <path d="M3 14v1" />
     </>
   ),
   send: (
@@ -148,6 +212,35 @@ const ICONS = {
       <path d="m19.07 4.93-1.41 1.41" />
     </>
   ),
+  'text-cursor-input': (
+    <>
+      <path d="M12 20h-1a2 2 0 0 1-2-2 2 2 0 0 1-2 2H6" />
+      <path d="M13 8h7a2 2 0 0 1 2 2v4a2 2 0 0 1-2 2h-7" />
+      <path d="M5 16H4a2 2 0 0 1-2-2v-4a2 2 0 0 1 2-2h1" />
+      <path d="M6 4h1a2 2 0 0 1 2 2 2 2 0 0 1 2-2h1" />
+      <path d="M9 6v12" />
+    </>
+  ),
+  timer: (
+    <>
+      <line x1="10" x2="14" y1="2" y2="2" />
+      <line x1="12" x2="15" y1="14" y2="11" />
+      <circle cx="12" cy="14" r="8" />
+    </>
+  ),
+  'triangle-alert': (
+    <>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  ),
+  'undo-2': (
+    <>
+      <path d="M9 14 4 9l5-5" />
+      <path d="M4 9h10.5a5.5 5.5 0 0 1 5.5 5.5a5.5 5.5 0 0 1-5.5 5.5H11" />
+    </>
+  ),
   variable: (
     <>
       <path d="M8 21s-4-3-4-9 4-9 4-9" />
@@ -173,6 +266,26 @@ const ICONS = {
 } satisfies Record<string, ReactElement>;
 
 export type IconName = keyof typeof ICONS;
+
+/**
+ * The design system's mapping from Maestro command to glyph (`core/Icon`'s
+ * `ACTION_ICONS`), for every command the menu offers. `scrollUntilVisible`
+ * takes the DS's scroll glyph — the DS table predates the command.
+ */
+export const ACTION_ICONS = {
+  tapOn: 'mouse-pointer-click',
+  doubleTapOn: 'square-dashed-mouse-pointer',
+  longPressOn: 'hand',
+  inputText: 'text-cursor-input',
+  scrollUntilVisible: 'chevrons-up-down',
+  eraseText: 'undo-2',
+  assertVisible: 'eye',
+  assertNotVisible: 'eye-off',
+  waitForAnimationToEnd: 'timer',
+  extendedWaitUntil: 'clock',
+  takeScreenshot: 'camera',
+  copyTextFrom: 'copy',
+} as const satisfies Record<MenuCommand, IconName>;
 
 export type IconProps = {
   readonly name: IconName;

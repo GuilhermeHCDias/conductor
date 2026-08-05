@@ -5,6 +5,7 @@ import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
 import { app, BrowserWindow } from 'electron';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
+import { registerMaestroIpc } from './ipc/maestro';
 import { AdbBridge } from './maestro/AdbBridge';
 import { LocalGateway } from './maestro/LocalGateway';
 import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
@@ -13,6 +14,7 @@ import { isExecutable } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
+import { SnapshotService } from './services/snapshot.service';
 import { createWindow, ICON_PATH } from './window';
 
 /**
@@ -152,8 +154,9 @@ if (!app.requestSingleInstanceLock()) {
     // `run`, because the latter decodes stdout as UTF-8 and a PNG does not
     // survive it.
     const capture = new ScreenCapture({ adb, run: runBinary });
+    const gateway = new LocalGateway(adb, scrcpy, mcp, capture);
     const device = new DeviceService({
-      gateway: new LocalGateway(adb, scrcpy, mcp, capture),
+      gateway,
       appId: CONFIG.APP_ID,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.deviceChanged, payload);
@@ -162,10 +165,14 @@ if (!app.requestSingleInstanceLock()) {
         broadcast(PUSH_CHANNELS.mirrorEvent, payload);
       },
     });
+    // Holds no process and no watcher — the MCP child behind `hierarchy()`
+    // stays `MaestroMcpService`'s — so it is not in the disposal registry.
+    const snapshot = new SnapshotService({ gateway });
     services.push(device, mcp);
 
     registerAppIpc();
     registerDeviceIpc({ device });
+    registerMaestroIpc({ snapshot });
 
     watchRenderer(createWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.

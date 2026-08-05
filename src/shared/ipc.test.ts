@@ -10,14 +10,9 @@ import { CHANNELS, ERROR_CODES, IPC, PUSH, PUSH_CHANNELS } from './ipc';
 
 describe('the channels', () => {
   /**
-   * `viewer:open` is gone with the feature behind it (criterion 24).
-   *
-   * ⚠️ Nothing was added in its place. `hierarchy` and `screenshot` are Gateway
-   * capabilities this spec keeps in main on purpose (criterion 3): there is no
-   * renderer code that calls them yet, and a channel with no caller is surface
-   * that has to be maintained before anyone knows what shape it wants. The
-   * snapshot spec is the one that needs this data in the renderer, and it is
-   * where the channels belong.
+   * The two `maestro:` invokes arrived with the inspect spec — the successor
+   * this list was holding the door for. `maestro:synthesize-selector` is the
+   * name AGENTS.md's worked example uses, verbatim.
    */
   it('are exactly the invokes this app declares', () => {
     expect(Object.values(CHANNELS)).toEqual([
@@ -28,15 +23,21 @@ describe('the channels', () => {
       'mirror:start',
       'mirror:stop',
       'mirror:input',
+      'maestro:snapshot',
+      'maestro:synthesize-selector',
     ]);
   });
 
-  /** Criterion 3, stated where a future reader would otherwise add one out of
-   * tidiness. */
-  it('declares no channel for the hierarchy or the screenshot yet', () => {
+  /**
+   * Criterion 6 of the inspect spec: the tree crosses inside the snapshot,
+   * and the screenshot's bytes still never cross at all — they exist in main
+   * to calibrate. A raw hierarchy or screenshot channel would be surface for
+   * data nothing renders.
+   */
+  it('declares no channel for raw hierarchy or screenshot bytes', () => {
     const channels: string[] = [...Object.values(CHANNELS), ...Object.values(PUSH_CHANNELS)];
 
-    expect(channels.filter((channel) => /hierarchy|screenshot|snapshot/.test(channel))).toEqual([]);
+    expect(channels.filter((channel) => /hierarchy|screenshot/.test(channel))).toEqual([]);
   });
 
   it('are exactly the pushes this app declares', () => {
@@ -205,13 +206,184 @@ describe('mirror:input', () => {
     expect(schema.request.safeParse(['mirror-1', { type: 'back' }]).success).toBe(true);
   });
 
-  it('refuses an input that is none of those four', () => {
-    expect(schema.request.safeParse(['mirror-1', { type: 'swipe' }]).success).toBe(false);
+  /**
+   * Criterion 40 — the two gestures the command menu executes, shaped exactly
+   * like a tap and expanded main-side the same way. The timing is main's:
+   * nothing above the Gateway learns what a long press is made of.
+   */
+  it('carries the long-press and double-tap gestures with the same guards as a tap', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, type: 'long-press' }]).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['mirror-1', { ...tap, type: 'double-tap' }]).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['mirror-1', { type: 'long-press', x: 1, y: 1 }]).success).toBe(
+      false,
+    );
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'double-tap', x: 464 }]).success,
+    ).toBe(false);
+  });
+
+  /**
+   * The live drag crosses one phase at a time — down, then every move, then up
+   * — because the hand is still drawing the gesture when its first message
+   * must already be on the device. No composed form could carry that: the far
+   * end does not exist yet. Each phase is guarded exactly like a tap's point,
+   * for the same `PositionMapper` reason.
+   */
+  it('carries a live touch as one phase at one point', () => {
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'down' }]).success,
+    ).toBe(true);
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'move' }]).success,
+    ).toBe(true);
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'up' }]).success,
+    ).toBe(true);
+  });
+
+  it('requires a touch to say which phase it is', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, type: 'touch' }]).success).toBe(false);
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'cancel' }]).success,
+    ).toBe(false);
+  });
+
+  it('guards a touch phase exactly as it guards a tap', () => {
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'move', x: 464 }])
+        .success,
+    ).toBe(false);
+    expect(
+      schema.request.safeParse([
+        'mirror-1',
+        { ...tap, type: 'touch', action: 'up', screenWidth: undefined },
+      ]).success,
+    ).toBe(false);
+  });
+
+  it('refuses an input that is none of the declared kinds', () => {
+    // `swipe` once stood in this union: the replayed gesture the live `touch`
+    // phases made redundant. It must stay refused now that nothing sends it.
+    expect(schema.request.safeParse(['mirror-1', { type: 'pinch' }]).success).toBe(false);
+    expect(
+      schema.request.safeParse([
+        'mirror-1',
+        { ...tap, type: 'swipe', toX: 232, toY: 100, durationMs: 240 },
+      ]).success,
+    ).toBe(false);
     expect(schema.request.safeParse(['mirror-1', { type: 'clipboard' }]).success).toBe(false);
   });
 
   it('answers with the session it reached', () => {
     expect(schema.response.safeParse({ sessionId: 'mirror-1' }).success).toBe(true);
+  });
+});
+
+/** A minimal but complete node, nested once — the recursive shape is the whole
+ * point of the schema, so the fixture exercises it. */
+const NODE = {
+  bounds: { x1: 0, y1: 0, x2: 720, y2: 1600 },
+  className: 'android.widget.FrameLayout',
+  text: null,
+  resourceId: null,
+  contentDescription: null,
+  hintText: null,
+  scrollable: null,
+  clickable: true,
+  enabled: null,
+  focused: null,
+  selected: null,
+  checked: null,
+  children: [
+    {
+      bounds: null,
+      className: null,
+      text: 'Entrar',
+      resourceId: 'com.vtex.pnp:id/login',
+      contentDescription: null,
+      hintText: null,
+      scrollable: null,
+      clickable: null,
+      enabled: null,
+      focused: null,
+      selected: null,
+      checked: null,
+      children: [],
+    },
+  ],
+};
+
+describe('maestro:snapshot', () => {
+  const schema = IPC[CHANNELS.maestroSnapshot];
+
+  it('takes the opaque device id and nothing else', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  /** Criterion 1 — the tree, the screenshot's size and the calibrated scale.
+   * The recursive `TreeNode` is what `z.lazy` exists for here. */
+  it('answers the snapshot view with its nested tree', () => {
+    const parsed = schema.response.safeParse({
+      snapshotId: 'snapshot-1',
+      tree: NODE,
+      screenshotWidth: 720,
+      screenshotHeight: 1600,
+      scale: 1,
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('refuses a snapshot with no calibration', () => {
+    const parsed = schema.response.safeParse({
+      snapshotId: 'snapshot-1',
+      tree: NODE,
+      screenshotWidth: 720,
+      screenshotHeight: 1600,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('maestro:synthesize-selector', () => {
+  const schema = IPC[CHANNELS.maestroSynthesizeSelector];
+
+  /** Criterion 5 — the snapshot the renderer hit-tested, and the node's path
+   * of child indices in that tree. */
+  it('takes the snapshot id and the node path', () => {
+    expect(schema.request.safeParse(['snapshot-1', [1, 2, 0]]).success).toBe(true);
+    expect(schema.request.safeParse(['snapshot-1', []]).success).toBe(true);
+    expect(schema.request.safeParse(['snapshot-1']).success).toBe(false);
+    expect(schema.request.safeParse(['snapshot-1', [-1]]).success).toBe(false);
+    expect(schema.request.safeParse(['snapshot-1', [1.5]]).success).toBe(false);
+  });
+
+  /** Criterion 35 — a structured result, never a full command. */
+  it('answers the rung, the fragment and the fragility flag', () => {
+    const parsed = schema.response.safeParse({
+      level: 'id',
+      selector: 'id: "com.vtex.pnp:id/login"',
+      fragile: false,
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  /** Criterion 32 — the levels are the ladder's, and only the ladder's. */
+  it('refuses a rung the ladder does not have', () => {
+    const parsed = schema.response.safeParse({
+      level: 'class',
+      selector: 'class: "android.widget.Button"',
+      fragile: false,
+    });
+
+    expect(parsed.success).toBe(false);
   });
 });
 
@@ -343,5 +515,22 @@ describe('the failure codes', () => {
       ERROR_CODES.captureFailed,
       ERROR_CODES.adbNotFound,
     ]).toEqual(['hierarchy/parse-failed', 'capture/failed', 'device/adb-not-found']);
+  });
+
+  /** The inspect spec's four: a stale snapshot re-captures and retries, a
+   * calibration that cannot happen refuses, and the two synthesis failures
+   * write nothing (criteria 3, 5, 28, 31). */
+  it('tell the snapshot and synthesis failures apart', () => {
+    expect([
+      ERROR_CODES.snapshotStale,
+      ERROR_CODES.snapshotNoBounds,
+      ERROR_CODES.selectorNodeMissing,
+      ERROR_CODES.selectorNoMatch,
+    ]).toEqual([
+      'snapshot/stale',
+      'snapshot/no-bounds',
+      'selector/node-missing',
+      'selector/no-match',
+    ]);
   });
 });

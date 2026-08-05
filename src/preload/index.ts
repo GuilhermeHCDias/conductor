@@ -15,6 +15,9 @@ const api: ConductorApi = {
   mirrorStart: (deviceId) => ipcRenderer.invoke(CHANNELS.mirrorStart, deviceId),
   mirrorStop: (sessionId) => ipcRenderer.invoke(CHANNELS.mirrorStop, sessionId),
   mirrorInput: (sessionId, input) => ipcRenderer.invoke(CHANNELS.mirrorInput, sessionId, input),
+  maestroSnapshot: (deviceId) => ipcRenderer.invoke(CHANNELS.maestroSnapshot, deviceId),
+  maestroSynthesizeSelector: (snapshotId, path) =>
+    ipcRenderer.invoke(CHANNELS.maestroSynthesizeSelector, snapshotId, path),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.

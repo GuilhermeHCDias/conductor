@@ -26,6 +26,14 @@ import {
  *                         u16 screenWidth, u16 screenHeight, u16 pressure,
  *                         i32 actionButton, i32 buttons
  *   BACK_OR_SCREEN_ON (4) u8 action
+ *
+ * The protocol itself has no press duration and no notion of a gesture, so
+ * anything that is *held* — a long press, the gap inside a double tap — exists
+ * only as timing between messages. That timing is part of what the gesture is,
+ * so it travels beside the bytes it paces, as the `pauseAfterMs` of a step.
+ * The one gesture that *travels* — the drag — is not composed here at all: it
+ * arrives one phase at a time, already paced by the hand that is still
+ * drawing it, and each phase leaves as a single unpaused message.
  */
 
 /** The type byte, from the 18-entry switch the server dispatches on. Only the
@@ -37,8 +45,14 @@ const TYPE = {
   backOrScreenOn: 4,
 } as const;
 
-/** `AKEY_EVENT_ACTION_*` and `AMOTION_EVENT_ACTION_*` share these two values. */
-const ACTION = { down: 0, up: 1 } as const;
+/**
+ * `AKEY_EVENT_ACTION_*` and `AMOTION_EVENT_ACTION_*` share the first two values.
+ * ⚠️ They part ways at the third: 2 is `AMOTION_EVENT_ACTION_MOVE`, but
+ * `AKEY_EVENT_ACTION_MULTIPLE` for a key — so `move` belongs to touches alone
+ * and must never reach `keycodeMessage`. All three read out of the platform
+ * `android.jar`, like the keycodes below.
+ */
+const ACTION = { down: 0, up: 1, move: 2 } as const;
 
 export const TOUCH_MESSAGE_BYTES = 32;
 export const KEYCODE_MESSAGE_BYTES = 14;
@@ -58,6 +72,22 @@ export const POINTER_ID_FINGER = -2n;
 /** `Binary.u16FixedPointToFloat` special-cases 0xFFFF to exactly 1.0; every
  * other value is `n / 65536`, which would never quite reach full pressure. */
 const PRESSURE_FULL = 0xffff;
+
+/**
+ * How long a long press holds the finger down. `ViewConfiguration`'s default
+ * long-press timeout is 400ms; 800 clears it with room for a device where the
+ * person raised it, without feeling stuck.
+ */
+export const LONG_PRESS_HOLD_MS = 800;
+
+/**
+ * ⚠️ The pause between a double tap's two taps. `GestureDetector` refuses a
+ * second tap closer than `DOUBLE_TAP_MIN_TIME` (40ms — jitter, not a tap) and
+ * later than `DOUBLE_TAP_TIMEOUT` (300ms), so back-to-back writes at ~0ms
+ * would be rejected by the very views the gesture exists for. 80ms sits
+ * comfortably inside the window.
+ */
+export const DOUBLE_TAP_PAUSE_MS = 80;
 
 /**
  * Android's own numbers, read out of the platform `android.jar` rather than
@@ -92,30 +122,74 @@ export class ScrcpyControlError extends Error {
   }
 }
 
+/** One message of a gesture, and how long the caller holds before the next.
+ * Zero everywhere except inside the timed gestures — never after the last
+ * message, so no send lingers past its own bytes. */
+export type ControlStep = {
+  readonly bytes: Uint8Array;
+  readonly pauseAfterMs: number;
+};
+
 /**
- * The one door: an input the renderer asked for, as the messages the wire
+ * The one door: an input the renderer asked for, as the steps the wire
  * carries. A gesture that is a pair on the wire — a tap, a key, the back action
  * — comes back as two, in order, so the caller writes them together and neither
- * half can straddle a session change.
+ * half can straddle a session change. The timed gestures come back the same
+ * way, with the holds that make them what they are.
  *
  * Returns buffers built field by field from an argument list; nothing here ever
  * composes a string (.context.md §12.19, applied to encoding).
  */
-export function controlMessages(input: MirrorInput): Uint8Array[] {
+export function controlSteps(input: MirrorInput): ControlStep[] {
   switch (input.type) {
     case 'tap':
-      return [touchMessage(input, ACTION.down), touchMessage(input, ACTION.up)];
+      return [now(touchMessage(input, ACTION.down)), now(touchMessage(input, ACTION.up))];
+    case 'long-press':
+      return [
+        hold(touchMessage(input, ACTION.down), LONG_PRESS_HOLD_MS),
+        now(touchMessage(input, ACTION.up)),
+      ];
+    case 'double-tap':
+      return [
+        now(touchMessage(input, ACTION.down)),
+        hold(touchMessage(input, ACTION.up), DOUBLE_TAP_PAUSE_MS),
+        now(touchMessage(input, ACTION.down)),
+        now(touchMessage(input, ACTION.up)),
+      ];
+    // The live drag: one phase at a time, with no pause anywhere — the pacing
+    // is the hand's own, and a hold would put the wire behind the finger it
+    // is following. ⚠️ The order is load-bearing on the far side:
+    // `Controller.injectTouch` resolves its pointer through `PointersState`,
+    // where only an `ACTION_DOWN` opens a slot — a MOVE arriving before the
+    // DOWN is dropped, and a second DOWN mid-drag is a second finger. That
+    // ordering is the renderer's burden on this path: it opens every drag
+    // with the down phase and closes it with the up.
+    case 'touch':
+      return [now(touchMessage(input, ACTION[input.action]))];
     case 'text':
-      return [textMessage(input.text)];
+      return [now(textMessage(input.text))];
     case 'key':
       return [
-        keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.down),
-        keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.up),
+        now(keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.down)),
+        now(keycodeMessage(SCRCPY_KEYCODES[input.key], ACTION.up)),
       ];
     case 'back':
-      return [backMessage(ACTION.down), backMessage(ACTION.up)];
+      return [now(backMessage(ACTION.down)), now(backMessage(ACTION.up))];
   }
 }
+
+function now(bytes: Uint8Array): ControlStep {
+  return { bytes, pauseAfterMs: 0 };
+}
+
+function hold(bytes: Uint8Array, pauseAfterMs: number): ControlStep {
+  return { bytes, pauseAfterMs };
+}
+
+/** A touch is a touch whatever gesture it belongs to — the tap, the long
+ * press, the double tap and the live drag's phases all press these same
+ * 32 bytes. */
+type TouchPoint = Pick<MirrorTap, 'x' | 'y' | 'screenWidth' | 'screenHeight'>;
 
 /**
  * ⚠️ The declared screen size is not decoration. `PositionMapper.map` returns
@@ -123,10 +197,10 @@ export function controlMessages(input: MirrorInput): Uint8Array[] {
  * video's current size, and the touch is dropped. The caller supplies the size
  * because after a rotation only the renderer holds a fresh one.
  */
-function touchMessage(tap: MirrorTap, action: number): Uint8Array {
+function touchMessage(tap: TouchPoint, action: number): Uint8Array {
   if (tap.x < 0 || tap.x >= tap.screenWidth || tap.y < 0 || tap.y >= tap.screenHeight) {
     throw new ScrcpyControlError(
-      `A tap at (${tap.x}, ${tap.y}) is outside the ${tap.screenWidth}x${tap.screenHeight} stream it names.`,
+      `A touch at (${tap.x}, ${tap.y}) is outside the ${tap.screenWidth}x${tap.screenHeight} stream it names.`,
     );
   }
 
@@ -139,7 +213,10 @@ function touchMessage(tap: MirrorTap, action: number): Uint8Array {
   view.setInt32(14, tap.y);
   view.setUint16(18, tap.screenWidth);
   view.setUint16(20, tap.screenHeight);
-  view.setUint16(22, action === ACTION.down ? PRESSURE_FULL : 0);
+  // Pressed for as long as the finger is on the glass — a drag's MOVEs included.
+  // Only the release lets go: a MOVE at zero pressure is a finger the app watches
+  // hovering rather than one dragging its content.
+  view.setUint16(22, action === ACTION.up ? 0 : PRESSURE_FULL);
   // Both are read only for `SOURCE_MOUSE`, which a finger never is.
   view.setInt32(24, 0);
   view.setInt32(28, 0);

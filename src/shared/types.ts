@@ -54,3 +54,28 @@ export type TreeNode = {
   readonly checked: boolean | null;
   readonly children: readonly TreeNode[];
 };
+
+/**
+ * The frozen snapshot as the renderer consumes it (§5.5): the tree the
+ * hit-test answers from, and the calibration that maps between its units and
+ * the screenshot's pixels. Deliberately **no screenshot bytes** — the renderer
+ * renders the live mirror, and the screenshot exists in main to calibrate.
+ *
+ * The mapping chain the numbers serve, end to end: canvas CSS px → stream px
+ * (the mirror's fit scale) → screenshot px (stream size against
+ * `screenshotWidth`/`screenshotHeight`) → hierarchy units (÷ `scale`).
+ */
+export type SnapshotView = {
+  /** Names this capture. Synthesis quotes it back, and main refuses a stale one
+   * — a selector must never be written from a tree the user is not seeing. */
+  readonly snapshotId: string;
+  readonly tree: TreeNode;
+  /** The screenshot's own pixel size — the calibrated bridge between the
+   * mirror stream's coordinates and the tree's. */
+  readonly screenshotWidth: number;
+  readonly screenshotHeight: number;
+  /** Screenshot pixels per hierarchy unit: `screenshotWidth / boundsWidth` of
+   * the widest node that carries bounds (§5.2 — never assumed, never the
+   * root's, which the reference hardware reports without bounds). */
+  readonly scale: number;
+};

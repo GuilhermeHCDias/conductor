@@ -10,6 +10,9 @@ export type IconButtonProps = {
   /** The control's accessible name (criterion 51). Never optional. */
   readonly label: string;
   readonly size?: keyof typeof GLYPH;
+  /** Overrides the glyph the size implies, keeping the box — the device
+   * header's tools draw md glyphs in sm boxes. */
+  readonly glyph?: number;
   readonly variant?: 'ghost' | 'ai';
   /** A toggle that is currently on. Renders as `aria-pressed`. */
   readonly selected?: boolean;
@@ -25,6 +28,7 @@ export function IconButton({
   icon,
   label,
   size = 'md',
+  glyph,
   variant = 'ghost',
   selected,
   onClick,
@@ -41,7 +45,7 @@ export function IconButton({
       onClick={onClick}
       type="button"
     >
-      <Icon name={icon} size={GLYPH[size]} />
+      <Icon name={icon} size={glyph ?? GLYPH[size]} />
     </button>
   );
 }

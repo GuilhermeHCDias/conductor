@@ -1,0 +1,87 @@
+/* Ported from the design system's surface/Dialog. The dialog blurs heavier
+   than any other layer — that is how its depth is read. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: var(--space-8);
+  background: oklch(0% 0 0 / 0.34);
+  backdrop-filter: blur(6px);
+  -webkit-backdrop-filter: blur(6px);
+  animation: cd-fade-in var(--dur-base) var(--ease-out);
+}
+
+.scrim {
+  position: absolute;
+  inset: 0;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+}
+
+.panel {
+  position: relative;
+  width: 460px;
+  max-width: 100%;
+  border-radius: var(--radius-lg);
+  background: var(--glass-3);
+  backdrop-filter: blur(var(--blur-heavy)) saturate(var(--saturate-glass));
+  -webkit-backdrop-filter: blur(var(--blur-heavy)) saturate(var(--saturate-glass));
+  border: var(--border-hair) solid var(--edge-2);
+  box-shadow: var(--shadow-inset-top), var(--shadow-3);
+  animation: cd-dialog-in var(--dur-slow) var(--ease-glass);
+  overflow: hidden;
+}
+
+.header {
+  display: flex;
+  align-items: flex-start;
+  gap: var(--space-5);
+  padding: var(--space-6) var(--space-6) var(--space-5);
+}
+
+.badge {
+  display: grid;
+  place-items: center;
+  width: 32px;
+  height: 32px;
+  flex: none;
+  border-radius: var(--radius-sm);
+  background: var(--accent-quiet);
+  color: var(--accent);
+}
+
+.heading {
+  flex: 1;
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.title {
+  font: var(--type-title-3);
+  color: var(--text-primary);
+}
+
+.subtitle {
+  font: var(--type-body);
+  color: var(--text-secondary);
+}
+
+.body {
+  padding: 0 var(--space-6) var(--space-6);
+}
+
+.footer {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: var(--space-4);
+  padding: var(--space-5) var(--space-6);
+  border-top: var(--border-hair) solid var(--edge-1);
+  background: var(--glass-sunken);
+}

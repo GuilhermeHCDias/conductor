@@ -65,6 +65,13 @@ export type DeviceData = {
   /** Criterion 16. Why control is unavailable, when it once was. Kept apart from
    * `mirrorError`, which is the picture's, and would put the phone away. */
   readonly mirrorControlError: Failure | null;
+  /**
+   * Inspect criterion 19's trigger: how many inputs the device has actually
+   * taken. Monotonic — the inspector watches it change and schedules a
+   * recapture, because the screen it froze is now behind the app. Only
+   * deliveries that succeeded count: a refused tap changed nothing.
+   */
+  readonly inputsSettled: number;
 };
 
 export type DeviceActions = {
@@ -116,6 +123,7 @@ function createDeviceData(): DeviceData {
     mirrorError: null,
     mirrorControl: false,
     mirrorControlError: null,
+    inputsSettled: 0,
   };
 }
 
@@ -380,7 +388,13 @@ async function deliver(sessionId: string, input: MirrorInput, get: Getter): Prom
   }
 
   const result = await window.conductor.mirrorInput(sessionId, input);
-  if (result.ok || get().mirrorSessionId !== sessionId) {
+  if (get().mirrorSessionId !== sessionId) {
+    return;
+  }
+  if (result.ok) {
+    // The device took it: the frozen snapshot is now behind the app, and this
+    // count is what tells the inspector so (inspect criterion 19).
+    useDeviceStore.setState((state) => ({ inputsSettled: state.inputsSettled + 1 }));
     return;
   }
   useDeviceStore.setState(
@@ -486,4 +500,9 @@ export function selectMirrorControl(state: DeviceState): boolean {
 
 export function selectMirrorControlError(state: DeviceState): Failure | null {
   return state.mirrorControlError;
+}
+
+/** Inspect criterion 19 — what the recapture cadence watches. */
+export function selectInputsSettled(state: DeviceState): number {
+  return state.inputsSettled;
 }
