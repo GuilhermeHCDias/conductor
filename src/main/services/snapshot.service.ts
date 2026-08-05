@@ -120,6 +120,12 @@ export class SnapshotService {
     try {
       return { ok: true, data: synthesizeSelector(current.view.tree, path, current.screen) };
     } catch (error) {
+      // §5.4's 0-match rule spells it out: never written, *logged*. The refusal
+      // crosses to the renderer as a value, so this line is the only trail the
+      // bug leaves in main.
+      if (error instanceof SelectorSynthError && error.code === ERROR_CODES.selectorNoMatch) {
+        console.error(`Selector synthesis matched nothing for ${snapshotId}:`, error.message);
+      }
       return failure(error);
     }
   }

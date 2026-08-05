@@ -1,6 +1,6 @@
 # Element inspection & command menu
 
-status: doing
+status: done
 created: 2026-08-05
 
 ## Goal
@@ -281,3 +281,23 @@ turns them into the product's core loop.
   editor spec.
 - **Point selectors are emitted as screen percentages** (assumed): survives resolution changes
   better than pixels, and is what the fragility warning already covers.
+- **Regex escaping is applied exactly when the snapshot proves it matters** (implementation).
+  A value is emitted raw when, compiled as the full-string regex Maestro compiles, it names
+  exactly the nodes the literal value names on this snapshot; otherwise it is escaped. Keeps
+  `id: "com.vtex.pnp:id/login"` readable in review (§12.7) while `R$ 10` — whose `$` anchors
+  instead of matching — escapes. Uniqueness is always counted on the literal set, so the
+  emitted selector is validated either way.
+- **The floating layers carry their own blur** (implementation). The layout shell's "single
+  blur" guard was written when nothing floated; the DS's ContextMenu and Dialog read their
+  depth through their own backdrop blur ("Dialogs blur heavier than any other layer"). The
+  guard in `styles.test.ts` now pins exactly `App` + the two floating layers — a view or
+  region module joining that list still fails.
+- **Alt over a boundless parent stays on the node** (implementation). The real root reports
+  no bounds; retargeting the hover to it would highlight nothing, which is not "the
+  container" §5.5.5 means. One level up when the parent is drawable, otherwise the hit stays.
+- **The snapshot cadence lives in `hooks/useInspectSnapshot.ts`** (implementation): the
+  debounce/single-flight/trailing machinery is `inspect.store`'s (testable plain TS); the
+  wiring from device-store events to it is a view-mounted hook, per the renderer layer rules.
+- **`App.tsx` still reads `FLOW_YAML`** (implementation): criterion 36 names the view, and
+  App's use is the run-progress denominator — fixture-driven until the run spec, which owns
+  that bar.

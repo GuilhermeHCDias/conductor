@@ -3,7 +3,7 @@ import { resolve } from 'node:path';
 import type { Device, Result } from '@shared/ipc';
 import { ERROR_CODES } from '@shared/ipc';
 import type { SnapshotView, TreeNode } from '@shared/types';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { parseHierarchy } from '../maestro/HierarchyParser';
 import type { MaestroGateway } from '../maestro/MaestroGateway';
 import { SnapshotService } from './snapshot.service';
@@ -288,5 +288,22 @@ describe('synthesising against the held snapshot', () => {
     expect(code(service.synthesize(snapshot.snapshotId, [99, 99]))).toBe(
       ERROR_CODES.selectorNodeMissing,
     );
+  });
+
+  /** §5.4: 0 matches → "não escrever; **logar**". The refusal crosses as a
+   * value, so main must leave its own trail — a bug nobody logged is a bug
+   * only the user who hit it knows about. */
+  it('logs the 0-match case in main, beside refusing it', async () => {
+    const logged = vi.spyOn(console, 'error').mockImplementation(() => {});
+    // A node nothing can name: no id, no text, no bounds.
+    const gateway = fakeGateway(
+      node({ bounds: { x1: 0, y1: 0, x2: 100, y2: 100 }, children: [node()] }),
+    );
+    const service = new SnapshotService({ gateway });
+    const snapshot = view(await service.capture('device'));
+
+    expect(code(service.synthesize(snapshot.snapshotId, [0]))).toBe(ERROR_CODES.selectorNoMatch);
+    expect(logged).toHaveBeenCalled();
+    logged.mockRestore();
   });
 });

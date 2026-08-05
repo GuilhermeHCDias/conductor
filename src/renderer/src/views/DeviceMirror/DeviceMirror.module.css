@@ -123,6 +123,8 @@
   flex-direction: column;
   height: 100%;
   overflow: hidden;
+  /* The inspect overlay positions in the canvas's own pre-transform space. */
+  position: relative;
   width: 100%;
 }
 
@@ -133,6 +135,55 @@
   display: block;
   height: 100%;
   width: 100%;
+}
+
+/* DS DeviceMirror rule: the cursor is a crosshair when a context handler is
+   attached — inspecting is the mode this panel exists for. */
+.screen[data-inspect="true"] {
+  cursor: crosshair;
+}
+
+/* The DS highlight: accent-tinted fill, 1.5px accent border, mono label above
+   — never a dashed marquee. Positioned in stream px; the phone's transform
+   scales it with the picture. */
+.highlight {
+  position: absolute;
+  border-radius: var(--radius-xs);
+  background: var(--device-highlight);
+  border: var(--border-thick) solid var(--device-highlight-edge);
+  box-shadow:
+    0 0 0 1px oklch(0% 0 0 / 0.35),
+    0 0 18px var(--device-highlight-glow);
+  pointer-events: none;
+  transition: all var(--dur-fast) var(--ease-out);
+}
+
+.highlightLabel {
+  position: absolute;
+  left: -1px;
+  top: -19px;
+  display: inline-flex;
+  align-items: center;
+  height: 17px;
+  padding: 0 5px;
+  border-radius: var(--radius-xs);
+  background: var(--device-highlight-edge);
+  color: var(--ink-1000);
+  font: var(--type-mono-label);
+  white-space: nowrap;
+}
+
+/* Criterion 16 — the visible fact that the tree is being re-read. */
+.staleChip {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  padding: 2px 8px;
+  border-radius: var(--radius-pill);
+  background: oklch(0% 0 0 / 0.55);
+  color: oklch(92% 0.006 254);
+  font: var(--type-mono-label);
+  pointer-events: none;
 }
 
 /* Criterion 38: what the bezel holds when there is no picture to put in it —
@@ -196,4 +247,66 @@
   font: var(--type-caption);
   padding: var(--space-3) var(--space-4);
   text-align: center;
+}
+
+/* The retry inside a note — a text action in the note's own line. */
+.noteAction {
+  border: none;
+  background: transparent;
+  padding: 0;
+  color: var(--accent);
+  font: var(--type-caption);
+  cursor: pointer;
+}
+
+.noteAction:hover {
+  text-decoration: underline;
+}
+
+/* The inputText prompt's own controls, in the shell's chrome. */
+.dialogInput {
+  width: 100%;
+  height: 28px;
+  padding: 0 var(--space-4);
+  border-radius: var(--radius-sm);
+  border: var(--border-hair) solid var(--edge-2);
+  background: var(--glass-sunken);
+  color: var(--text-primary);
+  font: var(--type-body);
+}
+
+.dialogInput:focus-visible {
+  outline: none;
+  box-shadow: var(--glow-accent);
+  border-color: var(--accent-edge);
+}
+
+.dialogGhost,
+.dialogPrimary {
+  height: 26px;
+  padding: 0 var(--space-5);
+  border-radius: var(--radius-sm);
+  font: var(--type-label);
+  cursor: pointer;
+}
+
+.dialogGhost {
+  border: var(--border-hair) solid var(--edge-2);
+  background: transparent;
+  color: var(--text-secondary);
+}
+
+.dialogGhost:hover {
+  color: var(--text-primary);
+}
+
+.dialogPrimary {
+  border: none;
+  background: var(--accent);
+  color: var(--accent-on);
+}
+
+.dialogPrimary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

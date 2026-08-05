@@ -1,9 +1,20 @@
-import type { AppIdentity, ConductorApi, Device, DeviceSnapshot, Result } from '@shared/ipc';
+import type {
+  AppIdentity,
+  ConductorApi,
+  Device,
+  DeviceSnapshot,
+  Result,
+  SynthesizedSelector,
+} from '@shared/ipc';
+import type { SnapshotView, TreeNode } from '@shared/types';
 import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FLOW_YAML } from '../../fixtures/flows';
 import { DEVICE as PHONE } from '../../lib/mirror-fit';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
+import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
+import { resetInspectStore, useInspectStore } from '../../stores/inspect.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
 import { resizeElement } from '../../test-setup';
 import { DeviceMirror } from './DeviceMirror';
@@ -12,6 +23,8 @@ import { DeviceMirror } from './DeviceMirror';
 
 const ui = () => useUiStore.getState();
 const device = () => useDeviceStore.getState();
+const inspect = () => useInspectStore.getState();
+const flow = () => useFlowStore.getState();
 
 const ANDROID: Device = { id: 'R9QYC01EMXL', model: 'SM_G991B', state: 'device' };
 const SECOND: Device = { id: 'emulator-5554', model: 'sdk_gphone64', state: 'device' };
@@ -41,9 +54,59 @@ let conductor: {
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
   mirrorInput: ReturnType<typeof vi.fn>;
+  maestroSnapshot: ReturnType<typeof vi.fn>;
+  maestroSynthesizeSelector: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
   onMirrorEvent: ReturnType<typeof vi.fn>;
 };
+
+/** A frame that stops short of the screen's bottom — the strip below y=1400
+ * belongs to no element — with one tappable button in its top-left quadrant. */
+const emptyNode: Omit<TreeNode, 'children'> = {
+  bounds: null,
+  className: null,
+  text: null,
+  resourceId: null,
+  contentDescription: null,
+  hintText: null,
+  scrollable: null,
+  clickable: null,
+  enabled: null,
+  focused: null,
+  selected: null,
+  checked: null,
+};
+
+const TREE: TreeNode = {
+  ...emptyNode,
+  children: [
+    {
+      ...emptyNode,
+      bounds: { x1: 0, y1: 0, x2: 720, y2: 1400 },
+      className: 'android.widget.FrameLayout',
+      children: [
+        {
+          ...emptyNode,
+          bounds: { x1: 0, y1: 0, x2: 360, y2: 800 },
+          className: 'android.widget.Button',
+          text: 'Entrar',
+          clickable: true,
+          children: [],
+        },
+      ],
+    },
+  ],
+};
+
+const VIEW: SnapshotView = {
+  snapshotId: 'snapshot-1',
+  tree: TREE,
+  screenshotWidth: 720,
+  screenshotHeight: 1600,
+  scale: 1,
+};
+
+const SELECTOR: SynthesizedSelector = { level: 'text', selector: 'text: "Entrar"', fragile: false };
 
 /** The stream the Galaxy A07 actually opened at `max_size=1024`. */
 const STREAM = {
@@ -57,6 +120,8 @@ const STREAM = {
 beforeEach(() => {
   resetUiStore();
   resetDeviceStore();
+  resetInspectStore();
+  resetFlowStore();
   conductor = {
     deviceList: vi.fn(() =>
       Promise.resolve<Result<DeviceSnapshot>>({
@@ -68,6 +133,8 @@ beforeEach(() => {
     mirrorStart: vi.fn(() => Promise.resolve({ ok: true, data: STREAM })),
     mirrorStop: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
     mirrorInput: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
+    maestroSnapshot: vi.fn(() => Promise.resolve({ ok: true, data: VIEW })),
+    maestroSynthesizeSelector: vi.fn(() => Promise.resolve({ ok: true, data: SELECTOR })),
     onDeviceChanged: vi.fn(() => () => {}),
     onMirrorEvent: vi.fn(() => () => {}),
   };
@@ -846,5 +913,430 @@ describe('driving the device', () => {
     expect(await screen.findByText(/control socket is gone/i)).toBeInTheDocument();
     expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
     expect(device().mirrorStatus).toBe('streaming');
+  });
+});
+
+/**
+ * §5.5's authoring surface (criteria 11–29, 36–44): hover highlights the
+ * element Maestro sees, hit-tested locally against the frozen snapshot; a
+ * right-click synthesises in main and opens the command menu; picking a
+ * command appends the step, and the tap family also drives the device.
+ *
+ * The one seam is still `window.conductor`. The geometry is the real one:
+ * 720×1600 snapshot at scale 1 over a 464×1024 stream, so hierarchy (180,400)
+ * is stream (116,256).
+ */
+describe('inspecting the screen', () => {
+  /** Mounts, streams, waits for the snapshot, sizes the bay. */
+  async function inspecting(): Promise<{ canvas: HTMLCanvasElement; scale: number }> {
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+    await waitFor(() => {
+      expect(inspect().snapshot).not.toBeNull();
+    });
+    const canvas = screen.getByTestId('mirror-canvas') as HTMLCanvasElement;
+    return { canvas, scale: stateBox(canvas) };
+  }
+
+  /** jsdom lays nothing out: the canvas box is stated at the scale the view
+   * actually drew at, read back off the phone's transform. */
+  function stateBox(canvas: HTMLCanvasElement): number {
+    const transform = screen.getByTestId('phone').style.transform;
+    const scale = Number(/scale\(([\d.]+)\)/.exec(transform)?.[1]);
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 40,
+        top: 100,
+        width: 464 * scale,
+        height: 1024 * scale,
+        right: 40 + 464 * scale,
+        bottom: 100 + 1024 * scale,
+        x: 40,
+        y: 100,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    return scale;
+  }
+
+  /** Stream-space coordinates in, client-space MouseEvent out. */
+  function at(
+    scale: number,
+    streamX: number,
+    streamY: number,
+  ): { clientX: number; clientY: number } {
+    return { clientX: 40 + streamX * scale, clientY: 100 + streamY * scale };
+  }
+
+  function hoverAt(canvas: HTMLCanvasElement, point: { clientX: number; clientY: number }): void {
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, ...point }));
+    });
+  }
+
+  async function rightClickAt(
+    canvas: HTMLCanvasElement,
+    point: { clientX: number; clientY: number },
+  ): Promise<void> {
+    await act(async () => {
+      canvas.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, ...point }),
+      );
+      await Promise.resolve();
+    });
+  }
+
+  const settleInput = async (): Promise<void> => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 32));
+    });
+  };
+
+  /** Criteria 13–14 — the DS highlight over the hovered element, labelled from
+   * the tree, positioned in the canvas's own pre-transform space. */
+  it('highlights the hovered element with its literal label', async () => {
+    const { canvas, scale } = await inspecting();
+
+    hoverAt(canvas, at(scale, 116, 256));
+
+    // 360×800 hierarchy → 232×512 stream px, floating point and all.
+    const style = screen.getByTestId('inspect-highlight').style;
+    expect(Number.parseFloat(style.left)).toBeCloseTo(0, 5);
+    expect(Number.parseFloat(style.top)).toBeCloseTo(0, 5);
+    expect(Number.parseFloat(style.width)).toBeCloseTo(232, 5);
+    expect(Number.parseFloat(style.height)).toBeCloseTo(512, 5);
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+    expect(canvas).toHaveAttribute('data-inspect', 'true');
+  });
+
+  /** Criterion 46 — hover costs zero IPC and zero process work: the hit-test
+   * runs against the in-memory snapshot, and synthesis waits for right-click. */
+  it('crosses no IPC while hovering', async () => {
+    const { canvas, scale } = await inspecting();
+
+    hoverAt(canvas, at(scale, 116, 256));
+    hoverAt(canvas, at(scale, 200, 400));
+    hoverAt(canvas, at(scale, 60, 100));
+
+    // One capture opened the snapshot; the mousemoves added nothing.
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+    expect(conductor.maestroSynthesizeSelector).not.toHaveBeenCalled();
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 15 — off the canvas, off the screen. */
+  it('clears the highlight when the pointer leaves', async () => {
+    const { canvas, scale } = await inspecting();
+    hoverAt(canvas, at(scale, 116, 256));
+
+    act(() => {
+      // React synthesises onPointerLeave from the bubbling pointerout, judged
+      // by where the pointer went — here, off the canvas entirely.
+      canvas.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+
+    expect(screen.queryByTestId('inspect-highlight')).not.toBeInTheDocument();
+  });
+
+  /** Criterion 11 — Alt climbs to the container; releasing returns. */
+  it('retargets the hover to the parent while Alt is held', async () => {
+    const { canvas, scale } = await inspecting();
+    hoverAt(canvas, at(scale, 116, 256));
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt' }));
+    });
+    expect(screen.getByText('FrameLayout')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt' }));
+    });
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+  });
+
+  /** Criterion 23 — the right-click synthesises in main and opens the menu at
+   * the cursor, titled with the element. */
+  it('opens the command menu over the hit element', async () => {
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+    expect(conductor.maestroSynthesizeSelector).toHaveBeenCalledWith('snapshot-1', [0, 0]);
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'tapOn' })).toBeInTheDocument();
+  });
+
+  /** Criterion 25 — no element, no menu, and never the browser's own. */
+  it('opens nothing where no element is hit', async () => {
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 322, 960));
+
+    expect(conductor.maestroSynthesizeSelector).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the native context menu anywhere on the mirror', async () => {
+    await inspecting();
+    const panel = screen.getByRole('region', { name: 'Device' });
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+
+    act(() => {
+      panel.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  /** Criterion 26 — while the menu is open, the mirror takes no input. */
+  it('suppresses pointer forwarding while the menu is open', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, ...at(scale, 116, 256) }),
+      );
+    });
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('suppresses keyboard forwarding while the menu is open', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    act(() => {
+      canvas.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+      );
+    });
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape writing nothing', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(flow().yaml).toBe(FLOW_YAML);
+  });
+
+  /** Criteria 37, 38, 40 — the step appends additively and the tap executes at
+   * the element's centre, in stream coordinates, through the ordered queue. */
+  it('appends the tapOn step and performs the tap', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'tapOn' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(`${FLOW_YAML}- tapOn:\n    text: "Entrar"\n`);
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+      type: 'tap',
+      x: 116,
+      y: 256,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('performs a long press for longPressOn', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'longPressOn' }));
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+      type: 'long-press',
+      x: 116,
+      y: 256,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+  });
+
+  /** Criterion 42 — assert, wait and app commands insert and never execute. */
+  it('inserts assertVisible without driving the device', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'assertVisible' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(`${FLOW_YAML}- assertVisible:\n    text: "Entrar"\n`);
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 27 — §5.4 makes the fragility warning mandatory. */
+  it('warns before the user picks when the selector is point-based', async () => {
+    conductor.maestroSynthesizeSelector.mockResolvedValue({
+      ok: true,
+      data: { level: 'point', selector: 'point: 25%,25%', fragile: true },
+    });
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    expect(screen.getByText('Position-based selector — this step is fragile.')).toBeInTheDocument();
+  });
+
+  /** Criterion 28 — synthesis failed: no menu, nothing written, said aloud. */
+  it('opens no menu and surfaces a synthesis failure', async () => {
+    conductor.maestroSynthesizeSelector.mockResolvedValue({
+      ok: false,
+      error: { code: 'selector/no-match', message: 'Synthesis matched nothing.' },
+    });
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(await screen.findByText('Synthesis matched nothing.')).toBeInTheDocument();
+    expect(flow().yaml).toBe(FLOW_YAML);
+  });
+
+  /** Criterion 41 — the dialog collects the text; the pair is born complete,
+   * the focusing tap goes out, and the text rides the ordered queue. */
+  it('collects inputText through the dialog and executes the pair', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'inputText' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Input text' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Insert' })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Text to type'), 'red shoes');
+    await userEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(
+      `${FLOW_YAML}- tapOn:\n    text: "Entrar"\n- inputText: "red shoes"\n`,
+    );
+    expect(conductor.mirrorInput).toHaveBeenNthCalledWith(1, 'mirror-1', {
+      type: 'tap',
+      x: 116,
+      y: 256,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    expect(conductor.mirrorInput).toHaveBeenNthCalledWith(2, 'mirror-1', {
+      type: 'text',
+      text: 'red shoes',
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('cancels the dialog writing and executing nothing', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'inputText' }));
+    await screen.findByRole('dialog');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await settleInput();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(flow().yaml).toBe(FLOW_YAML);
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 16 — a capture in flight is visible, never hidden. */
+  it('shows the updating chip while a capture is in flight', async () => {
+    let release: (value: Result<SnapshotView>) => void = () => {};
+    conductor.maestroSnapshot.mockReturnValueOnce(
+      new Promise<Result<SnapshotView>>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+
+    expect(await screen.findByTestId('stale-chip')).toBeInTheDocument();
+
+    await act(async () => {
+      release({ ok: true, data: VIEW });
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('stale-chip')).not.toBeInTheDocument();
+  });
+
+  /** Criterion 17 — the failure surfaces with a retry; the picture stays. */
+  it('surfaces a failed capture with a retry, leaving the picture alone', async () => {
+    conductor.maestroSnapshot.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'mcp/call-failed', message: 'inspect_screen refused.' },
+    });
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+
+    expect(await screen.findByText(/inspect_screen refused/)).toBeInTheDocument();
+    expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(screen.queryByText(/inspect_screen refused/)).not.toBeInTheDocument();
+    });
+  });
+
+  /** Criterion 21 — the manual refresh, in the inspector's own header. */
+  it('recaptures on the snapshot refresh control', async () => {
+    await inspecting();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh snapshot' }));
+
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  /** Criterion 44 — no control channel: the menu keeps working and the tap
+   * family inserts without executing. */
+  it('keeps the menu working without control, inserting only', async () => {
+    conductor.mirrorStart.mockResolvedValue({
+      ok: true,
+      data: { ...STREAM, control: false },
+    });
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'tapOn' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(`${FLOW_YAML}- tapOn:\n    text: "Entrar"\n`);
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
   });
 });

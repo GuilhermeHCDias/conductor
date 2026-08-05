@@ -1,16 +1,23 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
+import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
 import { FlowEditor } from './FlowEditor';
 
 const ui = () => useUiStore.getState();
+const flow = () => useFlowStore.getState();
 
 const lineOf = (n: number) => screen.getByTestId(`yaml-line-${n}`);
 
 beforeEach(() => {
   resetUiStore();
+  resetFlowStore();
+});
+
+afterEach(() => {
+  vi.restoreAllMocks();
 });
 
 /** Criteria 22–30. */
@@ -43,20 +50,22 @@ describe('FlowEditor', () => {
       expect(within(bar).queryByText('teste.yaml')).not.toBeInTheDocument();
     });
 
-    it('marks the document with unsaved changes', () => {
+    /** Inspect criterion 39 — the dirty mark follows the flow's own text now,
+     * not a fixture flag: clean until something is actually appended. */
+    it('opens clean until a step is appended', () => {
       render(<FlowEditor />);
 
-      expect(screen.getByTestId('document-bar')).toHaveAttribute('data-dirty', 'true');
+      expect(screen.getByTestId('document-bar')).not.toHaveAttribute('data-dirty');
     });
 
-    it('drops the mark on a document with nothing unsaved', () => {
+    it('marks the document once a step is appended', () => {
       render(<FlowEditor />);
 
       act(() => {
-        ui().openFlow('f-login');
+        flow().appendStep('- waitForAnimationToEnd');
       });
 
-      expect(screen.getByTestId('document-bar')).not.toHaveAttribute('data-dirty');
+      expect(screen.getByTestId('document-bar')).toHaveAttribute('data-dirty', 'true');
     });
 
     // Criterion 23: the sidebar is the only place a document is opened or started.
@@ -101,6 +110,39 @@ describe('FlowEditor', () => {
       expect(within(lineOf(4)).getByTestId('caret')).toBeInTheDocument();
       expect(within(lineOf(5)).queryByTestId('caret')).not.toBeInTheDocument();
       expect(lineOf(4)).toHaveAttribute('data-line', 'active');
+    });
+
+    /** Inspect criterion 36 — the body renders the store's text, so a step the
+     * menu appended is on screen the moment it lands. */
+    it('renders the lines a menu command appended', () => {
+      render(<FlowEditor />);
+
+      act(() => {
+        flow().appendStep('- tapOn:\n    text: "Entrar"');
+      });
+
+      expect(lineOf(5)).toHaveTextContent('- tapOn:');
+      expect(lineOf(6)).toHaveTextContent('text: "Entrar"');
+      expect(within(lineOf(6)).getByTestId('caret')).toBeInTheDocument();
+    });
+
+    /** Inspect criterion 39 — the editor reveals what was just written. jsdom
+     * has no scrollIntoView, so one is installed for exactly this test. */
+    it('scrolls the new lines into view when a step is appended', () => {
+      const reveal = vi.fn();
+      window.HTMLElement.prototype.scrollIntoView = reveal;
+      try {
+        render(<FlowEditor />);
+        expect(reveal).not.toHaveBeenCalled();
+
+        act(() => {
+          flow().appendStep('- waitForAnimationToEnd');
+        });
+
+        expect(reveal).toHaveBeenCalled();
+      } finally {
+        Reflect.deleteProperty(window.HTMLElement.prototype, 'scrollIntoView');
+      }
     });
 
     /** Criterion 27 — error beats AI, and both beat the active line. */

@@ -723,13 +723,18 @@ describe('a timed gesture', () => {
       screenWidth: 464,
       screenHeight: 1024,
     });
+    // Attached before the hold elapses, so the rejection is never unobserved —
+    // a handler bound after the fact reads as an unhandled rejection.
+    const refusal = expect(sent).rejects.toMatchObject({
+      code: ERROR_CODES.mirrorControlFailed,
+    });
     await vi.advanceTimersByTimeAsync(0);
     expect(control.written).toHaveLength(1);
 
     await session.stop();
     await vi.advanceTimersByTimeAsync(LONG_PRESS_HOLD_MS);
 
-    await expect(sent).rejects.toMatchObject({ code: ERROR_CODES.mirrorControlFailed });
+    await refusal;
     expect(control.written).toHaveLength(1);
   });
 });
