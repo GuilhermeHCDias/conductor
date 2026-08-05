@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { codecString, decoderConfig, NAL_TYPE, nalType, nalUnits } from './h264';
+import { codecString, decoderConfig, NAL_TYPE, nalType, nalUnits, withParameterSets } from './h264';
 
 /**
  * The renderer's `SelectorSynth`: pure, trap-dense, and testable to exhaustion
@@ -161,11 +161,9 @@ describe('the codec string', () => {
 
 /** Criterion 35 — Annex-B, no `description`, and latency asked for by name. */
 describe('the decoder config', () => {
-  it('is built from the config packet and the stream’s own size', () => {
-    expect(decoderConfig(CONFIG_PACKET, 464, 1024)).toEqual({
+  it('is read off the config packet alone', () => {
+    expect(decoderConfig(CONFIG_PACKET)).toEqual({
       codec: 'avc1.640020',
-      codedWidth: 464,
-      codedHeight: 1024,
       optimizeForLatency: true,
     });
   });
@@ -176,34 +174,76 @@ describe('the decoder config', () => {
    * the capture settled that this stream is Annex-B.
    */
   it('carries no description, because the stream is Annex-B', () => {
-    const config = decoderConfig(CONFIG_PACKET, 464, 1024);
+    const config = decoderConfig(CONFIG_PACKET);
 
     expect(config).not.toBeNull();
     expect(config === null ? true : 'description' in config).toBe(false);
   });
 
-  it('asks for the latency the §5.5 loop lives on', () => {
-    expect(decoderConfig(CONFIG_PACKET, 464, 1024)?.optimizeForLatency).toBe(true);
+  /**
+   * A rotation swaps the stream's size mid-session, announced only by the new
+   * SPS. A pinned `codedWidth` would contradict that SPS for the rest of the
+   * session — the fields are optional, and the bitstream is the authority.
+   */
+  it('pins no coded size, because the SPS changes on rotation', () => {
+    const config = decoderConfig(CONFIG_PACKET);
+
+    expect(config).not.toBeNull();
+    expect(config === null ? true : 'codedWidth' in config).toBe(false);
+    expect(config === null ? true : 'codedHeight' in config).toBe(false);
   });
 
-  it('takes the size from the codec header rather than from the SPS', () => {
-    expect(decoderConfig(CONFIG_PACKET, 720, 1600)).toMatchObject({
-      codedWidth: 720,
-      codedHeight: 1600,
-    });
+  it('asks for the latency the §5.5 loop lives on', () => {
+    expect(decoderConfig(CONFIG_PACKET)?.optimizeForLatency).toBe(true);
   });
 
   it('finds the SPS wherever in the packet it sits', () => {
     const reordered = bytes(...START_4, ...PPS, ...START_4, ...SPS_BASELINE);
 
-    expect(decoderConfig(reordered, 464, 1024)?.codec).toBe('avc1.42c01e');
+    expect(decoderConfig(reordered)?.codec).toBe('avc1.42c01e');
   });
 
   it('refuses a config packet that carries no SPS', () => {
-    expect(decoderConfig(bytes(...START_4, ...PPS), 464, 1024)).toBeNull();
+    expect(decoderConfig(bytes(...START_4, ...PPS))).toBeNull();
   });
 
   it('refuses an empty config packet', () => {
-    expect(decoderConfig(new Uint8Array(0), 464, 1024)).toBeNull();
+    expect(decoderConfig(new Uint8Array(0))).toBeNull();
+  });
+});
+
+/**
+ * With no `description`, WebCodecs takes SPS and PPS from the bitstream itself
+ * — and scrcpy puts them only in the config packet, never in the key frame. A
+ * key frame that opens straight at its IDR therefore decodes to *nothing*, with
+ * no error to say why: the decoder just swallows every chunk. Observed on the
+ * Galaxy A07 on 2026-08-04, as a mirror that stayed black while streaming.
+ */
+describe('fronting a key frame with the parameter sets', () => {
+  it('puts the config packet first, byte for byte', () => {
+    const idr = bytes(...START_4, ...IDR);
+
+    expect(withParameterSets(CONFIG_PACKET, idr)).toEqual(
+      bytes(...START_4, ...SPS, ...START_4, ...PPS, ...START_4, ...IDR),
+    );
+  });
+
+  /** The join must still read as one legal Annex-B stream. */
+  it('yields a stream the splitter reads as SPS, PPS, then the frame', () => {
+    const joined = withParameterSets(CONFIG_PACKET, bytes(...START_4, ...IDR));
+
+    expect(nalUnits(joined)).toEqual([SPS, PPS, IDR]);
+  });
+
+  /** The frame's own bytes cross IPC and feed the decoder; neither input may
+   * be aliased by the result. */
+  it('copies rather than aliases its inputs', () => {
+    const frame = bytes(...START_4, ...IDR);
+    const joined = withParameterSets(CONFIG_PACKET, frame);
+
+    joined.fill(0xff);
+
+    expect(CONFIG_PACKET).toEqual(bytes(...START_4, ...SPS, ...START_4, ...PPS));
+    expect(frame).toEqual(bytes(...START_4, ...IDR));
   });
 });

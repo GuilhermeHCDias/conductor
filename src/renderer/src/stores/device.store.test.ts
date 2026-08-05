@@ -404,6 +404,28 @@ describe('the mirror', () => {
     expect(store()).toMatchObject({ mirrorStatus: 'streaming', mirrorSessionId: 'mirror-1' });
   });
 
+  /** A rotation swaps the stream's size mid-session — announced only by the
+   * SPS, carried only by the frames. The fit follows what is actually drawn. */
+  it('follows a mid-session resize of the session it is showing', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().mirrorResized('mirror-1', 1024, 464);
+
+    expect(store()).toMatchObject({
+      mirrorStatus: 'streaming',
+      mirrorWidth: 1024,
+      mirrorHeight: 464,
+    });
+  });
+
+  it('ignores a resize from a session it is no longer showing', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().mirrorResized('mirror-0', 1024, 464);
+
+    expect(store()).toMatchObject({ mirrorWidth: 464, mirrorHeight: 1024 });
+  });
+
   /** Criterion 43 — no WebCodecs is a state of its own, not a blank canvas. */
   it('records a renderer with no decoder', () => {
     store().mirrorUnsupported();

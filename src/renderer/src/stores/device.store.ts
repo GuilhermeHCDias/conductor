@@ -63,6 +63,12 @@ export type DeviceActions = {
   /** A session main says is over. Named, so a late report cannot put away the
    * session that replaced it. */
   mirrorEnded: (sessionId: string, failure: Failure) => void;
+  /**
+   * The stream changed size mid-session — a rotation. Only the SPS announces
+   * it and only the decoded frames carry it, so the report comes from the
+   * decoder's output, named like `mirrorEnded` for the same reason.
+   */
+  mirrorResized: (sessionId: string, width: number, height: number) => void;
   /** This renderer has no `VideoDecoder`. Nothing here can fix that, so nothing
    * tries to start a stream it could never draw. */
   mirrorUnsupported: () => void;
@@ -203,6 +209,13 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
       mirrorHeight: null,
       mirrorError: failure,
     });
+  },
+
+  mirrorResized: (sessionId, width, height) => {
+    if (get().mirrorSessionId !== sessionId) {
+      return;
+    }
+    set({ mirrorWidth: width, mirrorHeight: height });
   },
 
   mirrorUnsupported: () => {

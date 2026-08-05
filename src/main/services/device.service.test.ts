@@ -491,6 +491,30 @@ describe('mirroring a device', () => {
     expect(mirrored).toEqual([]);
   });
 
+  /**
+   * The codec header and the first packets can share one TCP chunk, so the
+   * stream may deliver packets *while* the start is still settling — before the
+   * service has the session in its map. Dropping those loses the config packet,
+   * and a decoder that never sees one shows black for the whole session.
+   */
+  it('holds packets that arrive while the start is settling, then pushes them in order', async () => {
+    const gateway = fakeGateway();
+    const start = gateway.startMirror.bind(gateway);
+    gateway.startMirror = (deviceId, handlers) => {
+      // Same tick as the handshake, exactly as one coalesced chunk plays out.
+      handlers.onPacket({ ...PACKET, config: true, keyFrame: false });
+      return start(deviceId, handlers);
+    };
+    const { service, mirrored } = makeService(gateway);
+
+    await service.startMirror(PHONE.id);
+    gateway.sessions[0]?.handlers.onPacket(PACKET);
+
+    expect(
+      mirrored.map((event) => (event.ok && event.data.type === 'frame' ? event.data.config : null)),
+    ).toEqual([true, false]);
+  });
+
   /** Criterion 25 — the phone went away, and the panel has to be told which
    * session died and why. */
   it('pushes a terminal event when a session ends on its own', async () => {

@@ -8,6 +8,12 @@
  * whose config flag is set. That was confirmed on hardware on 2026-08-04 —
  * `00 00 00 01 67 …` — which is why the decoder is configured without a
  * `description` and the `avcC` path below does not exist.
+ *
+ * Annex-B cuts both ways: with no `description`, WebCodecs reads the parameter
+ * sets from the bitstream itself, and scrcpy sends them only in the config
+ * packet. A key frame handed over bare decodes to *nothing* — no error, no
+ * output, a mirror that streams and stays black (observed on the same hardware,
+ * same day). `withParameterSets` is the other half of the contract.
  */
 
 /** The `nal_unit_type` values this module recognises. */
@@ -95,20 +101,18 @@ export function codecString(sps: Uint8Array): string | null {
 }
 
 /**
- * Criterion 35. The config packet plus the size the codec header declared, as
- * the decoder wants them.
+ * Criterion 35. The decoder's configuration, read off the config packet alone.
  *
  * `description` is absent on purpose, and its absence is what tells WebCodecs
- * the bitstream is Annex-B — setting one would fail the very first decode. The
- * size comes from the codec header rather than from the SPS: the header is what
- * the server actually scaled to, and parsing the SPS's own geometry would mean
- * decoding exp-Golomb for a number we were already handed.
+ * the bitstream is Annex-B — setting one would fail the very first decode.
+ *
+ * The coded size is absent just as deliberately. The SPS in the bitstream is
+ * the authority on geometry, and it *changes* when the device rotates — the
+ * codec header spoke once, at session start, and a pinned `codedWidth` would
+ * contradict every SPS after the first rotation. The fields are optional; the
+ * frames that come out carry their own size, and the canvas follows them.
  */
-export function decoderConfig(
-  configPacket: Uint8Array,
-  width: number,
-  height: number,
-): VideoDecoderConfig | null {
+export function decoderConfig(configPacket: Uint8Array): VideoDecoderConfig | null {
   const sps = nalUnits(configPacket).find((nal) => nalType(nal) === NAL_TYPE.sps);
   if (sps === undefined) {
     return null;
@@ -119,12 +123,23 @@ export function decoderConfig(
     return null;
   }
 
-  return {
-    codec,
-    codedWidth: width,
-    codedHeight: height,
-    optimizeForLatency: true,
-  };
+  return { codec, optimizeForLatency: true };
+}
+
+/**
+ * The config packet put back in front of a key frame, so the decoder finds SPS
+ * and PPS in the bitstream where Annex-B promises them. Repeating parameter
+ * sets before an IDR is legal, and it is exactly what scrcpy's own player does
+ * by writing the config packet into the stream it hands its decoder.
+ *
+ * A copy, not a view: the frame's bytes cross IPC and feed the decoder, and
+ * neither input may be aliased by the result.
+ */
+export function withParameterSets(configPacket: Uint8Array, frame: Uint8Array): Uint8Array {
+  const joined = new Uint8Array(configPacket.length + frame.length);
+  joined.set(configPacket, 0);
+  joined.set(frame, configPacket.length);
+  return joined;
 }
 
 function hex(value: number): string {

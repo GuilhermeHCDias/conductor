@@ -1,6 +1,6 @@
 import { ERROR_CODES } from '@shared/ipc';
 import { type RefObject, useEffect } from 'react';
-import { decoderConfig } from '../lib/h264';
+import { decoderConfig, withParameterSets } from '../lib/h264';
 import { selectSelectedId, useDeviceStore } from '../stores/device.store';
 
 /**
@@ -19,6 +19,7 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
   const startMirror = useDeviceStore((state) => state.startMirror);
   const stopMirror = useDeviceStore((state) => state.stopMirror);
   const mirrorEnded = useDeviceStore((state) => state.mirrorEnded);
+  const mirrorResized = useDeviceStore((state) => state.mirrorResized);
   const mirrorUnsupported = useDeviceStore((state) => state.mirrorUnsupported);
 
   useEffect(() => {
@@ -33,9 +34,8 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
       return;
     }
 
-    /** The last config packet seen. Held because `mirror:start`'s answer and the
-     * first packets travel by different routes, and the decoder cannot be
-     * configured until the codec header's size has landed in the store. */
+    /** The last config packet seen. Held so it can ride in front of every key
+     * frame: an Annex-B decoder reads its parameter sets from the bitstream. */
     let pendingConfig: Uint8Array | null = null;
     let configured = false;
 
@@ -45,7 +45,25 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
         // unclosed `VideoFrame` holds a GPU buffer and stalls the decoder
         // within seconds, so it happens on every path out of here.
         try {
-          canvas.current?.getContext('2d')?.drawImage(frame, 0, 0);
+          const target = canvas.current;
+          if (target === null) {
+            return;
+          }
+          // A rotation swaps the stream's size mid-session, and the frames are
+          // the only messenger: resize the bitmap before drawing — a landscape
+          // frame in a portrait canvas is a cropped corner — and tell the
+          // store, so the fit and the footprint follow. Only on change: a
+          // store write per frame would re-render the window at the phone's
+          // framerate (criterion 42).
+          if (target.width !== frame.displayWidth || target.height !== frame.displayHeight) {
+            target.width = frame.displayWidth;
+            target.height = frame.displayHeight;
+            const { mirrorSessionId } = useDeviceStore.getState();
+            if (mirrorSessionId !== null) {
+              mirrorResized(mirrorSessionId, frame.displayWidth, frame.displayHeight);
+            }
+          }
+          target.getContext('2d')?.drawImage(frame, 0, 0);
         } finally {
           frame.close();
         }
@@ -61,13 +79,13 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
       },
     });
 
-    /** Configures from the held config packet, once the stream's size is known. */
+    /** Configures from the held config packet — which is all a configuration
+     * needs: the geometry belongs to the SPS, not to the config. */
     const configure = (): void => {
-      const { mirrorWidth, mirrorHeight } = useDeviceStore.getState();
-      if (pendingConfig === null || mirrorWidth === null || mirrorHeight === null) {
+      if (pendingConfig === null) {
         return;
       }
-      const config = decoderConfig(pendingConfig, mirrorWidth, mirrorHeight);
+      const config = decoderConfig(pendingConfig);
       if (config === null) {
         return;
       }
@@ -89,16 +107,15 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
       }
 
       if (event.config) {
-        // SPS and PPS, never a picture. It configures and is not decoded.
+        // SPS and PPS, never a picture. It configures the decoder here, and it
+        // is held to ride in front of every key frame: Annex-B decoders read
+        // their parameter sets from the bitstream, not from the configuration.
         pendingConfig = event.data;
         configured = false;
         configure();
         return;
       }
 
-      if (!configured) {
-        configure();
-      }
       // A decoder that was never configured throws on `decode`, and a frame
       // before the first config packet has nothing to be decoded against.
       if (!configured) {
@@ -109,7 +126,12 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
         new EncodedVideoChunk({
           type: event.keyFrame ? 'key' : 'delta',
           timestamp: event.pts,
-          data: event.data,
+          // A key frame travels with the parameter sets in front: without
+          // them in-band, an Annex-B decoder emits nothing and says nothing.
+          data:
+            event.keyFrame && pendingConfig !== null
+              ? withParameterSets(pendingConfig, event.data)
+              : event.data,
         }),
       );
     });
@@ -123,5 +145,5 @@ export function useMirrorStream(canvas: RefObject<HTMLCanvasElement | null>): vo
       }
       void stopMirror();
     };
-  }, [canvas, selectedId, startMirror, stopMirror, mirrorEnded, mirrorUnsupported]);
+  }, [canvas, selectedId, startMirror, stopMirror, mirrorEnded, mirrorResized, mirrorUnsupported]);
 }

@@ -1,6 +1,6 @@
 import type { AppIdentity, ErrorCode, MirrorEvent, MirrorStream } from '@shared/ipc';
 import { type Device, type DeviceSnapshot, ERROR_CODES, type Result } from '@shared/ipc';
-import type { MaestroGateway, MirrorSession } from '../maestro/MaestroGateway';
+import type { MaestroGateway, MirrorPacket, MirrorSession } from '../maestro/MaestroGateway';
 
 /**
  * What is plugged in, which one we are talking to, and what the app under test
@@ -92,25 +92,41 @@ export class DeviceService {
     const sessionId = `mirror-${this.nextSession}`;
     this.nextSession += 1;
 
+    // The codec header and the first packets can share one TCP chunk, so the
+    // stream may deliver packets while the `await` below is still settling —
+    // before the session is in the map. Those are the config packet and the
+    // first key frame: dropped, the decoder never configures and the mirror
+    // stays black for the whole session. Held here, they go out the moment the
+    // session is registered, in order.
+    let registered = false;
+    const backlog: MirrorPacket[] = [];
+    const emitFrame = (packet: MirrorPacket): void => {
+      this.deps.emitMirror({
+        ok: true,
+        data: {
+          type: 'frame',
+          sessionId,
+          config: packet.config,
+          keyFrame: packet.keyFrame,
+          pts: packet.pts,
+          data: packet.payload,
+        },
+      });
+    };
+
     try {
       const session = await this.deps.gateway.startMirror(deviceId, {
         onPacket: (packet) => {
+          if (!registered) {
+            backlog.push(packet);
+            return;
+          }
           // A packet from a session already put away belongs to nobody: the
           // renderer has stopped listening for it and the id would be stale.
           if (this.sessions.get(sessionId) === undefined) {
             return;
           }
-          this.deps.emitMirror({
-            ok: true,
-            data: {
-              type: 'frame',
-              sessionId,
-              config: packet.config,
-              keyFrame: packet.keyFrame,
-              pts: packet.pts,
-              data: packet.payload,
-            },
-          });
+          emitFrame(packet);
         },
         onEnded: (ended) => {
           this.sessions.delete(sessionId);
@@ -122,6 +138,11 @@ export class DeviceService {
       });
 
       this.sessions.set(sessionId, session);
+      registered = true;
+      for (const packet of backlog) {
+        emitFrame(packet);
+      }
+      backlog.length = 0;
       return {
         ok: true,
         data: { sessionId, codec: session.codec, width: session.width, height: session.height },

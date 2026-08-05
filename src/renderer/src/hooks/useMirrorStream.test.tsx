@@ -53,6 +53,12 @@ const DELTA_PAYLOAD = new Uint8Array([...START_4, 0x41, 0x9a, 0x02]);
 
 class FakeVideoFrame {
   closed = 0;
+  readonly displayWidth: number;
+  readonly displayHeight: number;
+  constructor(displayWidth = 464, displayHeight = 1024) {
+    this.displayWidth = displayWidth;
+    this.displayHeight = displayHeight;
+  }
   close(): void {
     this.closed += 1;
   }
@@ -60,7 +66,7 @@ class FakeVideoFrame {
 
 type DecoderRecord = {
   configs: VideoDecoderConfig[];
-  chunks: Array<{ type: 'key' | 'delta'; timestamp: number }>;
+  chunks: Array<{ type: 'key' | 'delta'; timestamp: number; data: Uint8Array }>;
   closes: number;
   emit: (frame: FakeVideoFrame) => void;
   fail: (error: Error) => void;
@@ -75,10 +81,11 @@ function installWebCodecs(): void {
   class FakeEncodedVideoChunk {
     readonly type: 'key' | 'delta';
     readonly timestamp: number;
-    constructor(init: { type: 'key' | 'delta'; timestamp: number; data: BufferSource }) {
+    readonly data: Uint8Array;
+    constructor(init: { type: 'key' | 'delta'; timestamp: number; data: Uint8Array }) {
       this.type = init.type;
       this.timestamp = init.timestamp;
-      void init.data;
+      this.data = new Uint8Array(init.data);
     }
   }
 
@@ -103,7 +110,7 @@ function installWebCodecs(): void {
     }
 
     decode(chunk: FakeEncodedVideoChunk): void {
-      this.record.chunks.push({ type: chunk.type, timestamp: chunk.timestamp });
+      this.record.chunks.push({ type: chunk.type, timestamp: chunk.timestamp, data: chunk.data });
     }
 
     close(): void {
@@ -234,7 +241,7 @@ function push(payload: Result<MirrorEvent>): void {
 }
 
 /** Mounts and waits for the start round trip main answers. */
-async function mount(): Promise<{ unmount: () => void }> {
+async function mount(): Promise<{ unmount: () => void; container: HTMLElement }> {
   const view = render(<Harness />);
   selectDevice();
   await waitFor(() => {
@@ -326,9 +333,7 @@ describe('decoding', () => {
 
     push(frame(CONFIG_PAYLOAD, { config: true }));
 
-    expect(decoders[0]?.configs).toEqual([
-      { codec: 'avc1.640020', codedWidth: 464, codedHeight: 1024, optimizeForLatency: true },
-    ]);
+    expect(decoders[0]?.configs).toEqual([{ codec: 'avc1.640020', optimizeForLatency: true }]);
   });
 
   it('never hands the config packet to the decoder as a frame', async () => {
@@ -346,10 +351,52 @@ describe('decoding', () => {
     push(frame(IDR_PAYLOAD, { keyFrame: true, pts: 652021984203 }));
     push(frame(DELTA_PAYLOAD, { pts: 652022017536 }));
 
-    expect(decoders[0]?.chunks).toEqual([
+    expect(decoders[0]?.chunks.map(({ type, timestamp }) => ({ type, timestamp }))).toEqual([
       { type: 'key', timestamp: 652021984203 },
       { type: 'delta', timestamp: 652022017536 },
     ]);
+  });
+
+  /**
+   * With no `description`, WebCodecs reads SPS and PPS from the bitstream
+   * itself, and scrcpy sends them only in the config packet. A key frame handed
+   * over bare decodes to nothing — silently, no error and no output, a mirror
+   * that streams and stays black. So the config packet rides in front of every
+   * key frame.
+   */
+  it('puts the parameter sets in front of every key frame', async () => {
+    await mount();
+    push(frame(CONFIG_PAYLOAD, { config: true }));
+
+    push(frame(IDR_PAYLOAD, { keyFrame: true }));
+
+    expect(decoders[0]?.chunks[0]?.data).toEqual(
+      new Uint8Array([...CONFIG_PAYLOAD, ...IDR_PAYLOAD]),
+    );
+  });
+
+  it('hands delta frames over untouched', async () => {
+    await mount();
+    push(frame(CONFIG_PAYLOAD, { config: true }));
+    push(frame(IDR_PAYLOAD, { keyFrame: true }));
+
+    push(frame(DELTA_PAYLOAD));
+
+    expect(decoders[0]?.chunks[1]?.data).toEqual(DELTA_PAYLOAD);
+  });
+
+  /** After an encoder reset the stream carries new parameter sets; a key frame
+   * must travel with the ones that describe it, not the ones before. */
+  it('fronts a key frame with the latest config packet', async () => {
+    const reconfigured = new Uint8Array([...START_4, 0x67, 0x42, 0xc0, 0x1e]);
+    await mount();
+    push(frame(CONFIG_PAYLOAD, { config: true }));
+    push(frame(IDR_PAYLOAD, { keyFrame: true }));
+
+    push(frame(reconfigured, { config: true }));
+    push(frame(IDR_PAYLOAD, { keyFrame: true }));
+
+    expect(decoders[0]?.chunks[1]?.data).toEqual(new Uint8Array([...reconfigured, ...IDR_PAYLOAD]));
   });
 
   /** A decoder that has never been configured throws on `decode`. The stream
@@ -427,6 +474,52 @@ describe('the frames it draws', () => {
     view.unmount();
 
     expect(decoders[0]?.closes).toBe(1);
+  });
+});
+
+/**
+ * A rotation swaps the stream's size mid-session. Only the SPS announces it and
+ * only the decoded frames carry it — the codec header spoke once, at the start.
+ * The canvas must follow the frames, or a landscape picture lands cropped
+ * inside a portrait bitmap and stays there.
+ */
+describe('a stream that changes size', () => {
+  it('resizes the canvas to the frame before drawing it', async () => {
+    const view = await mount();
+    const canvasEl = view.container.querySelector('canvas');
+
+    act(() => {
+      decoders[0]?.emit(new FakeVideoFrame(1024, 464));
+    });
+
+    expect(canvasEl?.width).toBe(1024);
+    expect(canvasEl?.height).toBe(464);
+  });
+
+  it('tells the store the stream it is showing changed size', async () => {
+    await mount();
+
+    act(() => {
+      decoders[0]?.emit(new FakeVideoFrame(1024, 464));
+    });
+
+    expect(useDeviceStore.getState()).toMatchObject({ mirrorWidth: 1024, mirrorHeight: 464 });
+  });
+
+  /** Criterion 42 — a frame that changes nothing must cost nothing: a store
+   * write per frame would re-render the window at the phone's framerate. */
+  it('leaves the store alone while the size holds', async () => {
+    await mount();
+    act(() => {
+      decoders[0]?.emit(new FakeVideoFrame(1024, 464));
+    });
+    const before = useDeviceStore.getState();
+
+    act(() => {
+      decoders[0]?.emit(new FakeVideoFrame(1024, 464));
+    });
+
+    expect(useDeviceStore.getState()).toBe(before);
   });
 });
 
