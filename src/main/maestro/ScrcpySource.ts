@@ -81,9 +81,11 @@ export const MAX_COMMAND_LENGTH = 255;
  * window without streaming a framebuffer nobody sees. */
 export const MIRROR_MAX_SIZE = 1024;
 
-/** Halves the encode and decode cost against 60, with no perceptible loss for
- * watching an app respond. */
-export const MIRROR_MAX_FPS = 30;
+/** 30 was tried first and read as stutter beside scrcpy's own uncapped
+ * default. 60 matches the refresh rate most phones drive; keeping a cap at all
+ * is what stops a 120 Hz panel from doubling the encode, IPC and decode bill
+ * for motion nobody can see at this size. */
+export const MIRROR_MAX_FPS = 60;
 
 /**
  * Criterion 17. **Only** the options that differ from the server's own defaults.

@@ -5,7 +5,6 @@ import type { MirrorFailure, MirrorPacket } from './MaestroGateway';
 import {
   DEVICE_JAR_PATH,
   MAX_COMMAND_LENGTH,
-  MIRROR_MAX_FPS,
   MIRROR_MAX_SIZE,
   SCRCPY_JAR,
   SCRCPY_VERSION,
@@ -124,7 +123,9 @@ describe('the app_process command line', () => {
       'control=false',
       'tunnel_forward=true',
       `max_size=${MIRROR_MAX_SIZE}`,
-      `max_fps=${MIRROR_MAX_FPS}`,
+      // Pinned as a literal: 30 was tried and read as stutter beside scrcpy's
+      // uncapped default, so 60 is a product decision, not a tuning knob.
+      'max_fps=60',
     ]);
   });
 

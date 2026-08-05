@@ -275,7 +275,7 @@ export function selectProperties(state: DeviceState): DeviceProperties | null {
 }
 
 /**
- * Criterion 42. One field each, and never a fresh object: frames arrive ~30
+ * Criterion 42. One field each, and never a fresh object: frames arrive ~60
  * times a second into the same panel these feed, so a selector that allocated
  * would re-render the window at the framerate of the phone.
  */

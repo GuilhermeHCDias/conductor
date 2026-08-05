@@ -369,7 +369,7 @@ describe('the mirror', () => {
     });
   });
 
-  /** Nothing to listen for with no phone attached, and a listener at 30 fps is
+  /** Nothing to listen for with no phone attached, and a listener at 60 fps is
    * not something to hold open on the chance one arrives. */
   it('subscribes to nothing while no device is selected', async () => {
     await mount();

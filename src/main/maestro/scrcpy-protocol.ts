@@ -106,7 +106,7 @@ export class ScrcpyProtocolError extends Error {
 export class ScrcpyParser {
   private buffer = new Uint8Array(0);
   /** Bytes at the head of `buffer` already emitted. Compacted lazily, so a
-   * 30 fps stream does not re-copy its backlog on every packet. */
+   * 60 fps stream does not re-copy its backlog on every packet. */
   private consumed = 0;
   private handshakeDone = false;
 

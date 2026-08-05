@@ -38,7 +38,7 @@ const BAY_PADDING = 40;
  * real device does not repaint itself when Conductor switches to light mode.
  *
  * The mirror subscription is mounted here rather than in `App.tsx` (criterion
- * 41): it fires ~30 times a second, and it must stop when this panel does.
+ * 41): it fires ~60 times a second, and it must stop when this panel does.
  */
 export function DeviceMirror(): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null);
