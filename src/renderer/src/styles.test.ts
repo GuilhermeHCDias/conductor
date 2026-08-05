@@ -419,8 +419,23 @@ describe('what the criteria name', () => {
     expect(mirror).not.toContain('.navBar');
   });
 
-  it.each(['.viewer', '.deviceChoice'])('paints %s from that palette too', (selector) => {
-    expect(rule(mirror, selector)).toContain('background: var(--phone-choice)');
+  /** Still on the screen, so still painted from the phone's palette. */
+  it('paints .deviceChoice from that palette too', () => {
+    expect(rule(mirror, '.deviceChoice')).toContain('background: var(--phone-choice)');
+  });
+
+  /**
+   * `.viewer` used to be on that list, for the reason above: it sat on the
+   * phone's screen. Criterion 38 moved it off — the screen is the mirror now,
+   * and the control is a footer under the bay. So it takes the app's chrome, and
+   * that it *stops* taking the phone's is the thing worth pinning: a control
+   * painted in the device's palette outside the device reads as part of it.
+   */
+  it('paints .viewer from the app’s chrome, now that it is off the phone', () => {
+    const viewer = rule(mirror, '.viewer');
+
+    expect(viewer).toContain('background: var(--a-fill)');
+    expect(viewer).not.toContain('var(--phone-');
   });
 
   it('gives the phone its own drop shadow', () => {

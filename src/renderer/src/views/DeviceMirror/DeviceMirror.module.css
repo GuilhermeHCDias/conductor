@@ -4,7 +4,7 @@
   background: var(--a-panel);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 38px minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) auto;
   min-height: 0;
   min-width: 0;
 }
@@ -126,9 +126,17 @@
   width: 100%;
 }
 
-/* Criterion 24: what the screen holds now is one state and its next action.
-   The drawn status bar and nav bar are gone — they were furniture for a mirror
-   that this spec deliberately does not build. */
+/* Criterion 33: the device's own framebuffer, at its own size. The canvas is
+   never resized to fit — its parent's `transform: scale()` is the whole of the
+   fitting, which is what keeps a mirror a mirror rather than a reflow. */
+.screen {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+/* Criterion 38: what the bezel holds when there is no picture to put in it —
+   one state and its next action. The drawn status bar and nav bar stay gone. */
 .state {
   align-content: center;
   display: grid;
@@ -173,25 +181,39 @@
   background: var(--phone-choice-hover);
 }
 
-/* Criterion 25: the control that says where the screen actually appears. It is
-   painted from the phone's palette, because it sits on the phone. */
+/* Criterion 38: the Viewer, demoted. It sits below the bay rather than on the
+   phone's screen, because the screen is the mirror now — and it takes the app's
+   own chrome rather than the phone's, because it is no longer on the phone. */
+.footer {
+  border-top: 1px solid var(--a-hair);
+  display: grid;
+  gap: var(--space-2);
+  justify-items: center;
+  padding: var(--space-3) var(--space-4);
+}
+
+.footerNote {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  text-align: center;
+}
+
 .viewer {
-  background: var(--phone-choice);
-  border: var(--border-hair) solid var(--phone-edge);
+  background: var(--a-fill);
+  border: var(--border-hair) solid var(--a-hair);
   border-radius: var(--a-radius-field);
-  color: var(--phone-text);
-  font: var(--type-body-strong);
-  margin-top: var(--space-2);
+  color: var(--text-secondary);
+  font: var(--type-label);
   padding: var(--space-2) var(--space-4);
   transition: var(--t-hover);
 }
 
 .viewer:hover:not(:disabled) {
-  background: var(--phone-choice-hover);
+  color: var(--text-primary);
 }
 
 .viewer:disabled {
-  color: var(--phone-text-dim);
+  color: var(--text-disabled);
   opacity: 0.55;
 }
 
@@ -203,10 +225,4 @@
 .deviceChoice:focus-visible {
   box-shadow: var(--glow-accent);
   outline: none;
-}
-
-.viewerNote {
-  color: var(--phone-text-dim);
-  font: var(--type-caption);
-  text-align: center;
 }

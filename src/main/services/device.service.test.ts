@@ -1,7 +1,15 @@
-import type { AppIdentity, Device, DeviceProperties, DeviceSnapshot, Result } from '@shared/ipc';
+import type {
+  AppIdentity,
+  Device,
+  DeviceProperties,
+  DeviceSnapshot,
+  MirrorEvent,
+  Result,
+} from '@shared/ipc';
+import { ERROR_CODES } from '@shared/ipc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { AdbNotFoundError } from '../maestro/AdbBridge';
-import type { MaestroGateway } from '../maestro/MaestroGateway';
+import type { MaestroGateway, MirrorHandlers, MirrorSession } from '../maestro/MaestroGateway';
 import { DeviceService, POLL_INTERVAL_MS } from './device.service';
 
 /**
@@ -30,12 +38,22 @@ const IDENTITY: AppIdentity = {
   foreground: true,
 };
 
+/** One started mirror, plus the handles a test needs to drive it: the handlers
+ * the service registered, and how many times it was stopped. */
+type FakeSession = MirrorSession & {
+  stops: number;
+  handlers: MirrorHandlers;
+};
+
 type Gateway = MaestroGateway & {
   devices: Device[];
   failure: Error | null;
   listCalls: number;
   propertyCalls: string[];
   identityCalls: Array<{ deviceId: string; appId: string }>;
+  mirrorCalls: string[];
+  mirrorFailure: Error | null;
+  sessions: FakeSession[];
 };
 
 function fakeGateway(devices: Device[] = [PHONE]): Gateway {
@@ -45,6 +63,9 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
     listCalls: 0,
     propertyCalls: [],
     identityCalls: [],
+    mirrorCalls: [],
+    mirrorFailure: null,
+    sessions: [],
     listDevices: () => {
       gateway.listCalls += 1;
       return gateway.failure === null
@@ -59,6 +80,26 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
       gateway.identityCalls.push({ deviceId, appId });
       return Promise.resolve({ ...IDENTITY, appId });
     },
+    startMirror: (deviceId, handlers) => {
+      gateway.mirrorCalls.push(deviceId);
+      if (gateway.mirrorFailure !== null) {
+        return Promise.reject(gateway.mirrorFailure);
+      }
+      const session: FakeSession = {
+        deviceName: 'SM-A075M',
+        codec: 'h264',
+        width: 464,
+        height: 1024,
+        stops: 0,
+        handlers,
+        stop: () => {
+          session.stops += 1;
+          return Promise.resolve();
+        },
+      };
+      gateway.sessions.push(session);
+      return Promise.resolve(session);
+    },
   };
   return gateway;
 }
@@ -66,14 +107,17 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
 function makeService(gateway: Gateway): {
   service: DeviceService;
   emitted: Array<Result<DeviceSnapshot>>;
+  mirrored: Array<Result<MirrorEvent>>;
 } {
   const emitted: Array<Result<DeviceSnapshot>> = [];
+  const mirrored: Array<Result<MirrorEvent>> = [];
   const service = new DeviceService({
     gateway,
     appId: APP_ID,
     emit: (payload) => emitted.push(payload),
+    emitMirror: (payload) => mirrored.push(payload),
   });
-  return { service, emitted };
+  return { service, emitted, mirrored };
 }
 
 afterEach(() => {
@@ -372,5 +416,282 @@ describe('the poll loop', () => {
     expect(() => {
       service.dispose();
     }).not.toThrow();
+  });
+});
+
+/**
+ * The mirror half. Main owns the sessions because main is what has to be able to
+ * end them — on a stop, on a renderer reload, and on quit. The spike left an
+ * `app_process` alive on the device that survived `pkill` and needed `kill -9`
+ * by pid, so "nothing survives" is written against a failure that was observed.
+ */
+describe('mirroring a device', () => {
+  const PACKET = {
+    config: false,
+    keyFrame: true,
+    pts: 652021984203,
+    payload: new Uint8Array([0, 0, 0, 1, 0x65, 0x88]),
+  };
+
+  /** Criterion 28 — the session and the stream's own size, immediately. */
+  it('answers with the session and the stream the device opened', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+
+    const result = await service.startMirror(PHONE.id);
+
+    expect(gateway.mirrorCalls).toEqual([PHONE.id]);
+    expect(result).toEqual({
+      ok: true,
+      data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024 },
+    });
+  });
+
+  it('gives each session an id of its own', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+
+    const first = await service.startMirror(PHONE.id);
+    const second = await service.startMirror(PHONE.id);
+
+    expect(first).toMatchObject({ ok: true, data: { sessionId: 'mirror-1' } });
+    expect(second).toMatchObject({ ok: true, data: { sessionId: 'mirror-2' } });
+  });
+
+  /** Criterion 29 — frames are bytes on a push channel, never a return value
+   * and never a path. */
+  it('pushes every packet as a frame event tagged with its session', async () => {
+    const gateway = fakeGateway();
+    const { service, mirrored } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+
+    gateway.sessions[0]?.handlers.onPacket(PACKET);
+
+    expect(mirrored).toEqual([
+      {
+        ok: true,
+        data: {
+          type: 'frame',
+          sessionId: 'mirror-1',
+          config: false,
+          keyFrame: true,
+          pts: 652021984203,
+          data: PACKET.payload,
+        },
+      },
+    ]);
+  });
+
+  it('never blocks the start on a frame', async () => {
+    const gateway = fakeGateway();
+    const { service, mirrored } = makeService(gateway);
+
+    await service.startMirror(PHONE.id);
+
+    expect(mirrored).toEqual([]);
+  });
+
+  /**
+   * The codec header and the first packets can share one TCP chunk, so the
+   * stream may deliver packets *while* the start is still settling — before the
+   * service has the session in its map. Dropping those loses the config packet,
+   * and a decoder that never sees one shows black for the whole session.
+   */
+  it('holds packets that arrive while the start is settling, then pushes them in order', async () => {
+    const gateway = fakeGateway();
+    const start = gateway.startMirror.bind(gateway);
+    gateway.startMirror = (deviceId, handlers) => {
+      // Same tick as the handshake, exactly as one coalesced chunk plays out.
+      handlers.onPacket({ ...PACKET, config: true, keyFrame: false });
+      return start(deviceId, handlers);
+    };
+    const { service, mirrored } = makeService(gateway);
+
+    await service.startMirror(PHONE.id);
+    gateway.sessions[0]?.handlers.onPacket(PACKET);
+
+    expect(
+      mirrored.map((event) => (event.ok && event.data.type === 'frame' ? event.data.config : null)),
+    ).toEqual([true, false]);
+  });
+
+  /** Criterion 25 — the phone went away, and the panel has to be told which
+   * session died and why. */
+  it('pushes a terminal event when a session ends on its own', async () => {
+    const gateway = fakeGateway();
+    const { service, mirrored } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+
+    gateway.sessions[0]?.handlers.onEnded({
+      code: ERROR_CODES.mirrorDeviceLost,
+      message: 'The device closed the mirror stream.',
+    });
+
+    expect(mirrored).toEqual([
+      {
+        ok: true,
+        data: {
+          type: 'ended',
+          sessionId: 'mirror-1',
+          code: ERROR_CODES.mirrorDeviceLost,
+          message: 'The device closed the mirror stream.',
+        },
+      },
+    ]);
+  });
+
+  it('forgets a session that ended on its own', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    gateway.sessions[0]?.handlers.onEnded({ code: ERROR_CODES.mirrorDeviceLost, message: 'gone' });
+
+    const stopped = await service.stopMirror('mirror-1');
+
+    expect(stopped).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.mirrorSessionNotFound },
+    });
+  });
+
+  /** Criterion 31 — a start that failed is a value with the thrower's code, not
+   * an exception across the boundary. */
+  it('reports a start that failed with the code it was given', async () => {
+    const gateway = fakeGateway();
+    gateway.mirrorFailure = Object.assign(new Error('adb push refused'), {
+      code: ERROR_CODES.mirrorStartFailed,
+    });
+    const { service } = makeService(gateway);
+
+    expect(await service.startMirror(PHONE.id)).toEqual({
+      ok: false,
+      error: { code: ERROR_CODES.mirrorStartFailed, message: 'adb push refused' },
+    });
+  });
+
+  it('falls back to the mirror’s own code when the thrower had none', async () => {
+    const gateway = fakeGateway();
+    gateway.mirrorFailure = new Error('something went sideways');
+    const { service } = makeService(gateway);
+
+    expect(await service.startMirror(PHONE.id)).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.mirrorStartFailed },
+    });
+  });
+
+  it('reports a missing adb under its own code, so the panel names the right fix', async () => {
+    const gateway = fakeGateway();
+    gateway.mirrorFailure = new AdbNotFoundError();
+    const { service } = makeService(gateway);
+
+    expect(await service.startMirror(PHONE.id)).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.adbNotFound },
+    });
+  });
+});
+
+/** Criterion 22 — a stop leaves nothing behind, and criteria 23–24 say who else
+ * may order one. */
+describe('ending mirror sessions', () => {
+  it('stops the session the renderer named', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+
+    const result = await service.stopMirror('mirror-1');
+
+    expect(result).toEqual({ ok: true, data: { sessionId: 'mirror-1' } });
+    expect(gateway.sessions[0]?.stops).toBe(1);
+  });
+
+  it('reports a stop naming a session that is not there', async () => {
+    const { service } = makeService(fakeGateway());
+
+    expect(await service.stopMirror('mirror-9')).toMatchObject({
+      ok: false,
+      error: { code: ERROR_CODES.mirrorSessionNotFound },
+    });
+  });
+
+  it('pushes nothing more once a session has been stopped', async () => {
+    const gateway = fakeGateway();
+    const { service, mirrored } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    await service.stopMirror('mirror-1');
+
+    gateway.sessions[0]?.handlers.onPacket({
+      config: false,
+      keyFrame: false,
+      pts: 1,
+      payload: new Uint8Array([1]),
+    });
+
+    expect(mirrored).toEqual([]);
+  });
+
+  /**
+   * One session, one device, one cable. Starting a second without ending the
+   * first is exactly how the orphaned `app_process` happens.
+   */
+  it('ends the session already running when a new one starts', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+
+    await service.startMirror(EMULATOR.id);
+
+    expect(gateway.sessions[0]?.stops).toBe(1);
+    expect(gateway.sessions[1]?.stops).toBe(0);
+  });
+
+  /** Criterion 24 — a renderer that reloaded is not coming back for its session,
+   * and nothing should wait for `before-quit` to notice. */
+  it('stops every session on demand, without being disposed', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+
+    await service.stopMirrors();
+
+    expect(gateway.sessions[0]?.stops).toBe(1);
+    expect(await service.startMirror(PHONE.id)).toMatchObject({ ok: true });
+  });
+
+  /** Criterion 23 — `before-quit` leaves no server alive on the device. */
+  it('stops every session on dispose', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    await service.startMirror(EMULATOR.id);
+
+    await service.dispose();
+
+    expect(gateway.sessions.map((session) => session.stops)).toEqual([1, 1]);
+  });
+
+  it('starts nothing once disposed', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+
+    await service.dispose();
+
+    expect(await service.startMirror(PHONE.id)).toMatchObject({ ok: false });
+    expect(gateway.mirrorCalls).toEqual([]);
+  });
+
+  it('survives a session whose stop refused, and stops the rest anyway', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway);
+    await service.startMirror(PHONE.id);
+    await service.startMirror(EMULATOR.id);
+    const first = gateway.sessions[0];
+    if (first !== undefined) {
+      first.stop = () => Promise.reject(new Error('adb vanished'));
+    }
+
+    await expect(service.dispose()).resolves.toBeUndefined();
+    expect(gateway.sessions[1]?.stops).toBe(1);
   });
 });

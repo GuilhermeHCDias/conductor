@@ -1,6 +1,6 @@
 # Android device mirror
 
-status: draft
+status: done
 created: 2026-08-04
 reopened: 2026-08-04
 supersedes: criteria 25 and 26 of specs/device-identity-and-viewer.md
@@ -25,6 +25,26 @@ supersedes: criteria 25 and 26 of specs/device-identity-and-viewer.md
 >
 > **What this spec owes:** criteria 14–49 — the scrcpy session, the wire protocol, the WebCodecs
 > decode path and the in-panel canvas.
+>
+> ---
+>
+> **Built 2026-08-04.** Criteria 14–49 are implemented and covered: 929 tests pass (up from 688),
+> in order and under `--sequence.shuffle`, with `npm run lint`, `npm run typecheck` and
+> `npm run build` clean. `scrcpy-protocol.ts` carries 38 tests and `lib/h264.ts` 26, both driven
+> from the captured bytes below and from synthesised boundaries that capture could not reach.
+>
+> **Verified on hardware 2026-08-04**, against the Galaxy A07 (`SM-A075M`, Android 16), after one
+> real bug that only a device could surface — see *The connect race*, below. The mirror comes up in
+> 559–873 ms and streams **30,9 fps**; the teardown leaves no forward on the host and no
+> `app_process` on the device. `.context.md` §4.4 now carries the measured numbers, including the
+> `screencap` round trip that quantifies the discarded alternative at **~857 ms, a 1,2 fps ceiling**
+> — three times worse than the estimate the decision was originally made against.
+>
+> **Still outstanding:** the glass-to-glass latency of `.context.md` §13 step 1 (it needs a camera
+> filming the phone and the screen together — what was measured is frame cadence and start time,
+> not end-to-end delay); the *unauthorized* state, still never observed; `com.vtex.pnp` across all
+> four app states; the non-Samsung device of verification step 6; and whether 30 fps at
+> `max_size=1024` *looks* right in the 250 px column, which wants a human eye.
 
 ## Goal
 
@@ -519,6 +539,81 @@ are restated because the mirror depends on them, not because they are open work.
   against real captured SPS bytes). Parser tests for the `AdbBridge` additions against captured
   output. Fake-driven tests for `LocalGateway` and `DeviceService`. RTL for the inspector's states,
   mocking only `window.conductor`. No snapshot tests, no test that requires a device.
+
+### ⚠️ The connect race — the bug the first build shipped
+
+The first implementation failed on every start, with:
+
+> The scrcpy stream ended before the dummy byte, after 0 of 77 bytes.
+
+**`tunnel_forward=true` means adb accepts the TCP connection whether or not the server has bound
+its socket on the device, and then closes it again.** So "connected" proves nothing. The first byte
+proves everything — which is exactly what this document already said `send_dummy_byte` is *for*:
+
+> it is how a forward tunnel distinguishes "connected" from "adb accepted the connection but
+> nothing is listening".
+
+The first build read that sentence, implemented the dummy byte as a passive prefix byte, and never
+implemented the **retry it exists to drive**. It connected once, immediately, and reported the
+instant close as a terminal handshake failure.
+
+Measured on the A07, replaying the app's own sequence:
+
+```
+immediate      closed by peer, 0 bytes, after 6ms
++156ms …       closed by peer, 0 bytes    (eleven times)
++1882ms        77 bytes — the whole prefix, in one read
+```
+
+`app_process` needs **~2,3 s** to come up. The fix is scrcpy's own: reconnect every 100 ms until a
+byte actually arrives, bounded by the start deadline. The distinction the retry rests on is that a
+stream which said *something* and then died inside the prefix is **not** retried — that is a server
+that started and fell over (criterion 18's case, and the shape the 255-character abort takes), and
+retrying it would hide a real failure behind a timeout.
+
+The lesson is worth more than the fix: this document explained the *why* of the dummy byte, and the
+implementation still took it for a byte to parse rather than a signal to act on. A prefix that also
+carries a protocol's readiness handshake needs both halves written.
+
+### Resolved during implementation, 2026-08-04
+
+None of these needed a decision from the product owner; each is recorded because a later reader
+would otherwise have to re-derive it.
+
+- **`mirror:start` needs a timeout, and now has one (10 s, injected).** Nothing else in the spec
+  makes the start promise settle: `tunnel_forward=true` means adb accepts the socket whether or not
+  the server ever binds — that is exactly what the dummy byte exists to disambiguate — so a device
+  that connects and then says nothing would leave the panel on "starting" with no way out. This is
+  not the retry policy that *Out of scope* rules out; it is what makes the contract well-founded.
+- **Starting a mirror ends whatever was already running.** *Out of scope* allows one session at a
+  time, and enforcing that in `DeviceService` rather than trusting the renderer is what keeps the
+  orphaned `app_process` — observed in the spike, survived `pkill`, needed `kill -9` — from having
+  a second way to happen.
+- **The `ended` event travels as `ok: true` with its code inside.** Criterion 31 is about what a
+  *handler returns*; an ended event is information about a session, and wrapping it as `ok: false`
+  would drop the `sessionId` the renderer needs to know *which* session to put away.
+- **Where the demoted Viewer control went.** Criterion 38 removed its two panel states but the spec
+  does not say where the control itself lands. It is now a footer under the bay, painted from the
+  app's chrome rather than the phone's palette — it is no longer on the phone — and it reports its
+  own failure beside itself. `styles.test.ts`'s guard that `.viewer` uses `--phone-choice` was
+  narrowed to `.deviceChoice` for the same reason, and replaced by one pinning the demotion.
+- **`mirror-fit`'s readability clamp became a rendered width.** Making the device size a parameter
+  (criterion 33) left `MIN_SCALE = 0.35` calibrated against the 330 px placeholder: a phone held
+  landscape opens at 1024 px, and 0.35 of that is 358 px clipped into a 250 px column. The floor is
+  now "never narrower than the placeholder at its own minimum", which is identical for the
+  placeholder and correct for every stream.
+- **WebCodecs needed no ambient declarations.** TypeScript 7's DOM library already ships
+  `VideoDecoder`, `VideoDecoderConfig`, `EncodedVideoChunk`, `VideoFrame`, and a `CanvasImageSource`
+  that includes `VideoFrame`. `env.d.ts` is unchanged.
+- **`lib/h264.ts`'s SPS fixtures are canonical encoder output, not the captured packet.** The
+  capture recorded packet 0's length and its first five bytes; the remaining 26 were not
+  transcribed, so the SPS bodies in the test are real `avc` encoder output of the same shape. The
+  fact the capture *did* settle — Annex-B, SPS then PPS, 4-byte start codes — is what the tests
+  are built on.
+- **The ❓ open question was not answered.** This implementation is what options 1 and 2 share:
+  `viewer:open`, `ViewerService` and `McpClient` are untouched, and the control is demoted rather
+  than deleted. Choosing between "keep it demoted" and "keep it until the control socket lands"
+  changes nothing in the code today and remains the product owner's call (§12.22).
 
 ## Verification
 

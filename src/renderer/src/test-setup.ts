@@ -27,7 +27,11 @@ function idleConductor(): ConductorApi {
     deviceAppInfo: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     viewerOpen: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    mirrorStart: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    mirrorStop: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     onDeviceChanged: () => () => {},
+    onMirrorEvent: () => () => {},
   };
 }
 

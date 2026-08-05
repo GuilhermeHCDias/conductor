@@ -1,5 +1,6 @@
 import type { AppIdentity, Device, DeviceProperties, DeviceSnapshot, Result } from '@shared/ipc';
 import { create } from 'zustand';
+import type { MirrorStatus } from '../lib/device-state';
 
 /**
  * What is plugged in, and what the app under test is doing on it. Main owns all
@@ -11,6 +12,8 @@ import { create } from 'zustand';
  */
 
 export type Failure = { readonly code: string; readonly message: string };
+
+export type { MirrorStatus };
 
 export type DeviceData = {
   readonly devices: readonly Device[];
@@ -33,6 +36,20 @@ export type DeviceData = {
   /** True while the `maestro mcp` child is coming up — the JVM cold start. */
   readonly viewerOpening: boolean;
   readonly viewerError: Failure | null;
+  /**
+   * The mirror, as five flat fields rather than one object. Criterion 42: a
+   * selector that built `{ status, width, height }` would return a fresh object
+   * on every render and re-render the panel on every poll tick.
+   *
+   * There is deliberately no frame here. Frames go from the subscription
+   * straight into the decoder — putting 30 of them a second through a store
+   * would re-render the window at the framerate of the phone.
+   */
+  readonly mirrorStatus: MirrorStatus;
+  readonly mirrorSessionId: string | null;
+  readonly mirrorWidth: number | null;
+  readonly mirrorHeight: number | null;
+  readonly mirrorError: Failure | null;
 };
 
 export type DeviceActions = {
@@ -41,6 +58,20 @@ export type DeviceActions = {
   refresh: () => Promise<void>;
   pick: (deviceId: string) => void;
   openViewer: () => Promise<void>;
+  startMirror: (deviceId: string) => Promise<void>;
+  stopMirror: () => Promise<void>;
+  /** A session main says is over. Named, so a late report cannot put away the
+   * session that replaced it. */
+  mirrorEnded: (sessionId: string, failure: Failure) => void;
+  /**
+   * The stream changed size mid-session — a rotation. Only the SPS announces
+   * it and only the decoded frames carry it, so the report comes from the
+   * decoder's output, named like `mirrorEnded` for the same reason.
+   */
+  mirrorResized: (sessionId: string, width: number, height: number) => void;
+  /** This renderer has no `VideoDecoder`. Nothing here can fix that, so nothing
+   * tries to start a stream it could never draw. */
+  mirrorUnsupported: () => void;
 };
 
 export type DeviceState = DeviceData & DeviceActions;
@@ -56,6 +87,11 @@ function createDeviceData(): DeviceData {
     loaded: false,
     viewerOpening: false,
     viewerError: null,
+    mirrorStatus: 'idle',
+    mirrorSessionId: null,
+    mirrorWidth: null,
+    mirrorHeight: null,
+    mirrorError: null,
   };
 }
 
@@ -120,7 +156,86 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     const result = await window.conductor.viewerOpen();
     set({ viewerOpening: false, viewerError: result.ok ? null : result.error });
   },
+
+  startMirror: async (deviceId) => {
+    const { mirrorStatus } = get();
+    // A second start while one is in flight would leave main holding a session
+    // this store has no id for — and main stops the old one to make room, so the
+    // picture would go away rather than arrive twice.
+    if (mirrorStatus === 'starting' || mirrorStatus === 'unsupported') {
+      return;
+    }
+
+    set({ mirrorStatus: 'starting', mirrorError: null });
+    const result = await window.conductor.mirrorStart(deviceId);
+    if (!result.ok) {
+      set({
+        mirrorStatus: 'failed',
+        mirrorSessionId: null,
+        mirrorWidth: null,
+        mirrorHeight: null,
+        mirrorError: result.error,
+      });
+      return;
+    }
+
+    set({
+      mirrorStatus: 'streaming',
+      mirrorSessionId: result.data.sessionId,
+      mirrorWidth: result.data.width,
+      mirrorHeight: result.data.height,
+      mirrorError: null,
+    });
+  },
+
+  stopMirror: async () => {
+    const sessionId = get().mirrorSessionId;
+    // Cleared first, so a frame or an `ended` arriving mid-flight finds no
+    // session to belong to.
+    set(idleMirror());
+    if (sessionId !== null) {
+      await window.conductor.mirrorStop(sessionId);
+    }
+  },
+
+  mirrorEnded: (sessionId, failure) => {
+    if (get().mirrorSessionId !== sessionId) {
+      return;
+    }
+    set({
+      mirrorStatus: 'failed',
+      mirrorSessionId: null,
+      mirrorWidth: null,
+      mirrorHeight: null,
+      mirrorError: failure,
+    });
+  },
+
+  mirrorResized: (sessionId, width, height) => {
+    if (get().mirrorSessionId !== sessionId) {
+      return;
+    }
+    set({ mirrorWidth: width, mirrorHeight: height });
+  },
+
+  mirrorUnsupported: () => {
+    set({ ...idleMirror(), mirrorStatus: 'unsupported' });
+  },
 }));
+
+/** The mirror, showing nothing and holding nothing. */
+function idleMirror(): Pick<
+  DeviceData,
+  'mirrorStatus' | 'mirrorSessionId' | 'mirrorWidth' | 'mirrorHeight' | 'mirrorError'
+> {
+  return {
+    mirrorStatus: 'idle',
+    mirrorSessionId: null,
+    mirrorWidth: null,
+    mirrorHeight: null,
+    mirrorError: null,
+  };
+}
 
 /** Restores the initial state. Used by tests, which share one module instance. */
 export function resetDeviceStore(): void {
@@ -157,4 +272,25 @@ export function selectDevices(state: DeviceState): readonly Device[] {
 
 export function selectProperties(state: DeviceState): DeviceProperties | null {
   return state.properties;
+}
+
+/**
+ * Criterion 42. One field each, and never a fresh object: frames arrive ~30
+ * times a second into the same panel these feed, so a selector that allocated
+ * would re-render the window at the framerate of the phone.
+ */
+export function selectMirrorStatus(state: DeviceState): MirrorStatus {
+  return state.mirrorStatus;
+}
+
+export function selectMirrorWidth(state: DeviceState): number | null {
+  return state.mirrorWidth;
+}
+
+export function selectMirrorHeight(state: DeviceState): number | null {
+  return state.mirrorHeight;
+}
+
+export function selectMirrorError(state: DeviceState): Failure | null {
+  return state.mirrorError;
 }

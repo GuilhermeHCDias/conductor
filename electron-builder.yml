@@ -18,6 +18,15 @@ files:
   - '!{.env,.env.*,.npmrc,.nvmrc,pnpm-lock.yaml,yarn.lock}'
   - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
   - '!{CHANGELOG.md,README.md,AGENTS.md,CLAUDE.md,.context.md}'
+  # Shipped as extraResources instead — see below.
+  - '!resources/**/*'
+# The pinned scrcpy server. It has to be a real file on disk: `adb push` reads
+# it, and app.asar is a virtual filesystem no other process can open. Pinning
+# ours also means a `brew upgrade scrcpy` on someone's machine cannot break the
+# mirror — the client version argument must match the jar exactly.
+extraResources:
+  - from: resources/scrcpy
+    to: scrcpy
 mac:
   target:
     - dmg

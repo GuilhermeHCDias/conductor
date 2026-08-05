@@ -1,6 +1,14 @@
 import type { AppIdentity, ConductorApi, Device, DeviceSnapshot, Result } from '@shared/ipc';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { resetDeviceStore, selectSelectedId, useDeviceStore } from './device.store';
+import {
+  resetDeviceStore,
+  selectMirrorError,
+  selectMirrorHeight,
+  selectMirrorStatus,
+  selectMirrorWidth,
+  selectSelectedId,
+  useDeviceStore,
+} from './device.store';
 
 /**
  * `window.conductor` is the only seam mocked here — no store, no hook, no
@@ -34,6 +42,8 @@ let conductor: {
   deviceList: ReturnType<typeof vi.fn>;
   deviceAppInfo: ReturnType<typeof vi.fn>;
   viewerOpen: ReturnType<typeof vi.fn>;
+  mirrorStart: ReturnType<typeof vi.fn>;
+  mirrorStop: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
 };
 
@@ -43,6 +53,13 @@ beforeEach(() => {
     deviceList: vi.fn(() => Promise.resolve(snapshot())),
     deviceAppInfo: vi.fn(() => Promise.resolve({ ok: true, data: IDENTITY })),
     viewerOpen: vi.fn(() => Promise.resolve({ ok: true, data: { url: 'http://127.0.0.1:9999/' } })),
+    mirrorStart: vi.fn(() =>
+      Promise.resolve({
+        ok: true,
+        data: { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024 },
+      }),
+    ),
+    mirrorStop: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
     onDeviceChanged: vi.fn(() => () => {}),
   };
   window.conductor = conductor as unknown as ConductorApi;
@@ -265,5 +282,195 @@ describe('opening the viewer', () => {
     void store().openViewer();
 
     expect(conductor.viewerOpen).toHaveBeenCalledTimes(1);
+  });
+});
+
+/**
+ * The mirror half. Frames never reach this store — they go from the
+ * subscription straight to the decoder — so what lives here is status only, in
+ * flat fields, because a selector returning a fresh object would re-render the
+ * whole panel every time main polls (criterion 42).
+ */
+describe('the mirror', () => {
+  const STREAM = { sessionId: 'mirror-1', codec: 'h264', width: 464, height: 1024 };
+
+  beforeEach(() => {
+    conductor.mirrorStart = vi.fn(() => Promise.resolve({ ok: true, data: STREAM }));
+    conductor.mirrorStop = vi.fn(() =>
+      Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } }),
+    );
+  });
+
+  it('is idle before anything is asked of it', () => {
+    expect(store().mirrorStatus).toBe('idle');
+    expect(store().mirrorSessionId).toBeNull();
+  });
+
+  it('records the stream main opened', async () => {
+    await store().startMirror(PHONE.id);
+
+    expect(conductor.mirrorStart).toHaveBeenCalledWith(PHONE.id);
+    expect(store()).toMatchObject({
+      mirrorStatus: 'streaming',
+      mirrorSessionId: 'mirror-1',
+      mirrorWidth: 464,
+      mirrorHeight: 1024,
+      mirrorError: null,
+    });
+  });
+
+  /** The server has to start on the device, so there is a real gap to report. */
+  it('says it is starting while main is working', async () => {
+    conductor.mirrorStart = vi.fn(() => new Promise(() => {}));
+
+    void store().startMirror(PHONE.id);
+
+    expect(store().mirrorStatus).toBe('starting');
+  });
+
+  it('records a start that failed, with the code main gave it', async () => {
+    conductor.mirrorStart = vi.fn(() =>
+      Promise.resolve({
+        ok: false,
+        error: { code: 'mirror/start-failed', message: 'Could not find "/data/local/tmp/s.jar"' },
+      }),
+    );
+
+    await store().startMirror(PHONE.id);
+
+    expect(store()).toMatchObject({
+      mirrorStatus: 'failed',
+      mirrorSessionId: null,
+      mirrorError: {
+        code: 'mirror/start-failed',
+        message: 'Could not find "/data/local/tmp/s.jar"',
+      },
+    });
+  });
+
+  it('does not ask main twice while a start is in flight', async () => {
+    conductor.mirrorStart = vi.fn(() => new Promise(() => {}));
+
+    void store().startMirror(PHONE.id);
+    void store().startMirror(PHONE.id);
+
+    expect(conductor.mirrorStart).toHaveBeenCalledTimes(1);
+  });
+
+  it('stops the session it holds and goes back to idle', async () => {
+    await store().startMirror(PHONE.id);
+
+    await store().stopMirror();
+
+    expect(conductor.mirrorStop).toHaveBeenCalledWith('mirror-1');
+    expect(store()).toMatchObject({
+      mirrorStatus: 'idle',
+      mirrorSessionId: null,
+      mirrorWidth: null,
+      mirrorHeight: null,
+    });
+  });
+
+  it('asks main for nothing when there is no session to stop', async () => {
+    await store().stopMirror();
+
+    expect(conductor.mirrorStop).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 25 — the phone went away, and the panel must not stall on the
+   * last frame it drew. */
+  it('records a session that ended on its own', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().mirrorEnded('mirror-1', {
+      code: 'mirror/device-lost',
+      message: 'The device closed the mirror stream.',
+    });
+
+    expect(store()).toMatchObject({
+      mirrorStatus: 'failed',
+      mirrorSessionId: null,
+      mirrorError: { code: 'mirror/device-lost' },
+    });
+  });
+
+  /** A session that ended after its replacement started must not put the new
+   * one away. */
+  it('ignores the end of a session it is no longer showing', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().mirrorEnded('mirror-0', { code: 'mirror/device-lost', message: 'stale' });
+
+    expect(store()).toMatchObject({ mirrorStatus: 'streaming', mirrorSessionId: 'mirror-1' });
+  });
+
+  /** A rotation swaps the stream's size mid-session — announced only by the
+   * SPS, carried only by the frames. The fit follows what is actually drawn. */
+  it('follows a mid-session resize of the session it is showing', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().mirrorResized('mirror-1', 1024, 464);
+
+    expect(store()).toMatchObject({
+      mirrorStatus: 'streaming',
+      mirrorWidth: 1024,
+      mirrorHeight: 464,
+    });
+  });
+
+  it('ignores a resize from a session it is no longer showing', async () => {
+    await store().startMirror(PHONE.id);
+
+    store().mirrorResized('mirror-0', 1024, 464);
+
+    expect(store()).toMatchObject({ mirrorWidth: 464, mirrorHeight: 1024 });
+  });
+
+  /** Criterion 43 — no WebCodecs is a state of its own, not a blank canvas. */
+  it('records a renderer with no decoder', () => {
+    store().mirrorUnsupported();
+
+    expect(store().mirrorStatus).toBe('unsupported');
+  });
+
+  it('does not try to start a mirror it could never decode', async () => {
+    store().mirrorUnsupported();
+
+    await store().startMirror(PHONE.id);
+
+    expect(conductor.mirrorStart).not.toHaveBeenCalled();
+    expect(store().mirrorStatus).toBe('unsupported');
+  });
+
+  it('is put back by the reset the tests share', async () => {
+    await store().startMirror(PHONE.id);
+
+    resetDeviceStore();
+
+    expect(store()).toMatchObject({ mirrorStatus: 'idle', mirrorSessionId: null });
+  });
+});
+
+/**
+ * Criterion 42 — one field per selector, and never a fresh object. A selector
+ * returning `{ width, height }` would be a new reference on every render, so a
+ * poll tick two seconds apart would re-render the panel that draws the frames.
+ */
+describe('the mirror selectors', () => {
+  it('each read a single field straight off the state', () => {
+    const state = store();
+
+    expect(selectMirrorStatus(state)).toBe(state.mirrorStatus);
+    expect(selectMirrorWidth(state)).toBe(state.mirrorWidth);
+    expect(selectMirrorHeight(state)).toBe(state.mirrorHeight);
+    expect(selectMirrorError(state)).toBe(state.mirrorError);
+  });
+
+  it('are stable across calls while the stream is unchanged', async () => {
+    await store().startMirror(PHONE.id);
+
+    expect(selectMirrorStatus(store())).toBe(selectMirrorStatus(store()));
+    expect(selectMirrorWidth(store())).toBe(selectMirrorWidth(store()));
+    expect(selectMirrorError(store())).toBe(selectMirrorError(store()));
   });
 });

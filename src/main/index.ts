@@ -8,6 +8,7 @@ import { registerDeviceIpc } from './ipc/device';
 import { registerViewerIpc } from './ipc/viewer';
 import { AdbBridge } from './maestro/AdbBridge';
 import { LocalGateway } from './maestro/LocalGateway';
+import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
 import { isExecutable } from './process/executable';
 import { run, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
@@ -31,6 +32,25 @@ const services: Service[] = [];
 
 function disposeServices(): Promise<unknown> {
   return Promise.allSettled(services.map((service) => service.dispose()));
+}
+
+/**
+ * Criterion 24. A renderer that reloads or closes is not coming back for its
+ * mirror sessions, and the server it left running on the device would outlive
+ * the window — an orphan that survives `pkill` and needs `kill -9` by pid, as
+ * the spike found out. `did-start-loading` covers the reload (the first load
+ * has nothing to stop, so it is harmless there), and `closed` covers the rest.
+ *
+ * One window, one session, so "this renderer's sessions" and "every session"
+ * are the same set — a second mirror at a time is out of scope on purpose.
+ */
+function watchRenderer(window: BrowserWindow, device: DeviceService): void {
+  window.webContents.on('did-start-loading', () => {
+    void device.stopMirrors();
+  });
+  window.on('closed', () => {
+    void device.stopMirrors();
+  });
 }
 
 /** The push half of the contract. Every window of ours gets it; a window that
@@ -92,16 +112,32 @@ if (!app.requestSingleInstanceLock()) {
     const home = homedir();
     const adb = new AdbBridge({
       run,
+      spawn: spawnStreaming,
       isExecutable,
       env: process.env,
       home,
       configuredPath: CONFIG.ADB_PATH,
     });
+    // The jar is ours and pinned: `app.isPackaged` and `process.resourcesPath`
+    // are the only two facts `scrcpyJarPath` needs, and this is the only place
+    // that knows them. Nothing here joins the path itself.
+    const scrcpy = new ScrcpySource({
+      adb,
+      connect: connectLoopback,
+      jarPath: scrcpyJarPath({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+      }),
+    });
     const device = new DeviceService({
-      gateway: new LocalGateway(adb),
+      gateway: new LocalGateway(adb, scrcpy),
       appId: CONFIG.APP_ID,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.deviceChanged, payload);
+      },
+      emitMirror: (payload) => {
+        broadcast(PUSH_CHANNELS.mirrorEvent, payload);
       },
     });
     const viewer = new ViewerService({
@@ -120,13 +156,13 @@ if (!app.requestSingleInstanceLock()) {
     registerDeviceIpc({ device });
     registerViewerIpc({ viewer });
 
-    createWindow();
+    watchRenderer(createWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.
     device.start();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        createWindow();
+        watchRenderer(createWindow(), device);
       }
     });
   });
