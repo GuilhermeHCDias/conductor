@@ -181,47 +181,6 @@
   background: var(--phone-choice-hover);
 }
 
-/* Criterion 38: the Viewer, demoted. It sits below the bay rather than on the
-   phone's screen, because the screen is the mirror now — and it takes the app's
-   own chrome rather than the phone's, because it is no longer on the phone. */
-.footer {
-  border-top: 1px solid var(--a-hair);
-  display: grid;
-  gap: var(--space-2);
-  justify-items: center;
-  padding: var(--space-3) var(--space-4);
-}
-
-.footerNote {
-  color: var(--text-tertiary);
-  font: var(--type-caption);
-  text-align: center;
-}
-
-.viewer {
-  background: var(--a-fill);
-  border: var(--border-hair) solid var(--a-hair);
-  border-radius: var(--a-radius-field);
-  color: var(--text-secondary);
-  font: var(--type-label);
-  padding: var(--space-2) var(--space-4);
-  transition: var(--t-hover);
-}
-
-.viewer:hover:not(:disabled) {
-  color: var(--text-primary);
-}
-
-.viewer:disabled {
-  color: var(--text-disabled);
-  opacity: 0.55;
-}
-
-.viewer:focus-visible {
-  box-shadow: var(--glow-accent);
-  outline: none;
-}
-
 .deviceChoice:focus-visible {
   box-shadow: var(--glow-accent);
   outline: none;

@@ -6,7 +6,7 @@ import type { MirrorStatus } from '../lib/device-state';
  * What is plugged in, and what the app under test is doing on it. Main owns all
  * of it: this store is a projection of the snapshots main pushes, plus the two
  * pieces of state that are genuinely the window's — which device the person
- * picked when there was more than one, and whether the Viewer is starting.
+ * picked when there was more than one, and what the mirror is doing.
  *
  * Its actions are the only renderer code that calls `window.conductor`.
  */
@@ -33,9 +33,6 @@ export type DeviceData = {
   readonly appIdentity: AppIdentity | null;
   /** False until the first snapshot lands: the panel claims nothing before it. */
   readonly loaded: boolean;
-  /** True while the `maestro mcp` child is coming up — the JVM cold start. */
-  readonly viewerOpening: boolean;
-  readonly viewerError: Failure | null;
   /**
    * The mirror, as five flat fields rather than one object. Criterion 42: a
    * selector that built `{ status, width, height }` would return a fresh object
@@ -57,7 +54,6 @@ export type DeviceActions = {
   applySnapshot: (payload: Result<DeviceSnapshot>) => void;
   refresh: () => Promise<void>;
   pick: (deviceId: string) => void;
-  openViewer: () => Promise<void>;
   startMirror: (deviceId: string) => Promise<void>;
   stopMirror: () => Promise<void>;
   /** A session main says is over. Named, so a late report cannot put away the
@@ -85,8 +81,6 @@ function createDeviceData(): DeviceData {
     deviceError: null,
     appIdentity: null,
     loaded: false,
-    viewerOpening: false,
-    viewerError: null,
     mirrorStatus: 'idle',
     mirrorSessionId: null,
     mirrorWidth: null,
@@ -146,15 +140,6 @@ export const useDeviceStore = create<DeviceState>((set, get) => ({
     }
     set({ pickedId: deviceId, appIdentity: null });
     void loadAppIdentity(set, deviceId);
-  },
-
-  openViewer: async () => {
-    if (get().viewerOpening) {
-      return;
-    }
-    set({ viewerOpening: true, viewerError: null });
-    const result = await window.conductor.viewerOpen();
-    set({ viewerOpening: false, viewerError: result.ok ? null : result.error });
   },
 
   startMirror: async (deviceId) => {

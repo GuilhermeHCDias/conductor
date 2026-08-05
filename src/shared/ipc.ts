@@ -13,7 +13,6 @@ export const CHANNELS = {
   configGet: 'config:get',
   deviceList: 'device:list',
   deviceAppInfo: 'device:app-info',
-  viewerOpen: 'viewer:open',
   mirrorStart: 'mirror:start',
   mirrorStop: 'mirror:stop',
 } as const;
@@ -92,11 +91,6 @@ const appIdentity = z.object({
   foreground: z.boolean().nullable(),
 });
 
-const viewerOpened = z.object({
-  /** The validated Viewer URL, already handed to `shell.openExternal` by main. */
-  url: z.string(),
-});
-
 /**
  * Criterion 28. What `mirror:start` answers with, and all it answers with: the
  * session to stop later, and the size the canvas takes from the stream's own
@@ -151,7 +145,6 @@ export const IPC = {
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
   [CHANNELS.deviceList]: { request: noArguments, response: deviceSnapshot },
   [CHANNELS.deviceAppInfo]: { request: z.tuple([z.string()]), response: appIdentity },
-  [CHANNELS.viewerOpen]: { request: noArguments, response: viewerOpened },
   [CHANNELS.mirrorStart]: { request: z.tuple([z.string()]), response: mirrorStream },
   [CHANNELS.mirrorStop]: { request: z.tuple([z.string()]), response: mirrorStopped },
 } as const;
@@ -193,12 +186,25 @@ export const ERROR_CODES = {
   adbNotFound: 'device/adb-not-found',
   adbFailed: 'device/adb-failed',
   deviceNotFound: 'device/not-found',
-  maestroNotFound: 'viewer/maestro-not-found',
-  viewerStartFailed: 'viewer/start-failed',
-  viewerHandshakeTimeout: 'viewer/handshake-timeout',
-  viewerToolMissing: 'viewer/tool-missing',
-  viewerCallFailed: 'viewer/call-failed',
-  viewerUntrustedUrl: 'viewer/untrusted-url',
+  /**
+   * The `maestro mcp` session, which is where the view hierarchy comes from.
+   * These said `viewer/` while that child existed to open the Maestro Viewer;
+   * nothing opens one now, and a prefix naming a feature the app no longer has
+   * is a code that means nothing to whoever reads it next.
+   */
+  maestroNotFound: 'mcp/maestro-not-found',
+  mcpStartFailed: 'mcp/start-failed',
+  mcpHandshakeTimeout: 'mcp/handshake-timeout',
+  mcpToolMissing: 'mcp/tool-missing',
+  mcpCallFailed: 'mcp/call-failed',
+  /** `inspect_screen` answered with something that is not the documented shape.
+   * A tool's schema carries no version contract the way a released CLI
+   * subcommand does, so this is where a server that changed shape surfaces —
+   * loudly, rather than as a best-guess tree. */
+  hierarchyParseFailed: 'hierarchy/parse-failed',
+  /** `screencap` ran and produced nothing usable. Its own code, not `adb`'s:
+   * "no adb" is a prerequisite the doctor can fix and this is not. */
+  captureFailed: 'capture/failed',
   /** The server could not be pushed, forwarded, started or connected to. */
   mirrorStartFailed: 'mirror/start-failed',
   /** The stream ended inside the dummy byte, the device name or the codec
@@ -227,7 +233,6 @@ export interface ConductorApi {
   deviceAppInfo: (
     ...args: Request<'device:app-info'>
   ) => Promise<Result<Response<'device:app-info'>>>;
-  viewerOpen: (...args: Request<'viewer:open'>) => Promise<Result<Response<'viewer:open'>>>;
   mirrorStart: (...args: Request<'mirror:start'>) => Promise<Result<Response<'mirror:start'>>>;
   mirrorStop: (...args: Request<'mirror:stop'>) => Promise<Result<Response<'mirror:stop'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its

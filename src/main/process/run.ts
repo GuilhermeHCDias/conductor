@@ -70,6 +70,64 @@ export function run(
   });
 }
 
+export interface BinaryRunResult {
+  /** Exactly the bytes the child wrote. Never decoded, here or anywhere above. */
+  readonly stdout: Buffer;
+  /** Text, because it is a message: `adb` reports "device not found" here. */
+  readonly stderr: string;
+  readonly code: number;
+}
+
+/**
+ * `run`, for a child whose stdout is a payload rather than a message.
+ *
+ * It exists because `run` hardcodes `encoding: 'utf8'` — correct for every text
+ * caller it has, and fatal for `adb exec-out screencap -p`. A PNG opens with
+ * `0x89`, which is not a legal UTF-8 start byte, so decoding substitutes U+FFFD
+ * and the file stops being a PNG at byte one. §10.1 rule 2 has the screenshot
+ * cross every boundary as bytes; this is where that starts being true.
+ *
+ * Same contract as `run` in every other respect: an argument array, never a
+ * shell; a process that ran and exited resolves, including non-zero; a process
+ * that never started rejects.
+ */
+export function runBinary(
+  command: string,
+  args: readonly string[],
+  options: RunOptions = {},
+): Promise<BinaryRunResult> {
+  return new Promise((resolve, reject) => {
+    execFile(
+      command,
+      [...args],
+      {
+        cwd: options.cwd,
+        env: options.env,
+        timeout: options.timeout,
+        maxBuffer: options.maxBuffer ?? DEFAULT_MAX_BUFFER,
+        signal: options.signal,
+        // The whole point. `execFile` hands both streams back as Buffers, and
+        // only stderr is decoded below.
+        encoding: 'buffer',
+        shell: false,
+        windowsHide: true,
+      },
+      (error, stdout, stderr) => {
+        const result = { stdout, stderr: stderr.toString('utf8') };
+        if (error === null) {
+          resolve({ ...result, code: 0 });
+          return;
+        }
+        if (typeof error.code === 'number') {
+          resolve({ ...result, code: error.code });
+          return;
+        }
+        reject(error);
+      },
+    );
+  });
+}
+
 /** Why the child stopped. `error` is set only when it never started at all. */
 export type ExitReason = {
   readonly code: number | null;

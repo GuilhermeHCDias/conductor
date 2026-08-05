@@ -14,7 +14,8 @@
       "!**/node_modules",
       "!package-lock.json",
       "!src/renderer/src/styles/tokens",
-      "!src/renderer/src/styles/utilities"
+      "!src/renderer/src/styles/utilities",
+      "!src/main/maestro/inspect-screen.capture.json"
     ]
   },
   "formatter": {
@@ -65,11 +66,7 @@
   },
   "overrides": [
     {
-      "includes": [
-        "src/main/maestro/CliRunner.ts",
-        "src/main/maestro/ScreenCapture.ts",
-        "src/main/process/run.ts"
-      ],
+      "includes": ["src/main/maestro/CliRunner.ts", "src/main/process/run.ts"],
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     }
   ]

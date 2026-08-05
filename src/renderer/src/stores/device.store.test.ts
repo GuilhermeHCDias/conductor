@@ -41,7 +41,6 @@ const store = () => useDeviceStore.getState();
 let conductor: {
   deviceList: ReturnType<typeof vi.fn>;
   deviceAppInfo: ReturnType<typeof vi.fn>;
-  viewerOpen: ReturnType<typeof vi.fn>;
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
@@ -52,7 +51,6 @@ beforeEach(() => {
   conductor = {
     deviceList: vi.fn(() => Promise.resolve(snapshot())),
     deviceAppInfo: vi.fn(() => Promise.resolve({ ok: true, data: IDENTITY })),
-    viewerOpen: vi.fn(() => Promise.resolve({ ok: true, data: { url: 'http://127.0.0.1:9999/' } })),
     mirrorStart: vi.fn(() =>
       Promise.resolve({
         ok: true,
@@ -224,64 +222,6 @@ describe('picking a device', () => {
     await settle();
 
     expect(conductor.deviceAppInfo).toHaveBeenCalledTimes(1);
-  });
-});
-
-/** Criterion 29 — the first open pays a JVM cold start, so it has to show. */
-describe('opening the viewer', () => {
-  it('reports progress while the child starts, and stops when it is up', async () => {
-    const gate: { release: ((value: Result<{ url: string }>) => void) | null } = { release: null };
-    conductor.viewerOpen.mockReturnValue(
-      new Promise<Result<{ url: string }>>((resolve) => {
-        gate.release = resolve;
-      }),
-    );
-
-    const opening = store().openViewer();
-    expect(store().viewerOpening).toBe(true);
-
-    gate.release?.({ ok: true, data: { url: 'http://127.0.0.1:9999/' } });
-    await opening;
-
-    expect(store().viewerOpening).toBe(false);
-    expect(store().viewerError).toBeNull();
-  });
-
-  it('keeps the failure code main reported', async () => {
-    conductor.viewerOpen.mockResolvedValue({
-      ok: false,
-      error: { code: 'viewer/maestro-not-found', message: 'Install Maestro.' },
-    });
-
-    await store().openViewer();
-
-    expect(store().viewerError).toEqual({
-      code: 'viewer/maestro-not-found',
-      message: 'Install Maestro.',
-    });
-    expect(store().viewerOpening).toBe(false);
-  });
-
-  it('clears a previous failure when tried again', async () => {
-    conductor.viewerOpen.mockResolvedValueOnce({
-      ok: false,
-      error: { code: 'viewer/call-failed', message: 'x' },
-    });
-    await store().openViewer();
-
-    await store().openViewer();
-
-    expect(store().viewerError).toBeNull();
-  });
-
-  // The JVM start is slow enough that a second click is the natural reaction.
-  it('does not start a second open while one is in flight', async () => {
-    conductor.viewerOpen.mockReturnValue(new Promise(() => {}));
-
-    void store().openViewer();
-    void store().openViewer();
-
-    expect(conductor.viewerOpen).toHaveBeenCalledTimes(1);
   });
 });
 

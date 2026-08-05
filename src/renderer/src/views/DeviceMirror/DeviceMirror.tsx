@@ -39,6 +39,12 @@ const BAY_PADDING = 40;
  *
  * The mirror subscription is mounted here rather than in `App.tsx` (criterion
  * 41): it fires ~30 times a second, and it must stop when this panel does.
+ *
+ * The Viewer control that used to sit under the bay is gone (criterion 23). It
+ * survived the mirror spec because it still offered *interaction*; the
+ * `maestro mcp` child behind it answers `inspect_screen` now, nothing in the
+ * app opens a viewer URL, and interaction arrives on the mirror itself with the
+ * control-socket spec.
  */
 export function DeviceMirror(): JSX.Element {
   const canvas = useRef<HTMLCanvasElement>(null);
@@ -59,9 +65,6 @@ export function DeviceMirror(): JSX.Element {
   const mirrorWidth = useDeviceStore(selectMirrorWidth);
   const mirrorHeight = useDeviceStore(selectMirrorHeight);
   const mirrorError = useDeviceStore(selectMirrorError);
-  const viewerOpening = useDeviceStore((state) => state.viewerOpening);
-  const viewerError = useDeviceStore((state) => state.viewerError);
-  const openViewer = useDeviceStore((state) => state.openViewer);
   const refresh = useDeviceStore((state) => state.refresh);
   const pick = useDeviceStore((state) => state.pick);
 
@@ -174,26 +177,6 @@ export function DeviceMirror(): JSX.Element {
           </div>
         </div>
       </div>
-
-      {/* Criterion 38 demotes the Viewer. The picture is here now; what the
-          Viewer still has that this does not is *interaction*, because this spec
-          ships `control=false`. So it survives as a footer, and its failures are
-          reported beside it rather than over the phone. */}
-      <footer className={styles.footer}>
-        <button
-          className={styles.viewer}
-          disabled={selectedId === null || viewerOpening}
-          onClick={() => void openViewer()}
-          type="button"
-        >
-          {viewerOpening ? 'Starting Maestro…' : 'Open in Maestro Viewer'}
-        </button>
-        {viewerError !== null ? (
-          <p className={styles.footerNote}>{viewerError.message}</p>
-        ) : (
-          <p className={styles.footerNote}>Tapping and typing still happen there.</p>
-        )}
-      </footer>
     </section>
   );
 }

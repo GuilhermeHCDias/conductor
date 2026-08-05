@@ -140,7 +140,6 @@ function define(name: string, value: unknown): void {
 let conductor: {
   deviceList: ReturnType<typeof vi.fn>;
   deviceAppInfo: ReturnType<typeof vi.fn>;
-  viewerOpen: ReturnType<typeof vi.fn>;
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
@@ -184,7 +183,6 @@ beforeEach(() => {
       Promise.resolve({ ok: true, data: { devices: [], selectedId: null, properties: null } }),
     ),
     deviceAppInfo: vi.fn(() => Promise.resolve({ ok: false, error: { code: 'x', message: 'x' } })),
-    viewerOpen: vi.fn(() => Promise.resolve({ ok: false, error: { code: 'x', message: 'x' } })),
     mirrorStart: vi.fn(() =>
       Promise.resolve({
         ok: true,
