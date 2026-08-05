@@ -662,6 +662,27 @@ describe('driving the device', () => {
     });
   });
 
+  /** Criterion 16 gave control its own code so it could be told apart from the
+   * rest. A stale session id or a rejected argument says nothing about the
+   * socket, so the tap target stays: latching on those would retire the phone
+   * over a message the control channel never even saw. */
+  it('keeps control when a send is refused for a reason that is not control failing', async () => {
+    await store().startMirror(PHONE.id);
+    conductor.mirrorInput.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'mirror/session-not-found', message: 'there is no mirror session mirror-1' },
+    });
+
+    store().sendInput({ type: 'back' });
+    await drain();
+
+    expect(store().mirrorControl).toBe(true);
+    expect(store().mirrorControlError).toEqual({
+      code: 'mirror/session-not-found',
+      message: 'there is no mirror session mirror-1',
+    });
+  });
+
   /** Criterion 4 — and the picture is untouched by any of it. */
   it('leaves the stream alone when control fails', async () => {
     await store().startMirror(PHONE.id);

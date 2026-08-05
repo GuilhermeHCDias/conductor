@@ -98,6 +98,16 @@ is `.context.md` §5.5's whole premise for putting a live picture in the panel a
 4. If the control socket fails to open while the video socket succeeds, then the system shall keep
    the picture streaming and report control as unavailable, rather than ending the whole mirror
    session over a capability the person may not need every time.
+
+   > ⚠️ **Half of this criterion is unreachable, and trap 1 below is why.** The video handshake
+   > cannot complete until the control socket connects, so "control fails to open while the video
+   > socket succeeds" describes a state the server never produces: with no control connection there
+   > is no codec header, hence no size and no session to report anything about — the start deadline
+   > expires and it surfaces as `mirror/start-failed`. What criterion 4 does govern, and what the
+   > implementation and its tests cover, is control lost **mid-session**: the socket ends under a
+   > live stream, `this.control` goes back to `null`, and the picture carries on while the next
+   > `send` reports the loss. Written before trap 1 was measured; kept as-is rather than rewritten,
+   > because the surviving half is the behaviour that matters.
 5. The system shall encode every outbound control message as a byte buffer built from an argument
    list of typed fields (never a composed string), consistent with `.context.md` §12.19's rule for
    process invocation, applied here to wire encoding.

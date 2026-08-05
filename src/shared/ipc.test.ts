@@ -159,6 +159,21 @@ describe('mirror:input', () => {
     ).toBe(false);
   });
 
+  /** The server's cap is on the bytes it allocates, so the boundary has to
+   * count what the encoder counts. Measuring characters here would pass a
+   * payload the encoder then refuses — the same limit, disagreeing with
+   * itself across two layers. */
+  it('measures the cap in bytes, the way the encoder does', () => {
+    // 200 characters, 400 UTF-8 bytes: under any character count, over the cap.
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'é'.repeat(200) }]).success,
+    ).toBe(false);
+    // 150 characters, 300 bytes: exactly the cap, and still allowed.
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'é'.repeat(150) }]).success,
+    ).toBe(true);
+  });
+
   /** Criterion 12. The renderer names a key; Android's numbers stay in main. */
   it('names a key rather than an Android keycode', () => {
     expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 'backspace' }]).success).toBe(

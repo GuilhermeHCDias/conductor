@@ -119,7 +119,9 @@ const mirrorStream = z.object({
   control: z.boolean(),
 });
 
-const mirrorStopped = z.object({ sessionId: z.string() });
+/** Names the session an answer is about, and nothing else. Shared by every
+ * channel whose reply is just "that one" — `mirror:stop` and `mirror:input`. */
+const mirrorSessionRef = z.object({ sessionId: z.string() });
 
 /** The named keys criterion 12 routes as keycodes rather than as text. Android's
  * own numbers stay in main: the renderer names the key, `SCRCPY_KEYCODES` maps
@@ -136,8 +138,16 @@ const mirrorKey = z.enum([
   'arrow-right',
 ]);
 
-/** `INJECT_TEXT_MAX_LENGTH` in scrcpy-server 3.3.4, read out of the pinned jar. */
+/** `INJECT_TEXT_MAX_LENGTH` in scrcpy-server 3.3.4, read out of the pinned jar.
+ * Counted in **UTF-8 bytes** — it is the buffer the server allocates, not a
+ * character budget, so every layer that enforces it measures encoded length. */
 export const MAX_INPUT_TEXT_LENGTH = 300;
+
+/** What the wire counts. `String.length` counts UTF-16 code units, which is a
+ * different number for anything outside ASCII. */
+function textByteLength(text: string): number {
+  return new TextEncoder().encode(text).length;
+}
 
 /** A u16 on the wire, and a stream is never zero-sized. */
 const streamAxis = z.number().int().positive().max(65_535);
@@ -166,7 +176,15 @@ const mirrorTap = z
 
 const mirrorInput = z.union([
   mirrorTap,
-  z.object({ type: z.literal('text'), text: z.string().min(1).max(MAX_INPUT_TEXT_LENGTH) }),
+  z.object({
+    type: z.literal('text'),
+    text: z
+      .string()
+      .min(1)
+      .refine((text) => textByteLength(text) <= MAX_INPUT_TEXT_LENGTH, {
+        message: `Text is past the ${MAX_INPUT_TEXT_LENGTH} bytes the server will read.`,
+      }),
+  }),
   z.object({ type: z.literal('key'), key: mirrorKey }),
   z.object({ type: z.literal('back') }),
 ]);
@@ -211,10 +229,10 @@ export const IPC = {
   [CHANNELS.deviceAppInfo]: { request: z.tuple([z.string()]), response: appIdentity },
   [CHANNELS.viewerOpen]: { request: noArguments, response: viewerOpened },
   [CHANNELS.mirrorStart]: { request: z.tuple([z.string()]), response: mirrorStream },
-  [CHANNELS.mirrorStop]: { request: z.tuple([z.string()]), response: mirrorStopped },
+  [CHANNELS.mirrorStop]: { request: z.tuple([z.string()]), response: mirrorSessionRef },
   [CHANNELS.mirrorInput]: {
     request: z.tuple([z.string(), mirrorInput]),
-    response: mirrorStopped,
+    response: mirrorSessionRef,
   },
 } as const;
 

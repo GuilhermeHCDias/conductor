@@ -6,7 +6,7 @@ import type {
   MirrorInput,
   Result,
 } from '@shared/ipc';
-import { MAX_INPUT_TEXT_LENGTH } from '@shared/ipc';
+import { ERROR_CODES, MAX_INPUT_TEXT_LENGTH } from '@shared/ipc';
 import { create } from 'zustand';
 import type { MirrorStatus } from '../lib/device-state';
 
@@ -380,9 +380,13 @@ function discardPendingText(): void {
 }
 
 /**
- * Criterion 16. One send, and what its refusal means: control is gone and the
- * panel puts the tap target away — while the picture, which this says nothing
- * about, keeps streaming (criterion 4).
+ * Criterion 16. One send, and what its refusal means — read from the code,
+ * which is the reason criterion 16 asked for a distinct one. Only
+ * `mirror/control-failed` means the channel itself is gone, and only that puts
+ * the tap target away; a stale session id or an argument the boundary refused
+ * leaves the socket exactly as it was, so control survives and just says what
+ * happened. Either way the picture, which none of this speaks to, keeps
+ * streaming (criterion 4).
  */
 async function deliver(sessionId: string, input: MirrorInput, get: Getter): Promise<void> {
   // The session may have been replaced while this waited its turn in the queue.
@@ -394,7 +398,11 @@ async function deliver(sessionId: string, input: MirrorInput, get: Getter): Prom
   if (result.ok || get().mirrorSessionId !== sessionId) {
     return;
   }
-  useDeviceStore.setState({ mirrorControl: false, mirrorControlError: result.error });
+  useDeviceStore.setState(
+    result.error.code === ERROR_CODES.mirrorControlFailed
+      ? { mirrorControl: false, mirrorControlError: result.error }
+      : { mirrorControlError: result.error },
+  );
 }
 
 /** What the wire counts, and what the server's cap is measured in. */

@@ -232,7 +232,6 @@ export function DeviceMirror(): JSX.Element {
                   <canvas
                     aria-label="Device screen"
                     className={styles.screen}
-                    data-drivable={drivable ? 'true' : undefined}
                     data-testid="mirror-canvas"
                     height={fit.height}
                     onKeyDown={handleKeyDown}
