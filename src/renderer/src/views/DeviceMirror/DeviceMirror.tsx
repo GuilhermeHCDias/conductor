@@ -1,4 +1,4 @@
-import type { MirrorInput } from '@shared/ipc';
+import type { MirrorInput, MirrorTouch } from '@shared/ipc';
 import type { TreeNode } from '@shared/types';
 import {
   type JSX,
@@ -45,9 +45,9 @@ import {
   retargetToParent,
   type SnapshotGeometry,
 } from '../../lib/hit-test';
+import { dragEnd, dragMove, dragStart } from '../../lib/mirror-drag';
 import { fitMirror } from '../../lib/mirror-fit';
 import { mirrorKeyInput } from '../../lib/mirror-keys';
-import { mirrorPoint } from '../../lib/mirror-point';
 import {
   selectMirrorControl,
   selectMirrorControlError,
@@ -64,6 +64,7 @@ import {
   selectCapturing,
   selectDialog,
   selectHoveredPath,
+  selectInspectEnabled,
   selectMenu,
   selectSnapshot,
   selectSynthError,
@@ -74,6 +75,10 @@ import styles from './DeviceMirror.module.css';
 
 /** The gutter the mirror bay adds either side of the phone. */
 const BAY_PADDING = 40;
+
+/** On-screen px of headroom the highlight label needs to sit above the box —
+ * its counter-scaled height plus a hair. */
+const LABEL_CLEARANCE = 22;
 
 /**
  * The device inspector: a live picture of the phone, and what the app under test
@@ -120,12 +125,14 @@ export function DeviceMirror(): JSX.Element {
   const sendInput = useDeviceStore((state) => state.sendInput);
 
   const snapshot = useInspectStore(selectSnapshot);
+  const inspectEnabled = useInspectStore(selectInspectEnabled);
   const capturing = useInspectStore(selectCapturing);
   const captureError = useInspectStore(selectCaptureError);
   const hoveredPath = useInspectStore(selectHoveredPath);
   const menu = useInspectStore(selectMenu);
   const synthError = useInspectStore(selectSynthError);
   const dialog = useInspectStore(selectDialog);
+  const toggleInspect = useInspectStore((state) => state.toggleEnabled);
   const hover = useInspectStore((state) => state.hover);
   const openMenu = useInspectStore((state) => state.openMenu);
   const closeMenu = useInspectStore((state) => state.closeMenu);
@@ -139,6 +146,27 @@ export function DeviceMirror(): JSX.Element {
   /** Where the pointer last was, in canvas CSS px — so an Alt press with the
    * pointer still re-aims the hover without waiting for a move. */
   const lastPointer = useRef<{ offsetX: number; offsetY: number } | null>(null);
+  /**
+   * The drag under way: which pointer is down, and the last touch that went
+   * out for it — the point a cancel releases from, and what a move is deduped
+   * against. Null between gestures.
+   *
+   * A ref rather than state on purpose: a drag that re-rendered the panel on
+   * its way to the device would cost more than the gesture it carries, and
+   * frames are arriving into this same panel throughout.
+   */
+  const drag = useRef<{ pointerId: number; last: MirrorTouch } | null>(null);
+  /**
+   * The coordinate chain as of the latest render, for the window-level drag
+   * handlers — which deliberately do not re-subscribe per render: tearing the
+   * listeners down on every fit change would end the drag a mid-gesture window
+   * resize is no reason to end. Refreshed by an effect below.
+   */
+  const dragGeometry = useRef<{
+    scale: number;
+    streamWidth: number;
+    streamHeight: number;
+  } | null>(null);
 
   const [headerRef, headerWidth] = useElementWidth(bayWidth);
   const [bayRef, bay] = useElementSize({ width: 0, height: 0 });
@@ -189,7 +217,9 @@ export function DeviceMirror(): JSX.Element {
         : null,
     [mirrorStatus, snapshot, mirrorWidth, mirrorHeight, fit.scale],
   );
-  const inspecting = inspectGeometry !== null;
+  /** The whole inspection mode: a live chain *and* the crosshair switched on.
+   * Off, the mirror is purely a phone — driving stays, highlighting goes. */
+  const inspecting = inspectGeometry !== null && inspectEnabled;
   /** Criterion 26 — while the menu or the prompt is open, the mirror takes no
    * pointer and no keyboard. */
   const suppressed = menu !== null || dialog !== null;
@@ -197,14 +227,14 @@ export function DeviceMirror(): JSX.Element {
   /** The §5.5 hover: hit-test locally, zero IPC (criterion 46). */
   const aim = useCallback(
     (offsetX: number, offsetY: number, parent: boolean): void => {
-      if (inspectGeometry === null || snapshot === null) {
+      if (!inspectEnabled || inspectGeometry === null || snapshot === null) {
         return;
       }
       const point = pointToHierarchy(offsetX, offsetY, inspectGeometry);
       const hit = point === null ? null : hitTest(snapshot.tree, point);
       hover(hit !== null && parent ? retargetToParent(snapshot.tree, hit) : hit);
     },
-    [inspectGeometry, snapshot, hover],
+    [inspectEnabled, inspectGeometry, snapshot, hover],
   );
 
   // Alt tracked at the window: the canvas holds focus only after a click, and
@@ -237,11 +267,24 @@ export function DeviceMirror(): JSX.Element {
     }
   }, [altHeld, aim]);
 
+  // Refreshed every render, so the drag handlers below always divide by the
+  // scale the picture is actually drawn at — a rotation or a bay resize
+  // mid-drag lands here before the next move does.
+  useEffect(() => {
+    dragGeometry.current =
+      mirrorWidth !== null && mirrorHeight !== null
+        ? { scale: fit.scale, streamWidth: mirrorWidth, streamHeight: mirrorHeight }
+        : null;
+  });
+
   /**
-   * Criteria 6–9. A click becomes a device pixel, or nothing at all.
+   * Criteria 6–9, live. The press *is* the finger landing: the touch-down goes
+   * to the device now, and the device follows the hand from here — Android's
+   * own touch slop is what makes a still press a tap, a held one a long press
+   * and a travelled one a scroll, exactly as the glass would decide.
    *
    * `getBoundingClientRect` is read here rather than in `lib/`: it is the one
-   * fact only the DOM has, and reading it at the moment of the click is what
+   * fact only the DOM has, and reading it at the moment of each event is what
    * makes the answer right during a rotation — the box follows the fit, and the
    * fit follows the stream.
    */
@@ -253,34 +296,127 @@ export function DeviceMirror(): JSX.Element {
     // Criterion 10: the click is what gives the mirror the keyboard, and that
     // happens whether or not the click itself lands on the picture.
     event.currentTarget.focus();
-    if (!drivable) {
+    // Only the primary button drives. A right-click — which macOS also delivers
+    // as Ctrl+click — belongs to the command menu, and its pointerdown driving
+    // through would change the very screen the menu is about to describe. A
+    // second press mid-drag is refused too: this surface is one finger.
+    if (!drivable || event.button !== 0 || event.ctrlKey || drag.current !== null) {
+      return;
+    }
+    if (mirrorWidth === null || mirrorHeight === null) {
       return;
     }
 
     const box = event.currentTarget.getBoundingClientRect();
-    const point = mirrorPoint({
+    const input = dragStart({
       offsetX: event.clientX - box.left,
       offsetY: event.clientY - box.top,
       scale: fit.scale,
       streamWidth: mirrorWidth,
       streamHeight: mirrorHeight,
     });
-    // Criterion 8 — outside the drawn picture is the app, not the phone.
-    if (point === null) {
+    // The press began on the bezel or in the bay's gutter: that is the app,
+    // not the phone, and no gesture starts there.
+    if (input === null) {
+      return;
+    }
+    drag.current = { pointerId: event.pointerId, last: input };
+    sendInput(input);
+  };
+
+  /**
+   * The travel and the release, watched at the window rather than on the
+   * canvas: a scroll routinely leaves the phone — and the panel — mid-gesture,
+   * and the person's hand does not stop at our bezel. Each phase goes out as
+   * it happens; `mirror-drag.ts` owns the policy of what a phase may refuse.
+   *
+   * ⚠️ The cleanup is the important half, and it *releases* rather than
+   * forgets: a DOWN is already on the device, and forgetting it would leave
+   * the app under test holding a press nobody is making. Today the attempt is
+   * refused on every path that actually tears these listeners down — the
+   * session is stopped or control is lost first, and the store declines
+   * quietly, which is right: the server dies with its session and takes the
+   * pressed finger with it. The attempt stays because it keeps the invariant
+   * local — this effect never leaves a finger down that it could still lift.
+   */
+  useEffect(() => {
+    if (!drivable) {
+      drag.current = null;
       return;
     }
 
-    sendInput({
-      type: 'tap',
-      x: point.x,
-      y: point.y,
-      // The size travels with the tap: scrcpy drops a touch that names any size
-      // but the video's current one, and after a rotation this is the only side
-      // that knows it.
-      screenWidth: mirrorWidth,
-      screenHeight: mirrorHeight,
-    });
-  };
+    const moveDrag = (event: globalThis.PointerEvent | globalThis.MouseEvent): void => {
+      const started = drag.current;
+      const geometry = dragGeometry.current;
+      if (
+        started === null ||
+        started.pointerId !== (event as globalThis.PointerEvent).pointerId ||
+        geometry === null ||
+        canvas.current === null
+      ) {
+        return;
+      }
+      const box = canvas.current.getBoundingClientRect();
+      const input = dragMove(
+        {
+          offsetX: event.clientX - box.left,
+          offsetY: event.clientY - box.top,
+          ...geometry,
+        },
+        started.last,
+      );
+      if (input !== null) {
+        started.last = input;
+        sendInput(input);
+      }
+    };
+
+    const finishDrag = (event: globalThis.PointerEvent | globalThis.MouseEvent): void => {
+      const started = drag.current;
+      if (started === null || started.pointerId !== (event as globalThis.PointerEvent).pointerId) {
+        return;
+      }
+      drag.current = null;
+      const geometry = dragGeometry.current;
+      if (geometry === null || canvas.current === null) {
+        // Nothing is drawn to lift from, but the finger still comes up —
+        // from wherever it last stood.
+        sendInput({ ...started.last, action: 'up' });
+        return;
+      }
+      const box = canvas.current.getBoundingClientRect();
+      sendInput(
+        dragEnd(
+          {
+            offsetX: event.clientX - box.left,
+            offsetY: event.clientY - box.top,
+            ...geometry,
+          },
+          started.last,
+        ),
+      );
+    };
+
+    /** The system took the gesture away — the finger it put down still lifts. */
+    const cancelDrag = (): void => {
+      const started = drag.current;
+      if (started === null) {
+        return;
+      }
+      drag.current = null;
+      sendInput({ ...started.last, action: 'up' });
+    };
+
+    window.addEventListener('pointermove', moveDrag);
+    window.addEventListener('pointerup', finishDrag);
+    window.addEventListener('pointercancel', cancelDrag);
+    return () => {
+      window.removeEventListener('pointermove', moveDrag);
+      window.removeEventListener('pointerup', finishDrag);
+      window.removeEventListener('pointercancel', cancelDrag);
+      cancelDrag();
+    };
+  }, [drivable, sendInput]);
 
   /**
    * Criteria 11–13. `mirrorKeyInput` decides whose key it is; `null` means it is
@@ -303,7 +439,10 @@ export function DeviceMirror(): JSX.Element {
   /** §5.5's fast half: hover hit-tests locally against the frozen snapshot —
    * zero IPC and zero process work per mousemove (criterion 46). */
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>): void => {
-    if (suppressed || !inspecting) {
+    // A highlight chasing the pointer through a scroll describes a tree the
+    // drag is in the middle of invalidating — so the overlay holds still until
+    // the gesture lands and the recapture that follows it settles.
+    if (suppressed || !inspecting || drag.current !== null) {
       return;
     }
     const box = event.currentTarget.getBoundingClientRect();
@@ -327,7 +466,13 @@ export function DeviceMirror(): JSX.Element {
    */
   const handleContextMenu = (event: MouseEvent<HTMLCanvasElement>): void => {
     event.preventDefault();
-    if (suppressed || inspectGeometry === null || selectedId === null) {
+    // A drag owns the pointer until it ends: a menu opened mid-gesture would
+    // describe a screen the finger is still changing, and its commands would
+    // drive touches into the live gesture as a second finger.
+    if (suppressed || drag.current !== null || !inspecting || inspectGeometry === null) {
+      return;
+    }
+    if (selectedId === null) {
       return;
     }
     const box = event.currentTarget.getBoundingClientRect();
@@ -416,6 +561,10 @@ export function DeviceMirror(): JSX.Element {
     hoveredNode !== null && hoveredNode.bounds !== null && inspectGeometry !== null
       ? nodeStreamRect(hoveredNode.bounds, inspectGeometry)
       : null;
+  /** The label sits above the box — except at the screen's top, where above is
+   * off the display: there it flips inside. On-screen px, so the counter-scaled
+   * label's own height is what the clearance is measured against. */
+  const labelFlipped = highlight !== null && highlight.y * fit.scale < LABEL_CLEARANCE;
   const menuNode = nodeFor(menu?.path ?? null);
   const dialogNode = nodeFor(dialog?.path ?? null);
 
@@ -448,6 +597,7 @@ export function DeviceMirror(): JSX.Element {
             to, the way `Refresh` is gone when there is no room for it. */}
         {drivable ? (
           <IconButton
+            glyph={16}
             icon="chevron-left"
             label="Back"
             onClick={() => {
@@ -457,12 +607,20 @@ export function DeviceMirror(): JSX.Element {
           />
         ) : null}
         {header.tools ? (
-          <IconButton icon="refresh-cw" label="Refresh" onClick={() => void refresh()} size="sm" />
+          <IconButton
+            glyph={16}
+            icon="refresh-cw"
+            label="Refresh"
+            onClick={() => void refresh()}
+            size="sm"
+          />
         ) : null}
         {/* Criterion 21 — the snapshot's manual refresh, beside the mode it
-            serves. Present whenever there is a stream to photograph. */}
-        {mirrorStatus === 'streaming' && selectedId !== null ? (
+            serves. Present whenever there is a stream to photograph and the
+            mode is on to look at what it froze. */}
+        {mirrorStatus === 'streaming' && selectedId !== null && inspectEnabled ? (
           <IconButton
+            glyph={16}
             icon="rotate-cw"
             label="Refresh snapshot"
             onClick={() => {
@@ -471,8 +629,16 @@ export function DeviceMirror(): JSX.Element {
             size="sm"
           />
         ) : null}
-        {/* Inspect is the mode the whole window is in, so it never degrades. */}
-        <IconButton icon="crosshair" label="Inspect" selected size="sm" />
+        {/* The crosshair is the switch for the whole inspection mode: off, the
+            mirror is purely a phone. It never degrades with width. */}
+        <IconButton
+          glyph={16}
+          icon="crosshair"
+          label="Inspect"
+          onClick={toggleInspect}
+          selected={inspectEnabled}
+          size="sm"
+        />
       </header>
 
       <div className={styles.bayPad}>
@@ -493,6 +659,9 @@ export function DeviceMirror(): JSX.Element {
                 width: fit.width,
                 height: fit.height,
                 transform: `scale(${fit.scale})`,
+                // The overlay's CSS counters this scale to keep the highlight
+                // label and border at their on-screen size.
+                '--fit-scale': fit.scale,
               }}
             >
               <div className={styles.display}>
@@ -537,13 +706,19 @@ export function DeviceMirror(): JSX.Element {
                           height: highlight.height,
                         }}
                       >
-                        <span className={styles.highlightLabel}>{elementLabel(hoveredNode)}</span>
+                        <span
+                          className={styles.highlightLabel}
+                          data-flip={labelFlipped ? 'true' : undefined}
+                        >
+                          {elementLabel(hoveredNode)}
+                        </span>
                       </div>
                     ) : null}
                     {/* Criterion 16 — a recapture in flight is shown, not
                         hidden: hover keeps answering from the previous
-                        snapshot until the new one lands. */}
-                    {capturing ? (
+                        snapshot until the new one lands. Only while the mode
+                        is on: off, there is no overlay to be stale. */}
+                    {capturing && inspectEnabled ? (
                       <span className={styles.staleChip} data-testid="stale-chip">
                         Updating…
                       </span>

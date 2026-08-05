@@ -460,6 +460,29 @@ describe('what the criteria name', () => {
   it('fills the phone screen with --device-screen', () => {
     expect(rule(mirror, '.display')).toContain('background: var(--device-screen)');
   });
+
+  /**
+   * Criterion 13 — the highlight states the tree's answer, it never glides
+   * toward it. Animating its geometry means the box on screen carries the
+   * *previous* element's size and place for the duration, which reads as the
+   * wrong height or width on every hover.
+   */
+  it('snaps the highlight instead of animating its geometry', () => {
+    expect(rule(mirror, '.highlight')).not.toContain('transition');
+  });
+
+  /**
+   * The overlay lives in the canvas's pre-transform space, so the phone's fit
+   * scale would shrink its chrome with the picture. The label counter-scales
+   * to stay readable, and the border divides by the same factor so 1.5px on
+   * screen means 1.5px at any fit.
+   */
+  it('keeps the label and the border optically constant across fits', () => {
+    expect(rule(mirror, '.highlightLabel')).toContain(
+      'transform: scale(calc(1 / var(--fit-scale, 1)))',
+    );
+    expect(rule(mirror, '.highlight')).toContain('calc(var(--border-thick) / var(--fit-scale, 1))');
+  });
 });
 
 /**

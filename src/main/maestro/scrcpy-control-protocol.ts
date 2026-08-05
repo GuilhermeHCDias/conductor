@@ -27,10 +27,13 @@ import {
  *                         i32 actionButton, i32 buttons
  *   BACK_OR_SCREEN_ON (4) u8 action
  *
- * The protocol itself has no press duration, so a gesture that is *held* — a
- * long press, the gap inside a double tap — exists only as timing between
- * messages. That timing is part of what the gesture is, so it travels beside
- * the bytes it paces, as the `pauseAfterMs` of a step.
+ * The protocol itself has no press duration and no notion of a gesture, so
+ * anything that is *held* — a long press, the gap inside a double tap — exists
+ * only as timing between messages. That timing is part of what the gesture is,
+ * so it travels beside the bytes it paces, as the `pauseAfterMs` of a step.
+ * The one gesture that *travels* — the drag — is not composed here at all: it
+ * arrives one phase at a time, already paced by the hand that is still
+ * drawing it, and each phase leaves as a single unpaused message.
  */
 
 /** The type byte, from the 18-entry switch the server dispatches on. Only the
@@ -42,8 +45,14 @@ const TYPE = {
   backOrScreenOn: 4,
 } as const;
 
-/** `AKEY_EVENT_ACTION_*` and `AMOTION_EVENT_ACTION_*` share these two values. */
-const ACTION = { down: 0, up: 1 } as const;
+/**
+ * `AKEY_EVENT_ACTION_*` and `AMOTION_EVENT_ACTION_*` share the first two values.
+ * ⚠️ They part ways at the third: 2 is `AMOTION_EVENT_ACTION_MOVE`, but
+ * `AKEY_EVENT_ACTION_MULTIPLE` for a key — so `move` belongs to touches alone
+ * and must never reach `keycodeMessage`. All three read out of the platform
+ * `android.jar`, like the keycodes below.
+ */
+const ACTION = { down: 0, up: 1, move: 2 } as const;
 
 export const TOUCH_MESSAGE_BYTES = 32;
 export const KEYCODE_MESSAGE_BYTES = 14;
@@ -147,6 +156,16 @@ export function controlSteps(input: MirrorInput): ControlStep[] {
         now(touchMessage(input, ACTION.down)),
         now(touchMessage(input, ACTION.up)),
       ];
+    // The live drag: one phase at a time, with no pause anywhere — the pacing
+    // is the hand's own, and a hold would put the wire behind the finger it
+    // is following. ⚠️ The order is load-bearing on the far side:
+    // `Controller.injectTouch` resolves its pointer through `PointersState`,
+    // where only an `ACTION_DOWN` opens a slot — a MOVE arriving before the
+    // DOWN is dropped, and a second DOWN mid-drag is a second finger. That
+    // ordering is the renderer's burden on this path: it opens every drag
+    // with the down phase and closes it with the up.
+    case 'touch':
+      return [now(touchMessage(input, ACTION[input.action]))];
     case 'text':
       return [now(textMessage(input.text))];
     case 'key':
@@ -168,7 +187,8 @@ function hold(bytes: Uint8Array, pauseAfterMs: number): ControlStep {
 }
 
 /** A touch is a touch whatever gesture it belongs to — the tap, the long
- * press and the double tap all press these same 32 bytes. */
+ * press, the double tap and the live drag's phases all press these same
+ * 32 bytes. */
 type TouchPoint = Pick<MirrorTap, 'x' | 'y' | 'screenWidth' | 'screenHeight'>;
 
 /**
@@ -193,7 +213,10 @@ function touchMessage(tap: TouchPoint, action: number): Uint8Array {
   view.setInt32(14, tap.y);
   view.setUint16(18, tap.screenWidth);
   view.setUint16(20, tap.screenHeight);
-  view.setUint16(22, action === ACTION.down ? PRESSURE_FULL : 0);
+  // Pressed for as long as the finger is on the glass — a drag's MOVEs included.
+  // Only the release lets go: a MOVE at zero pressure is a finger the app watches
+  // hovering rather than one dragging its content.
+  view.setUint16(22, action === ACTION.up ? 0 : PRESSURE_FULL);
   // Both are read only for `SOURCE_MOUSE`, which a finger never is.
   view.setInt32(24, 0);
   view.setInt32(28, 0);

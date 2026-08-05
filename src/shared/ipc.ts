@@ -187,10 +187,27 @@ const mirrorDoubleTap = z
   .object({ type: z.literal('double-tap'), ...touchFields })
   .refine(insideStream, outsideStream);
 
+/**
+ * One phase of the live drag: the finger lands, travels, lifts — and each
+ * crossing happens while the hand is still mid-gesture, because following the
+ * hand is the point. No composed form could carry a drag in real time: when
+ * the DOWN must already be on the device, the far end does not exist yet. The
+ * ordering the composed gestures got for free from arriving whole, the drag
+ * gets from the store's send queue — nothing overtakes anything there.
+ */
+const mirrorTouch = z
+  .object({
+    type: z.literal('touch'),
+    action: z.enum(['down', 'move', 'up']),
+    ...touchFields,
+  })
+  .refine(insideStream, outsideStream);
+
 const mirrorInput = z.union([
   mirrorTap,
   mirrorLongPress,
   mirrorDoubleTap,
+  mirrorTouch,
   z.object({
     type: z.literal('text'),
     text: z
@@ -342,6 +359,7 @@ export type MirrorFrame = z.infer<typeof mirrorFrame>;
 export type MirrorEvent = z.infer<typeof mirrorEvent>;
 export type MirrorKey = z.infer<typeof mirrorKey>;
 export type MirrorTap = z.infer<typeof mirrorTap>;
+export type MirrorTouch = z.infer<typeof mirrorTouch>;
 export type MirrorInput = z.infer<typeof mirrorInput>;
 export type SelectorLevel = z.infer<typeof selectorLevel>;
 export type SynthesizedSelector = z.infer<typeof synthesizedSelector>;

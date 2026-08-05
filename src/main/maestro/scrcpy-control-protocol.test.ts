@@ -208,6 +208,81 @@ describe('a double tap', () => {
   });
 });
 
+describe('a live touch', () => {
+  /** One phase of a drag the hand is still drawing, at the tap's own point —
+   * a touch is a touch whatever gesture it belongs to. */
+  const PHASE = { ...TAP, type: 'touch' } as const;
+
+  /**
+   * One phase, one message, nothing held: the pacing that made the replayed
+   * swipe a gesture is the hand's own here — the messages go out as the hand
+   * makes them, so a pause on any of them would put the wire *behind* the
+   * finger it is following.
+   */
+  it('is one message per phase, sent the moment it happens', () => {
+    for (const action of ['down', 'move', 'up'] as const) {
+      const steps = controlSteps({ ...PHASE, action });
+
+      expect(steps).toHaveLength(1);
+      expect(steps[0]?.bytes).toHaveLength(TOUCH_MESSAGE_BYTES);
+      expect(steps[0]?.pauseAfterMs).toBe(0);
+    }
+  });
+
+  /** 0, 1 and 2, read out of the platform android.jar — and `move` belongs to
+   * touches alone: 2 is `AKEY_EVENT_ACTION_MULTIPLE` for a key. */
+  it('carries the action the phase names', () => {
+    expect(bytesOf({ ...PHASE, action: 'down' })[0]?.[1]).toBe(0);
+    expect(bytesOf({ ...PHASE, action: 'up' })[0]?.[1]).toBe(1);
+    expect(bytesOf({ ...PHASE, action: 'move' })[0]?.[1]).toBe(2);
+  });
+
+  /**
+   * ⚠️ The finger is still down while it travels: a MOVE at zero pressure is a
+   * finger the app watches hovering rather than one dragging its content. Only
+   * the release lets go.
+   */
+  it('presses through every move and lets go only on the up', () => {
+    const pressure = (action: 'down' | 'move' | 'up'): number =>
+      new DataView(bytesOf({ ...PHASE, action })[0]?.buffer as ArrayBuffer).getUint16(22);
+
+    expect(pressure('down')).toBe(0xffff);
+    expect(pressure('move')).toBe(0xffff);
+    expect(pressure('up')).toBe(0);
+  });
+
+  it('moves the same finger every other touch presses', () => {
+    for (const action of ['down', 'move', 'up'] as const) {
+      const view = new DataView(bytesOf({ ...PHASE, action })[0]?.buffer as ArrayBuffer);
+      expect(view.getBigInt64(2)).toBe(POINTER_ID_FINGER);
+    }
+  });
+
+  /** Same 32 bytes as the tap's halves — a touch is a touch whatever gesture
+   * it belongs to, and this exact layout is the one confirmed on hardware. */
+  it('lays a move out the way the server reads a touch', () => {
+    expect(hex(bytesOf({ ...PHASE, action: 'move' })[0])).toBe(
+      [
+        '02', // TYPE_INJECT_TOUCH_EVENT
+        '02', // AMOTION_EVENT_ACTION_MOVE
+        'fffffffffffffffe', // pointerId -2: a finger, not the mouse
+        '00000064', // x = 100
+        '00000274', // y = 628
+        '01d0', // screenWidth = 464
+        '0400', // screenHeight = 1024
+        'ffff', // still pressed — see above
+        '00000000',
+        '00000000',
+      ].join(''),
+    );
+  });
+
+  it('refuses a phase outside the stream it declares', () => {
+    expect(() => controlSteps({ ...PHASE, action: 'move', x: 464 })).toThrow(ScrcpyControlError);
+    expect(() => controlSteps({ ...PHASE, action: 'up', y: -1 })).toThrow(ScrcpyControlError);
+  });
+});
+
 describe('typed text', () => {
   /**
    * Criterion 11. `Controller.injectText` walks the whole string char by char,
@@ -333,6 +408,9 @@ describe('every step', () => {
     controlSteps(TAP),
     controlSteps({ ...TAP, type: 'long-press' }),
     controlSteps({ ...TAP, type: 'double-tap' }),
+    controlSteps({ ...TAP, type: 'touch', action: 'down' }),
+    controlSteps({ ...TAP, type: 'touch', action: 'move' }),
+    controlSteps({ ...TAP, type: 'touch', action: 'up' }),
     controlSteps({ type: 'text', text: 'a' }),
     controlSteps({ type: 'key', key: 'enter' }),
     controlSteps({ type: 'back' }),

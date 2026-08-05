@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ContextMenu, type ContextMenuItem } from './ContextMenu';
 
 /**
@@ -129,5 +129,59 @@ describe('ContextMenu', () => {
     renderMenu();
 
     expect(screen.queryByText(/fragile/)).not.toBeInTheDocument();
+  });
+
+  /**
+   * "At the cursor" must still mean "readable": near an edge, an unclamped
+   * menu opens with its commands outside the window. jsdom lays nothing out,
+   * so the menu's box is stated through its offset sizes — the layout fact the
+   * clamp actually reads.
+   */
+  describe('near the viewport edges', () => {
+    const MENU = { width: 232, height: 320 };
+
+    beforeEach(() => {
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(MENU.width);
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(MENU.height);
+    });
+
+    afterEach(() => {
+      vi.restoreAllMocks();
+    });
+
+    it('opens at the cursor while there is room', () => {
+      renderMenu({ x: 120, y: 90 });
+
+      expect(screen.getByRole('menu')).toHaveStyle({ left: '120px', top: '90px' });
+    });
+
+    it('flips left of the cursor when it would leave the right edge', () => {
+      const x = window.innerWidth - 20;
+      renderMenu({ x, y: 90 });
+
+      expect(screen.getByRole('menu')).toHaveStyle({ left: `${x - MENU.width}px`, top: '90px' });
+    });
+
+    it('slides up when it would leave the bottom edge', () => {
+      renderMenu({ x: 120, y: window.innerHeight - 40 });
+
+      expect(screen.getByRole('menu')).toHaveStyle({
+        left: '120px',
+        top: `${window.innerHeight - 8 - MENU.height}px`,
+      });
+    });
+
+    it('pins to the margin when not even flipping makes it fit', () => {
+      // A menu taller and wider than the window fits nowhere: the flip would
+      // land negative and the slide before the top. Both pin to the margin —
+      // clipped at the far edge, but the first commands stay readable.
+      vi.spyOn(HTMLElement.prototype, 'offsetWidth', 'get').mockReturnValue(window.innerWidth - 30);
+      vi.spyOn(HTMLElement.prototype, 'offsetHeight', 'get').mockReturnValue(
+        window.innerHeight + 100,
+      );
+      renderMenu({ x: window.innerWidth / 2, y: 400 });
+
+      expect(screen.getByRole('menu')).toHaveStyle({ left: '8px', top: '8px' });
+    });
   });
 });

@@ -203,6 +203,18 @@ describe('capturing a snapshot', () => {
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.mcpCallFailed);
   });
 
+  /** Criterion 4's other half. `coded` shapes a Node system error — `spawn`
+   * failing carries `ENOENT`, a string `code` that is not one of ours. Letting
+   * it through types an arbitrary errno as an `ErrorCode`, and the doctor reads
+   * those codes to tell one prerequisite from another. */
+  it('falls back to its own code when the failure carries a foreign one', async () => {
+    const gateway = fakeGateway();
+    gateway.screenshotFailure = coded('ENOENT', 'spawn adb ENOENT');
+    const service = new SnapshotService({ gateway });
+
+    expect(code(await service.capture('device'))).toBe(ERROR_CODES.captureFailed);
+  });
+
   it('refuses a screenshot that is not a readable PNG', async () => {
     const gateway = fakeGateway();
     gateway.shot = Buffer.from('definitely not a picture');

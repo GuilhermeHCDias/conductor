@@ -48,6 +48,9 @@ export type MenuRequest = {
 };
 
 export type InspectData = {
+  /** The crosshair as a switch: while off, no hover highlights and no
+   * right-click opens the menu. A user choice, so `clear` leaves it alone. */
+  readonly enabled: boolean;
   /** The current snapshot — kept through a recapture and through a failed one:
    * hover answers from it until the new one lands (criteria 16–17). */
   readonly snapshot: SnapshotView | null;
@@ -62,6 +65,8 @@ export type InspectData = {
 };
 
 export type InspectActions = {
+  /** Flips the switch; turning it off takes the standing highlight along. */
+  toggleEnabled: () => void;
   /** One capture, now. `refresh` is the manual affordance (criterion 21);
    * `noteInteraction` is the debounced path (criterion 19). */
   capture: (deviceId: string) => Promise<void>;
@@ -153,6 +158,7 @@ export const useInspectStore = create<InspectState>((set, get) => {
   }
 
   return {
+    enabled: true,
     snapshot: null,
     capturing: false,
     captureError: null,
@@ -160,6 +166,13 @@ export const useInspectStore = create<InspectState>((set, get) => {
     menu: null,
     synthError: null,
     dialog: null,
+
+    toggleEnabled: () => {
+      const enabled = !get().enabled;
+      // Off takes the highlight with it: a box for an element nobody is
+      // inspecting is exactly the wrong highlight the null-hover rule forbids.
+      set(enabled ? { enabled } : { enabled, hoveredPath: null });
+    },
 
     capture: (deviceId) => startCapture(deviceId),
 
@@ -306,6 +319,7 @@ export function resetInspectStore(): void {
   running = null;
   queuedDevice = null;
   useInspectStore.setState({
+    enabled: true,
     snapshot: null,
     capturing: false,
     captureError: null,
@@ -314,6 +328,10 @@ export function resetInspectStore(): void {
     synthError: null,
     dialog: null,
   });
+}
+
+export function selectInspectEnabled(state: InspectState): boolean {
+  return state.enabled;
 }
 
 export function selectSnapshot(state: InspectState): SnapshotView | null {

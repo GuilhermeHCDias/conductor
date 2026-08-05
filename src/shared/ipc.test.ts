@@ -226,8 +226,55 @@ describe('mirror:input', () => {
     ).toBe(false);
   });
 
+  /**
+   * The live drag crosses one phase at a time — down, then every move, then up
+   * — because the hand is still drawing the gesture when its first message
+   * must already be on the device. No composed form could carry that: the far
+   * end does not exist yet. Each phase is guarded exactly like a tap's point,
+   * for the same `PositionMapper` reason.
+   */
+  it('carries a live touch as one phase at one point', () => {
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'down' }]).success,
+    ).toBe(true);
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'move' }]).success,
+    ).toBe(true);
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'up' }]).success,
+    ).toBe(true);
+  });
+
+  it('requires a touch to say which phase it is', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, type: 'touch' }]).success).toBe(false);
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'cancel' }]).success,
+    ).toBe(false);
+  });
+
+  it('guards a touch phase exactly as it guards a tap', () => {
+    expect(
+      schema.request.safeParse(['mirror-1', { ...tap, type: 'touch', action: 'move', x: 464 }])
+        .success,
+    ).toBe(false);
+    expect(
+      schema.request.safeParse([
+        'mirror-1',
+        { ...tap, type: 'touch', action: 'up', screenWidth: undefined },
+      ]).success,
+    ).toBe(false);
+  });
+
   it('refuses an input that is none of the declared kinds', () => {
-    expect(schema.request.safeParse(['mirror-1', { type: 'swipe' }]).success).toBe(false);
+    // `swipe` once stood in this union: the replayed gesture the live `touch`
+    // phases made redundant. It must stay refused now that nothing sends it.
+    expect(schema.request.safeParse(['mirror-1', { type: 'pinch' }]).success).toBe(false);
+    expect(
+      schema.request.safeParse([
+        'mirror-1',
+        { ...tap, type: 'swipe', toX: 232, toY: 100, durationMs: 240 },
+      ]).success,
+    ).toBe(false);
     expect(schema.request.safeParse(['mirror-1', { type: 'clipboard' }]).success).toBe(false);
   });
 

@@ -16,6 +16,10 @@
   position: fixed;
   z-index: 80;
   width: 232px;
+  /* Taller than the window, the menu scrolls itself — the clamp pins it to the
+     top margin, and this is what keeps the far commands reachable there. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
   padding: 4px;
   border-radius: var(--radius-md);
   background: var(--glass-3);

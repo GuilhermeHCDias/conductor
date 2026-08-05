@@ -294,6 +294,36 @@ describe('hovering', () => {
   });
 });
 
+/** The crosshair as a switch: inspection on by default, and turning it off
+ * takes the standing highlight with it — a box for an element nobody is
+ * inspecting is exactly the wrong highlight the null-hover rule exists for. */
+describe('the inspect switch', () => {
+  it('starts enabled', () => {
+    expect(store().enabled).toBe(true);
+  });
+
+  it('toggles off clearing the hover, and back on', () => {
+    store().hover([0, 0]);
+
+    store().toggleEnabled();
+    expect(store().enabled).toBe(false);
+    expect(store().hoveredPath).toBeNull();
+
+    store().toggleEnabled();
+    expect(store().enabled).toBe(true);
+  });
+
+  /** `clear` is the mirror's lifecycle, not the user's choice: switching
+   * devices must not silently re-arm a mode the user turned off. */
+  it('survives a clear', () => {
+    store().toggleEnabled();
+
+    store().clear();
+
+    expect(store().enabled).toBe(false);
+  });
+});
+
 /* ── the menu ───────────────────────────────────────────────────────────── */
 
 describe('opening the menu', () => {

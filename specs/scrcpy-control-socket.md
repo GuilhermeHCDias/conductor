@@ -169,6 +169,37 @@ is `.context.md` §5.5's whole premise for putting a live picture in the panel a
   virtual HID device or a cable-only connection.
 - **Multi-touch, pinch, and drag/swipe gestures.** A tap is one touch-down-then-up pair at one
   point. Scrollable lists and drag interactions are a natural next spec, not this one.
+
+  ⏸️ **Amendment (2026-08-05): the swipe half of this landed, in place, without a spec of its
+  own** (engineer's call — the change is one gesture, and the machinery this spec built took it
+  whole). Dragging on the mirror now drives the device, **live**: `mirror:input` grows a `touch`
+  form — one phase at a time, `down`/`move`/`up`, each carrying one point and the stream size —
+  and the renderer streams the gesture as the hand draws it: touch-down on the press, a move per
+  pointer sample deduped to whole device pixels, touch-up on the release, with the travel and
+  the release watched at the window so a drag that leaves the panel still ends. `controlSteps`
+  maps each phase to a single unpaused `INJECT_TOUCH_EVENT`; `ACTION_MOVE = 2` was read out of
+  the platform `android.jar` beside the DOWN and UP already here, and a MOVE keeps full
+  pressure — at zero the app under test watches a hover, not a drag. No gesture timing crosses
+  the boundary and none is composed in main: the pacing Android reads the fling from is the
+  hand's own arrival times, and Android's own touch slop decides what the gesture was — a still
+  press its tap, a held one its long press, a travelled one its scroll. The renderer owns the
+  wire's ordering invariant (`PointersState` opens a slot only on a DOWN): every drag opens with
+  the down phase and always closes with an up — a cancel releases at the last point sent, a
+  right-click mid-drag opens no menu, and a session teardown takes the finger down with the
+  server it pressed. Multi-touch and pinch stay out of scope, and are what this entry now covers.
+
+  The first cut replayed the gesture instead: the release crossed as one `swipe` input — both
+  ends plus `durationMs` — expanded main-side into a paced DOWN/MOVEs/UP run. Replaced the same
+  day, after use: the screen followed the finger only once the finger had stopped moving, which
+  reads as lag on every scroll. The live phases made the replay redundant, and the `swipe` form
+  left the contract with them.
+
+  Two things deliberately did **not** land with it. A drag writes no step — the mirror's left
+  button drives and does not author, and only the command menu writes (engineer's call). And when
+  a `swipe` step is eventually authored, it takes the element-anchored form — `from:` over the
+  synthesised selector plus `direction:` — rather than `start:`/`end:` percentages, which would
+  be fragile in the same way §5.4's `point:` rung is (engineer's call, recorded here because it
+  has no code to live beside yet).
 - **Clipboard sync (`SET_CLIPBOARD` / `GET_CLIPBOARD`).** Not needed for tap-and-type.
 - **Rotate-device requests, notification-panel expand/collapse, screen power mode.** scrcpy's
   control protocol carries these; none of them serve authoring a flow.

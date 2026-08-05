@@ -114,9 +114,10 @@ turns them into the product's core loop.
 
 ### Overlay
 
-13. While a stream and a snapshot are live, the system shall highlight the hovered element with the
-    DS treatment — accent-tinted fill, 1.5 px accent border, mono label above, crosshair cursor —
-    positioned from the node's bounds mapped back into canvas space.
+13. While a stream and a snapshot are live and Inspect is switched on (the crosshair toggle,
+    default on), the system shall highlight the hovered element with the DS treatment —
+    accent-tinted fill, 1.5 px accent border, mono label above, crosshair cursor — positioned
+    from the node's bounds mapped back into canvas space.
 14. The highlight label shall name the element as the DS does — a short kind (the class name's last
     segment) and its text (falling back to `content-desc`, then `resource-id`) — with the text
     taken **literally** from the tree, never transcribed from pixels.
@@ -140,9 +141,11 @@ turns them into the product's core loop.
 
 ### Command menu
 
-23. When the user right-clicks a hit element, the system shall ask main to synthesize its selector
-    (`maestro:synthesize-selector` with the `snapshotId` and the node's path in the tree) and open
-    the `ContextMenu` at the cursor, titled with the element's kind and text.
+23. When the user right-clicks a hit element with Inspect switched on, the system shall ask main to
+    synthesize its selector (`maestro:synthesize-selector` with the `snapshotId` and the node's
+    path in the tree) and open the `ContextMenu` at the cursor, titled with the element's kind and
+    text. With Inspect off, a right-click opens nothing — and no pointer button ever taps through:
+    only the primary button drives the device.
 24. The menu shall offer, grouped and labeled with the exact YAML keywords in mono with their
     `ACTION_ICONS` glyphs: **Interact** — `tapOn`, `doubleTapOn`, `longPressOn`, `inputText`,
     `scrollUntilVisible`, `eraseText`; **Assert** — `assertVisible`, `assertNotVisible`;
@@ -275,7 +278,11 @@ turns them into the product's core loop.
   `AGENTS.md`'s worked example; the former joins the same domain.
 - **`flow.store` is introduced now** (assumed, structural): the only sane landing place for an
   appended step while the real editor is another spec — clipboard would break the product promise,
-  CodeMirror would swallow this spec whole.
+  CodeMirror would swallow this spec whole. It knowingly suspends `AGENTS.md`'s "never keep a
+  renderer-only copy of a flow": there is no `flow:save` yet, so main owns no truth for this store
+  to project. The suspension ends with the editor/save spec, which must turn this store into a
+  projection of `flow:changed` instead of the document itself. Until then an appended step lives
+  in memory only and does not survive a reload — accepted, because nothing yet claims it does.
 - **`takeScreenshot` is appended bare** (assumed): the mock's `takeScreenshot: pedidos` is fixture
   flavor; a name argument needs product thinking (naming collisions, paths) that belongs to the
   editor spec.
@@ -295,9 +302,31 @@ turns them into the product's core loop.
 - **Alt over a boundless parent stays on the node** (implementation). The real root reports
   no bounds; retargeting the hover to it would highlight nothing, which is not "the
   container" §5.5.5 means. One level up when the parent is drawable, otherwise the hit stays.
+- **The hit-test ranks smallest area first, deepest second** (implementation). Criterion 8 says
+  "deepest, smallest-area", which reads as a priority but only decides anything when the two
+  disagree — a deeper node whose bounds are *larger* than its ancestor's (overflow, translated
+  views). There the smaller box is the one the user aimed at, so area wins and depth breaks its
+  ties, with criterion 10's `clickable`/`resourceId`/`text` order below both; `hit-test.test.ts`
+  pins it. `.context.md` §5.5 carries the same ambiguity — this resolves it rather than
+  reversing it, so that section needs no amendment.
 - **The snapshot cadence lives in `hooks/useInspectSnapshot.ts`** (implementation): the
   debounce/single-flight/trailing machinery is `inspect.store`'s (testable plain TS); the
   wiring from device-store events to it is a view-mounted hook, per the renderer layer rules.
 - **`App.tsx` still reads `FLOW_YAML`** (implementation): criterion 36 names the view, and
   App's use is the run-progress denominator — fixture-driven until the run spec, which owns
   that bar.
+- **Post-delivery pass from on-device use** (Engineer, 2026-08-05). Five corrections, criteria
+  13 and 23 amended in place: **(a)** only the primary button taps — the pointerdown half of a
+  right-click (and of macOS's Ctrl+click) was also driving the device; **(b)** the menu clamps
+  into the viewport — flips left of the cursor at the right edge, slides up at the bottom,
+  scrolls when taller than the window — because "at the cursor" near an edge opened it
+  unreadable; **(c)** the crosshair became a real switch (`inspect.store.enabled`, default on,
+  surviving `clear`): off means no highlight, no menu, no crosshair cursor, no snapshot-refresh
+  affordance — driving untouched; **(d)** the highlight's geometry no longer animates —
+  `transition: all` kept the previous element's box on screen for the whole flight, which read
+  as wrong width/height on every hover; **(e)** the highlight label counter-scales by
+  `--fit-scale` (and the border divides by it) so it stays readable at any fit, flipping inside
+  the box at the screen's top edge; header tool glyphs went from 14 to 16 px in the same pass.
+  A sixth followed with the live drag (see the control-socket spec's 2026-08-05 amendment):
+  **(f)** a right-click mid-drag opens no menu — it would describe a screen the finger is still
+  changing, and its commands would drive touches into the live gesture as a second finger.

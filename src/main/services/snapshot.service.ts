@@ -150,8 +150,18 @@ function widestBounds(node: TreeNode): Bounds | null {
   return widest;
 }
 
+/** `ERROR_CODES`' own values. A thrown error's `code` is only one of ours if
+ * it is in here — `spawn` failures carry `ENOENT`, and a cast would have typed
+ * that errno as an `ErrorCode` on its way across IPC. */
+const KNOWN_CODES: ReadonlySet<string> = new Set(Object.values(ERROR_CODES));
+
+function isErrorCode(value: string): value is ErrorCode {
+  return KNOWN_CODES.has(value);
+}
+
 /** The thrower's own stable code — `SelectorSynthError` and the Gateway's
- * errors all carry one — with `capture/failed` as the honest fallback. */
+ * errors all carry one — with `capture/failed` as the honest fallback for a
+ * code we do not publish. */
 function failure(error: unknown): Result<never> {
   const code =
     error instanceof SelectorSynthError
@@ -159,8 +169,9 @@ function failure(error: unknown): Result<never> {
       : typeof error === 'object' &&
           error !== null &&
           'code' in error &&
-          typeof error.code === 'string'
-        ? (error.code as ErrorCode)
+          typeof error.code === 'string' &&
+          isErrorCode(error.code)
+        ? error.code
         : ERROR_CODES.captureFailed;
   return {
     ok: false,

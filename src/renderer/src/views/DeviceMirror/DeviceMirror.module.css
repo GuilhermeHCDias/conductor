@@ -145,32 +145,47 @@
 
 /* The DS highlight: accent-tinted fill, 1.5px accent border, mono label above
    — never a dashed marquee. Positioned in stream px; the phone's transform
-   scales it with the picture. */
+   scales it with the picture, so anything that must keep an on-screen size
+   divides by `--fit-scale` to counter it. No transition: the box states the
+   tree's answer, it never glides toward it — animated geometry is a box that
+   carries the previous element's size for the whole flight. */
 .highlight {
   position: absolute;
   border-radius: var(--radius-xs);
   background: var(--device-highlight);
-  border: var(--border-thick) solid var(--device-highlight-edge);
+  border: calc(var(--border-thick) / var(--fit-scale, 1)) solid var(--device-highlight-edge);
   box-shadow:
-    0 0 0 1px oklch(0% 0 0 / 0.35),
+    0 0 0 calc(1px / var(--fit-scale, 1)) oklch(0% 0 0 / 0.35),
     0 0 18px var(--device-highlight-glow);
   pointer-events: none;
-  transition: all var(--dur-fast) var(--ease-out);
 }
 
+/* Counter-scaled from its anchor corner, so the type renders at its own size
+   whatever the fit — a label scaled down with the picture is unreadable in a
+   narrow bay. */
 .highlightLabel {
   position: absolute;
-  left: -1px;
-  top: -19px;
+  left: 0;
+  bottom: 100%;
+  transform: scale(calc(1 / var(--fit-scale, 1)));
+  transform-origin: bottom left;
   display: inline-flex;
   align-items: center;
-  height: 17px;
-  padding: 0 5px;
+  height: 19px;
+  padding: 0 6px;
   border-radius: var(--radius-xs);
   background: var(--device-highlight-edge);
   color: var(--ink-1000);
-  font: var(--type-mono-label);
+  font: var(--type-code-sm);
   white-space: nowrap;
+}
+
+/* At the screen's top there is no room above the box: the label flips inside
+   its top edge instead of clipping out of the display. */
+.highlightLabel[data-flip="true"] {
+  bottom: auto;
+  top: 0;
+  transform-origin: top left;
 }
 
 /* Criterion 16 — the visible fact that the tree is being re-read. */

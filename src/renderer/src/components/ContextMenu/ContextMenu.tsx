@@ -1,4 +1,4 @@
-import { type JSX, type KeyboardEvent, useEffect, useRef } from 'react';
+import { type JSX, type KeyboardEvent, useEffect, useLayoutEffect, useRef, useState } from 'react';
 import { Icon, type IconName } from '../Icon/Icon';
 import styles from './ContextMenu.module.css';
 
@@ -40,6 +40,29 @@ export type ContextMenuProps = {
   readonly onClose: () => void;
 };
 
+/** The breathing room the menu keeps from every window edge. */
+const EDGE_MARGIN = 8;
+
+/** Where the menu actually opens: at the cursor while that fits, flipped to
+ * the cursor's left when the right edge would clip it, slid up from the bottom
+ * edge — and pinned to the margin when not even that fits. */
+function placeMenu(
+  x: number,
+  y: number,
+  size: { width: number; height: number },
+  viewport: { width: number; height: number },
+): { x: number; y: number; flippedX: boolean } {
+  const flippedX = x + size.width > viewport.width - EDGE_MARGIN;
+  return {
+    x: flippedX ? Math.max(EDGE_MARGIN, x - size.width) : x,
+    y:
+      y + size.height > viewport.height - EDGE_MARGIN
+        ? Math.max(EDGE_MARGIN, viewport.height - EDGE_MARGIN - size.height)
+        : y,
+    flippedX,
+  };
+}
+
 export function ContextMenu({
   x,
   y,
@@ -50,6 +73,26 @@ export function ContextMenu({
   onClose,
 }: ContextMenuProps): JSX.Element {
   const menu = useRef<HTMLDivElement>(null);
+
+  // The cursor point is only half the placement; the menu's own box is the
+  // other, and only the DOM knows it. Measured pre-paint, so the first frame
+  // is already inside the window — offset sizes rather than a client rect,
+  // because the entrance animation scales the rect mid-flight.
+  const [placed, setPlaced] = useState<ReturnType<typeof placeMenu> | null>(null);
+  useLayoutEffect(() => {
+    const element = menu.current;
+    if (element === null) {
+      return;
+    }
+    setPlaced(
+      placeMenu(
+        x,
+        y,
+        { width: element.offsetWidth, height: element.offsetHeight },
+        { width: window.innerWidth, height: window.innerHeight },
+      ),
+    );
+  }, [x, y]);
 
   // Keyboard-first: the first command holds focus the moment the menu opens.
   useEffect(() => {
@@ -115,7 +158,13 @@ export function ContextMenu({
         onKeyDown={handleKeyDown}
         ref={menu}
         role="menu"
-        style={{ left: x, top: y }}
+        style={{
+          left: placed?.x ?? x,
+          top: placed?.y ?? y,
+          // The spring grows out of the corner the cursor is in, so a flipped
+          // menu still reads as opening from the click.
+          transformOrigin: placed?.flippedX === true ? 'top right' : undefined,
+        }}
       >
         {title !== undefined ? (
           <div className={styles.title}>
