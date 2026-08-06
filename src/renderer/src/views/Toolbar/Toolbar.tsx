@@ -5,7 +5,7 @@ import { Tooltip } from '../../components/Tooltip/Tooltip';
 import { ENVIRONMENT } from '../../fixtures/flows';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
-import { selectYaml, useFlowStore } from '../../stores/flow.store';
+import { selectOpenName, selectYaml, useFlowStore } from '../../stores/flow.store';
 import { selectRunning, useRunStore } from '../../stores/run.store';
 import { selectSidebarVisible, useUiStore } from '../../stores/ui.store';
 import styles from './Toolbar.module.css';
@@ -32,7 +32,7 @@ export function Toolbar(): JSX.Element {
   const toggleAppearance = useUiStore((state) => state.toggleAppearance);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const sidebarVisible = useUiStore(selectSidebarVisible);
-  const title = useUiStore((state) => state.document.label);
+  const openName = useFlowStore(selectOpenName);
 
   // The count is the open flow's own, not a fixture's: a step the command menu
   // appends moves it the moment it lands.
@@ -72,10 +72,13 @@ export function Toolbar(): JSX.Element {
 
       {/* macOS document title: the name plus a quiet subtitle, left of centre. */}
       <span className={styles.document}>
-        <span className={styles.title}>{title}</span>
+        <span className={styles.title}>{openName ?? 'No flow open'}</span>
         <span className={styles.subtitle}>
-          {commandCount} {commandCount === 1 ? 'command' : 'commands'} ·{' '}
-          {running ? 'running' : 'saved on this Mac'}
+          {openName === null
+            ? '—'
+            : `${commandCount} ${commandCount === 1 ? 'command' : 'commands'} · ${
+                running ? 'running' : 'saved on this Mac'
+              }`}
         </span>
       </span>
 

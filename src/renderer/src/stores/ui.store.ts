@@ -1,19 +1,11 @@
 import { create } from 'zustand';
-import {
-  AI_LINES,
-  type ChatTurn,
-  ERROR_LINES,
-  FLOWS,
-  type FlowDocument,
-  OPEN_DOCUMENT,
-  THREAD,
-} from '../fixtures/flows';
+import { AI_LINES, type ChatTurn, ERROR_LINES, THREAD } from '../fixtures/flows';
 import { layoutForWidth } from '../lib/breakpoints';
 
 /**
- * The shell's own state: appearance, which panes are showing, which document is
- * open, and what the sidebar is filtered to. Seeded from `fixtures/flows.ts`;
- * no action here crosses IPC, because this spec has no IPC to cross.
+ * The shell's own state: appearance, which panes are showing, and what the
+ * sidebar is filtered to. Which flow is open is not here — that is flow
+ * identity, and it lives in `flow.store` with the rest of the domain.
  */
 
 /** Light/dark is a property of the window, so nobody re-picks it every launch. */
@@ -60,25 +52,19 @@ export type UiData = {
   readonly windowWidth: number;
   /** `auto` follows the breakpoint; anything else is the user overriding it. */
   readonly sidebarPreference: SidebarPreference;
-  /** The working area shows one document; the sidebar is the list of the rest. */
-  readonly document: FlowDocument;
   readonly lowerPanel: LowerPanel;
   readonly query: string;
   /** 1-based line numbers the assistant wrote, and ones Maestro reported failing. */
   readonly aiLines: readonly number[];
   readonly errorLines: readonly number[];
   readonly thread: readonly ChatTurn[];
-  /** Monotonic, so a second new document never lands on the first one's id. */
-  readonly nextDocumentNumber: number;
 };
 
-/** What can change it. None of these crosses IPC; this spec has none to cross. */
+/** What can change it. None of these crosses IPC. */
 export type UiActions = {
   toggleAppearance: () => void;
   setWindowWidth: (width: number) => void;
   toggleSidebar: () => void;
-  openFlow: (id: string) => void;
-  newFlow: () => void;
   setLowerPanel: (panel: LowerPanel) => void;
   toggleLowerPanel: () => void;
   setQuery: (query: string) => void;
@@ -87,20 +73,18 @@ export type UiActions = {
 
 export type UiState = UiData & UiActions;
 
-/** The fixture state, fresh. `resetUiStore` puts the store back to exactly this. */
+/** The fresh state. `resetUiStore` puts the store back to exactly this. */
 function createUiData(): UiData {
   return {
     dark: initialAppearance(),
     // The BrowserWindow opens at 1280; the shell corrects this on first measure.
     windowWidth: 1280,
     sidebarPreference: 'auto',
-    document: OPEN_DOCUMENT,
     lowerPanel: 'assistant',
     query: '',
     aiLines: AI_LINES,
     errorLines: ERROR_LINES,
     thread: THREAD,
-    nextDocumentNumber: 1,
   };
 }
 
@@ -121,24 +105,6 @@ export const useUiStore = create<UiState>((set, get) => ({
   // state — otherwise the next resize would silently undo the user's choice.
   toggleSidebar: () => {
     set({ sidebarPreference: selectSidebarVisible(get()) ? 'hidden' : 'shown' });
-  },
-
-  // The whole document, replaced: carrying a field over from what was open is
-  // how the last file's unsaved mark ends up on this one.
-  openFlow: (id) => {
-    const flow = FLOWS.find((candidate) => candidate.id === id);
-    if (flow === undefined) {
-      return;
-    }
-    set({ document: { id, label: flow.name } });
-  },
-
-  newFlow: () => {
-    const { nextDocumentNumber } = get();
-    set({
-      document: { id: `f-new-${nextDocumentNumber}`, label: `novo-${nextDocumentNumber}.yaml` },
-      nextDocumentNumber: nextDocumentNumber + 1,
-    });
   },
 
   setLowerPanel: (lowerPanel) => {

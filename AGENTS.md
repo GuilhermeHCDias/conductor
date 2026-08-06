@@ -32,7 +32,7 @@ src/
     ipc/                      # <domain>.ts — thin handlers: validate, call a service
     maestro/                  # MaestroGateway, LocalGateway, CliRunner,
                               # ScreenCapture, HierarchyParser, SelectorSynth (§9.2)
-    services/                 # <name>.service.ts — repo, gh, publish, flow-index,
+    services/                 # <name>.service.ts — repo, gh, publish, flow,
                               # doctor, ai
     process/run.ts            # the only execFile wrapper (§10.1)
   preload/

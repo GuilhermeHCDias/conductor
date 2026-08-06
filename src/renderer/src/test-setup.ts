@@ -37,9 +37,26 @@ function idleConductor(): ConductorApi {
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     runStart: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     runCancel: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    // The workspace's quiet default is emptiness, not failure: a view test
+    // mounts a sidebar with no flows, the way `deviceList` answers no devices.
+    flowList: () => Promise.resolve({ ok: true, data: { flows: [], folders: [] } }),
+    flowRead: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowSave: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowCreate: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowCreateFolder: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowRename: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowRenameFolder: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowDuplicate: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowDelete: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    flowDeleteFolder: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     onDeviceChanged: () => () => {},
     onMirrorEvent: () => () => {},
     onRunEvent: () => () => {},
+    onFlowChanged: () => () => {},
   };
 }
 

@@ -131,6 +131,63 @@ describe('ContextMenu', () => {
     expect(screen.queryByText(/fragile/)).not.toBeInTheDocument();
   });
 
+  /** The tree's menus carry what the DS `Row` carries beyond commands: a
+   * destructive hue, a right-aligned shortcut, and a disabled state. */
+  describe('command flavours', () => {
+    it('marks a destructive command so CSS gives it the fail hue', () => {
+      renderMenu({
+        items: [
+          {
+            type: 'command',
+            id: 'delete',
+            label: 'Delete flow',
+            icon: 'trash-2',
+            destructive: true,
+          },
+        ],
+      });
+
+      expect(screen.getByRole('menuitem', { name: 'Delete flow' })).toHaveAttribute(
+        'data-destructive',
+        'true',
+      );
+    });
+
+    it('shows the shortcut beside the label', () => {
+      renderMenu({
+        items: [{ type: 'command', id: 'new', label: 'New flow', shortcut: '⌘N' }],
+      });
+
+      expect(screen.getByRole('menuitem', { name: /New flow/ })).toHaveTextContent('⌘N');
+    });
+
+    /** Criterion 25 — "Run now" is offered greyed, never selected. */
+    it('never selects a disabled command', async () => {
+      const { onSelect } = renderMenu({
+        items: [{ type: 'command', id: 'run', label: 'Run now', disabled: true }],
+      });
+
+      await userEvent.click(screen.getByRole('menuitem', { name: 'Run now' }));
+
+      expect(onSelect).not.toHaveBeenCalled();
+    });
+
+    /** A disabled command is not a keyboard stop either. */
+    it('skips a disabled command when the arrows walk', async () => {
+      renderMenu({
+        items: [
+          { type: 'command', id: 'open', label: 'Open' },
+          { type: 'command', id: 'run', label: 'Run now', disabled: true },
+          { type: 'command', id: 'delete', label: 'Delete' },
+        ],
+      });
+
+      expect(screen.getByRole('menuitem', { name: 'Open' })).toHaveFocus();
+      await userEvent.keyboard('{ArrowDown}');
+      expect(screen.getByRole('menuitem', { name: 'Delete' })).toHaveFocus();
+    });
+  });
+
   /**
    * "At the cursor" must still mean "readable": near an edge, an unclamped
    * menu opens with its commands outside the window. jsdom lays nothing out,

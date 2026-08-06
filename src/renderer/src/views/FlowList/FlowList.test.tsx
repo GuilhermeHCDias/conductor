@@ -1,236 +1,443 @@
+import { hashText } from '@shared/hash';
+import type { FlowMeta } from '@shared/types';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
-import { FLOW_YAML, FLOWS } from '../../fixtures/flows';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
+import { resetRunStore } from '../../stores/run.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
 import { FlowList } from './FlowList';
 
-const ui = () => useUiStore.getState();
+/**
+ * The sidebar as the mock draws it (criteria 11–27, 35–37): the folder tree,
+ * inline drafts, context menus, the confirmation dialog, search flattening,
+ * and the empty and error states. The stores are real; `window.conductor` is
+ * the only seam.
+ */
 
-const rows = () => screen.getAllByRole('listitem');
-const rowNames = () => rows().map((row) => within(row).getByRole('button').textContent);
+const FLOW = 'appId: com.test.app\n---\n- launchApp:\n    clearState: true\n';
+
+function meta(path: string, commandCount = 2): FlowMeta {
+  const slash = path.lastIndexOf('/');
+  return {
+    path,
+    name: slash === -1 ? path : path.slice(slash + 1),
+    folder: slash === -1 ? '' : path.slice(0, slash),
+    commandCount,
+    hash: hashText(FLOW),
+  };
+}
+
+function seedIndex(paths: readonly string[], folders: readonly string[] = []): void {
+  useFlowStore.setState({
+    index: { flows: paths.map((path) => meta(path)), folders: [...folders] },
+    indexError: null,
+  });
+}
+
+const flow = () => useFlowStore.getState();
 
 beforeEach(() => {
   resetUiStore();
   resetFlowStore();
+  resetRunStore();
+  resetDeviceStore();
 });
 
-/** Criteria 14–21. */
-describe('FlowList', () => {
-  it('is a region a screen reader can find by name', () => {
+describe('the header', () => {
+  /** Criterion 37 — a truthful subtitle: the workspace and its count. */
+  it('counts the flows instead of inventing failures', () => {
+    seedIndex(['a.yaml', 'checkout/pix.yml']);
     render(<FlowList />);
 
-    expect(screen.getByRole('region', { name: 'Flows' })).toBeInTheDocument();
+    expect(screen.getByText('conductor/ · 2 flows')).toBeInTheDocument();
   });
 
-  it('heads the panel with the folder and how much of it is failing', () => {
+  it('speaks singular for one flow', () => {
+    seedIndex(['a.yaml']);
     render(<FlowList />);
 
-    expect(screen.getByText('Flows')).toBeInTheDocument();
-    // Two of the seven fixture flows last came back failing. The count the
-    // header carries is the folder Conductor writes to, not the flow total:
-    // once the tree has subfolders, a total says nothing about what is on
-    // screen, and `conductor/` says where every one of these files lives.
-    expect(screen.getByText('conductor/ · 2 failing')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'New flow' })).toBeInTheDocument();
+    expect(screen.getByText('conductor/ · 1 flow')).toBeInTheDocument();
   });
 
-  it('renders every flow in the suite', () => {
+  /** Criterion 16 — the header "+" offers both creations, with shortcuts. */
+  it('opens the new-flow-or-folder menu from the plus', async () => {
+    seedIndex([]);
     render(<FlowList />);
 
-    expect(rows()).toHaveLength(FLOWS.length);
+    await userEvent.click(screen.getByRole('button', { name: 'New flow or folder' }));
+
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByRole('menuitem', { name: /New flow/ })).toHaveTextContent('⌘N');
+    expect(within(menu).getByRole('menuitem', { name: /New folder/ })).toHaveTextContent('⇧⌘N');
+
+    await userEvent.click(within(menu).getByRole('menuitem', { name: /New flow/ }));
+    expect(flow().draft).toMatchObject({ kind: 'flow', folder: '', renaming: null });
   });
+});
 
-  it('renders a row as a name over its step count and duration', () => {
+describe('the tree', () => {
+  /** Criterion 11 — folder rows first, then root files; files inside a
+   * folder render one level deeper; nested directories are compact rows. */
+  it('renders folders with counts, then loose flows', () => {
+    seedIndex(
+      ['login.yaml', 'checkout/pix.yml', 'checkout/card.yml', 'a/b/deep.yaml'],
+      ['checkout', 'a', 'a/b'],
+    );
     render(<FlowList />);
 
-    const row = screen.getByRole('button', { name: /pedidos-pendentes\.yaml/ });
+    const rows = screen.getAllByRole('listitem');
+    const labels = rows.map((row) => within(row).getAllByRole('button')[0]?.textContent);
+    expect(labels[0]).toBe('a');
+    // `a` holds only a subdirectory, so its own affordance follows it.
+    expect(labels[1]).toBe('Empty — add a flow');
+    expect(labels[2]).toBe('a/b');
+    expect(labels[3]).toContain('deep.yaml');
+    expect(labels[4]).toBe('checkout');
+    expect(labels[5]).toContain('card.yml');
+    expect(labels[6]).toContain('pix.yml');
+    expect(labels[7]).toContain('login.yaml');
 
-    expect(row).toHaveTextContent('pedidos-pendentes.yaml');
-    expect(row).toHaveTextContent('11 steps · 0:38');
-  });
-
-  it('says so when a flow has never run', () => {
-    render(<FlowList />);
-
-    expect(screen.getByRole('button', { name: /busca-produto\.yaml/ })).toHaveTextContent(
-      '5 steps · never run',
+    expect(screen.getByRole('button', { name: /pix\.yml/ }).closest('li')).toHaveAttribute(
+      'data-depth',
+      '1',
+    );
+    expect(screen.getByRole('button', { name: /login\.yaml/ }).closest('li')).toHaveAttribute(
+      'data-depth',
+      '0',
     );
   });
 
-  it('colours each row dot by its last result', () => {
+  it('shows each folder’s flow count', () => {
+    seedIndex(['checkout/pix.yml', 'checkout/card.yml'], ['checkout']);
     render(<FlowList />);
 
-    const dotOf = (name: string) =>
-      within(screen.getByRole('button', { name: new RegExp(name) }))
-        .getByTestId('flow-dot')
-        .getAttribute('data-state');
-
-    expect(dotOf('teste')).toBe('fail');
-    expect(dotOf('login')).toBe('pass');
-    expect(dotOf('busca-produto')).toBe('never');
+    expect(screen.getByText('2', { selector: '[data-testid="folder-count"]' })).toBeInTheDocument();
   });
 
-  // Criterion 17: an AppKit selection, never a tint.
-  it('marks exactly the active document as the selected row', () => {
+  /** Criterion 12 — the chevron collapses and expands, per session. */
+  it('collapses and expands a folder', async () => {
+    seedIndex(['checkout/pix.yml'], ['checkout']);
     render(<FlowList />);
 
-    const selected = rows().filter((row) => row.getAttribute('data-selected') === 'true');
+    expect(screen.getByRole('button', { name: /pix\.yml/ })).toBeInTheDocument();
 
-    expect(selected).toHaveLength(1);
-    expect(selected[0]).toHaveTextContent('teste.yaml');
+    await userEvent.click(screen.getByRole('button', { name: /^checkout/ }));
+    expect(screen.queryByRole('button', { name: /pix\.yml/ })).not.toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /^checkout/ }));
+    expect(screen.getByRole('button', { name: /pix\.yml/ })).toBeInTheDocument();
   });
 
-  /** Criterion 24 — the row replaces the open document rather than adding one. */
-  it('opens a flow when its row is activated', async () => {
+  /** Criterion 13 — an empty folder stays visible with its affordance. */
+  it('offers "Empty — add a flow" inside an empty folder', async () => {
+    seedIndex([], ['drafts']);
     render(<FlowList />);
 
-    await userEvent.click(screen.getByRole('button', { name: /checkout\.yaml/ }));
+    await userEvent.click(screen.getByRole('button', { name: 'Empty — add a flow' }));
 
-    expect(ui().document).toEqual({ id: 'f-checkout', label: 'checkout.yaml' });
-    expect(rows().filter((row) => row.getAttribute('data-selected') === 'true')).toHaveLength(1);
-    expect(
-      rows().filter((row) => row.getAttribute('data-selected') === 'true')[0],
-    ).toHaveTextContent('checkout.yaml');
+    expect(flow().draft).toMatchObject({ kind: 'flow', folder: 'drafts' });
   });
 
-  /** Criterion 25 — the sidebar is the only place a document is started. */
-  it('opens a new empty document when the new-flow button is activated', async () => {
+  /** Criterion 15 — the open flow's row is the selected one, by path. */
+  it('selects the open flow and opens another on click', async () => {
+    seedIndex(['a.yaml', 'b.yaml']);
+    useFlowStore.setState({ openPath: 'a.yaml' });
+    const read = vi.fn(() => Promise.resolve({ ok: true as const, data: { yaml: FLOW } }));
+    window.conductor.flowRead = read;
     render(<FlowList />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+    expect(screen.getByRole('button', { name: /a\.yaml/ }).closest('li')).toHaveAttribute(
+      'data-selected',
+      'true',
+    );
 
-    expect(ui().document).toEqual({ id: 'f-new-1', label: 'novo-1.yaml' });
+    await userEvent.click(screen.getByRole('button', { name: /b\.yaml/ }));
+    expect(read).toHaveBeenCalledWith('b.yaml');
   });
 
-  // ...and the text it starts on is the seed — the clear-state init — with
-  // none of the previous file's steps surviving into it.
-  it('reseeds the editor on the clear-state init when a document starts', async () => {
-    useFlowStore.getState().appendStep('- tapOn:\n    text: "Entrar"');
+  /** Criterion 37 — every dot is `never` until run history persists. */
+  it('renders run dots as never', () => {
+    seedIndex(['a.yaml']);
     render(<FlowList />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
-
-    expect(useFlowStore.getState().yaml).toBe(FLOW_YAML);
-    expect(useFlowStore.getState().dirty).toBe(false);
+    expect(screen.getByTestId('flow-dot')).toHaveAttribute('data-state', 'never');
   });
+});
 
-  // A brand-new document is not in the suite, so no row can claim it.
-  it('selects no row while a new document is open', async () => {
+describe('search', () => {
+  /** Criterion 14 — the tree flattens to matches; folder rows disappear. */
+  it('flattens matches while the query is live', () => {
+    seedIndex(['login.yaml', 'checkout/pix.yml'], ['checkout']);
+    useUiStore.setState({ query: 'checkout' });
     render(<FlowList />);
 
-    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
-
-    expect(rows().filter((row) => row.getAttribute('data-selected') === 'true')).toEqual([]);
+    expect(screen.getByRole('button', { name: /pix\.yml/ }).closest('li')).toHaveAttribute(
+      'data-depth',
+      '0',
+    );
+    expect(screen.queryByTestId('folder-count')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /login\.yaml/ })).not.toBeInTheDocument();
   });
 
-  /** Criterion 18. */
-  it('shows the sparkles glyph on an AI-authored row that is at rest', () => {
+  it('says when nothing matches', () => {
+    seedIndex(['login.yaml']);
+    useUiStore.setState({ query: 'zzz' });
     render(<FlowList />);
 
-    const row = screen.getByRole('button', { name: /retirada-loja\.yaml/ }).closest('li');
-
-    expect(within(row as HTMLElement).getByTestId('ai-authored')).toBeInTheDocument();
-    expect(
-      within(row as HTMLElement).queryByRole('button', { name: 'Flow actions' }),
-    ).not.toBeInTheDocument();
+    expect(screen.getByText('Nothing matches “zzz”.')).toBeInTheDocument();
   });
+});
 
-  it('shows nothing on a hand-written row that is at rest', () => {
+describe('the draft row', () => {
+  /** Criteria 16–17 — one editable row in place; Enter commits. */
+  it('commits a typed name on Enter', async () => {
+    seedIndex([]);
+    const create = vi.fn(() => Promise.resolve({ ok: true as const, data: { path: 'pix.yaml' } }));
+    window.conductor.flowCreate = create;
+    window.conductor.flowRead = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { yaml: FLOW } }),
+    );
     render(<FlowList />);
-
-    const row = screen.getByRole('button', { name: /login\.yaml/ }).closest('li');
-
-    expect(within(row as HTMLElement).queryByTestId('ai-authored')).not.toBeInTheDocument();
-    expect(
-      within(row as HTMLElement).queryByRole('button', { name: 'Flow actions' }),
-    ).not.toBeInTheDocument();
-  });
-
-  it('reveals the overflow button on hover, in place of the sparkles', async () => {
-    render(<FlowList />);
-    const row = screen
-      .getByRole('button', { name: /retirada-loja\.yaml/ })
-      .closest('li') as HTMLElement;
-
-    await userEvent.hover(row);
-
-    expect(within(row).getByRole('button', { name: 'Flow actions' })).toBeInTheDocument();
-    expect(within(row).queryByTestId('ai-authored')).not.toBeInTheDocument();
-  });
-
-  it('hides the overflow button again once the pointer leaves', async () => {
-    render(<FlowList />);
-    const row = screen.getByRole('button', { name: /login\.yaml/ }).closest('li') as HTMLElement;
-
-    await userEvent.hover(row);
-    await userEvent.unhover(row);
-
-    expect(within(row).queryByRole('button', { name: 'Flow actions' })).not.toBeInTheDocument();
-  });
-
-  // The selected row keeps its actions: it is the row people act on most.
-  it('keeps the overflow button on the selected row', () => {
-    render(<FlowList />);
-    const row = screen.getByRole('button', { name: /teste\.yaml/ }).closest('li') as HTMLElement;
-
-    expect(within(row).getByRole('button', { name: 'Flow actions' })).toBeInTheDocument();
-  });
-
-  // Criterion 54: a keyboard user has to be able to reach the same actions.
-  it('reveals the overflow button when the row takes focus', async () => {
-    render(<FlowList />);
-    const row = screen.getByRole('button', { name: /login\.yaml/ }).closest('li') as HTMLElement;
-
-    await userEvent.click(within(row).getByRole('button', { name: /login\.yaml/ }));
-
-    expect(within(row).getByRole('button', { name: 'Flow actions' })).toBeInTheDocument();
-  });
-
-  /** Criteria 19–20. */
-  describe('search', () => {
-    it('filters rows by a case-insensitive substring of the file name', async () => {
-      render(<FlowList />);
-
-      await userEvent.type(screen.getByRole('searchbox', { name: 'Search flows' }), 'CHECK');
-
-      expect(rowNames()).toEqual([expect.stringContaining('checkout.yaml')]);
+    act(() => {
+      flow().startDraft('flow', '');
     });
 
-    it('matches anywhere in the name, not just at the start', async () => {
-      render(<FlowList />);
+    await userEvent.keyboard('pix{Enter}');
 
-      await userEvent.type(screen.getByRole('searchbox', { name: 'Search flows' }), 'produto');
+    expect(create).toHaveBeenCalledExactlyOnceWith('', 'pix');
+  });
 
-      expect(rowNames()).toEqual([expect.stringContaining('busca-produto.yaml')]);
+  it('cancels on Escape', async () => {
+    seedIndex([]);
+    render(<FlowList />);
+    act(() => {
+      flow().startDraft('flow', '');
     });
 
-    it('says so when nothing matches', async () => {
-      render(<FlowList />);
+    await userEvent.keyboard('{Escape}');
 
-      await userEvent.type(screen.getByRole('searchbox', { name: 'Search flows' }), 'zzz');
+    expect(flow().draft).toBeNull();
+  });
 
-      expect(screen.getByText('Nothing matches “zzz”.')).toBeInTheDocument();
-      expect(screen.queryAllByRole('listitem')).toHaveLength(0);
-    });
-
-    it('shows every flow again once the query is cleared', async () => {
-      render(<FlowList />);
-      await userEvent.type(screen.getByRole('searchbox', { name: 'Search flows' }), 'zzz');
-
-      act(() => {
-        ui().clearQuery();
+  /** Criterion 17 — the inline error sits under the field, editing goes on. */
+  it('shows the collision message under the field', () => {
+    seedIndex([]);
+    render(<FlowList />);
+    act(() => {
+      useFlowStore.setState({
+        draft: {
+          kind: 'flow',
+          folder: '',
+          renaming: null,
+          value: 'pix',
+          error: '“pix.yaml” already exists in this folder.',
+        },
       });
-
-      expect(rows()).toHaveLength(FLOWS.length);
     });
+
+    expect(screen.getByText('“pix.yaml” already exists in this folder.')).toBeInTheDocument();
+    expect(screen.getByRole('textbox', { name: 'Flow name' })).toBeInTheDocument();
   });
 
-  it('offers the persistent actions on a bottom bar', () => {
+  /** Criterion 21 — renaming swaps the row for the draft, prefilled. */
+  it('prefills a rename with the current name', () => {
+    seedIndex(['checkout/pix.yml'], ['checkout']);
+    render(<FlowList />);
+    act(() => {
+      flow().startRename('flow', 'checkout/pix.yml');
+    });
+
+    expect(screen.getByRole('textbox', { name: 'Flow name' })).toHaveValue('pix.yml');
+    expect(screen.queryByRole('button', { name: /pix\.yml/ })).not.toBeInTheDocument();
+  });
+});
+
+describe('the context menus', () => {
+  /** Criterion 25 — the flow row's menu, exactly, with Run now gated. */
+  it('offers the flow commands, Run now disabled with no device', async () => {
+    seedIndex(['pix.yaml']);
     render(<FlowList />);
 
-    expect(screen.getByRole('button', { name: 'Run whole suite' })).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Settings' })).toBeInTheDocument();
+    await userEvent.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByRole('button', { name: /pix\.yaml/ }),
+    });
+
+    const menu = screen.getByRole('menu');
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual([
+      'Open in editor',
+      'Rename…',
+      'Duplicate',
+      'New flow here',
+      'Run now',
+      'Delete flow',
+    ]);
+    expect(within(menu).getByRole('menuitem', { name: 'Run now' })).toBeDisabled();
+  });
+
+  /** Criterion 25 — Run now reads the saved file and starts the run. */
+  it('runs the saved flow through run:start', async () => {
+    seedIndex(['pix.yaml']);
+    useDeviceStore.setState({ pickedId: 'device-1' });
+    window.conductor.flowRead = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { yaml: FLOW } }),
+    );
+    const runStart = vi.fn(() => Promise.resolve({ ok: true as const, data: { runId: 'run-1' } }));
+    window.conductor.runStart = runStart;
+    render(<FlowList />);
+
+    await userEvent.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByRole('button', { name: /pix\.yaml/ }),
+    });
+    await userEvent.click(screen.getByRole('menuitem', { name: 'Run now' }));
+
+    await vi.waitFor(() => {
+      expect(runStart).toHaveBeenCalledExactlyOnceWith('device-1', FLOW);
+    });
+    expect(useUiStore.getState().lowerPanel).toBe('run');
+  });
+
+  /** Criterion 26 — the folder row's menu. */
+  it('offers the folder commands under the folder title', async () => {
+    seedIndex(['checkout/pix.yml'], ['checkout']);
+    render(<FlowList />);
+
+    await userEvent.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByRole('button', { name: /^checkout/ }),
+    });
+
+    const menu = screen.getByRole('menu');
+    expect(within(menu).getByText('checkout/')).toBeInTheDocument();
+    expect(
+      within(menu)
+        .getAllByRole('menuitem')
+        .map((item) => item.textContent),
+    ).toEqual(['New flow here', 'Rename folder…', 'Delete folder']);
+  });
+
+  it('starts the draft in the clicked row’s folder', async () => {
+    seedIndex(['checkout/pix.yml'], ['checkout']);
+    render(<FlowList />);
+
+    await userEvent.pointer({
+      keys: '[MouseRight]',
+      target: screen.getByRole('button', { name: /pix\.yml/ }),
+    });
+    await userEvent.click(screen.getByRole('menuitem', { name: 'New flow here' }));
+
+    expect(flow().draft).toMatchObject({ kind: 'flow', folder: 'checkout' });
+  });
+});
+
+describe('the delete confirmation', () => {
+  /** Criterion 23 — names the target as conductor/<path>, destructive verb. */
+  it('confirms a flow delete and performs it', async () => {
+    seedIndex(['checkout/pix.yml'], ['checkout']);
+    const remove = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { path: 'checkout/pix.yml' } }),
+    );
+    window.conductor.flowDelete = remove;
+    render(<FlowList />);
+    act(() => {
+      flow().askDelete('flow', 'checkout/pix.yml');
+    });
+
+    expect(screen.getByText('Delete “pix.yml”?')).toBeInTheDocument();
+    expect(
+      screen.getByText('The flow is removed from conductor/. This cannot be undone here.'),
+    ).toBeInTheDocument();
+    expect(screen.getByText('conductor/checkout/pix.yml')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: /Delete flow/ }));
+    expect(remove).toHaveBeenCalledExactlyOnceWith('checkout/pix.yml');
+  });
+
+  /** Criterion 23 — a folder says how many flows go with it, listing up to
+   * four and folding the rest into "+N more". */
+  it('lists what goes with a folder, up to four', () => {
+    seedIndex(
+      [
+        'checkout/a.yml',
+        'checkout/b.yml',
+        'checkout/c.yml',
+        'checkout/d.yml',
+        'checkout/e.yml',
+        'checkout/nested/f.yml',
+      ],
+      ['checkout', 'checkout/nested'],
+    );
+    render(<FlowList />);
+    act(() => {
+      flow().askDelete('folder', 'checkout');
+    });
+
+    const dialog = within(screen.getByRole('dialog'));
+    expect(dialog.getByText('Delete “checkout”?')).toBeInTheDocument();
+    expect(
+      dialog.getByText(
+        'The folder and the 6 flows in it are removed from conductor/. This cannot be undone here.',
+      ),
+    ).toBeInTheDocument();
+    expect(dialog.getByText('conductor/checkout/')).toBeInTheDocument();
+    expect(dialog.getByText('a.yml')).toBeInTheDocument();
+    expect(dialog.getByText('d.yml')).toBeInTheDocument();
+    expect(dialog.queryByText('e.yml')).not.toBeInTheDocument();
+    expect(dialog.getByText('+2 more')).toBeInTheDocument();
+  });
+
+  it('cancels without deleting', async () => {
+    seedIndex(['a.yaml']);
+    const remove = vi.fn();
+    window.conductor.flowDelete = remove;
+    render(<FlowList />);
+    act(() => {
+      flow().askDelete('flow', 'a.yaml');
+    });
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+    expect(remove).not.toHaveBeenCalled();
+    expect(flow().confirm).toBeNull();
+  });
+});
+
+describe('the empty and error states', () => {
+  /** Criterion 35 — a first run has no flows and says what to do next. */
+  it('shows the empty state with a New flow action', async () => {
+    seedIndex([]);
+    render(<FlowList />);
+
+    expect(screen.getByText('No flows yet')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+    expect(flow().draft).toMatchObject({ kind: 'flow', folder: '' });
+  });
+
+  /** Criterion 36 — never a silent empty tree: the message and a retry. */
+  it('shows the workspace error with a retry', async () => {
+    useFlowStore.setState({
+      indexError: {
+        code: 'flow/workspace-unavailable',
+        message: 'The flows folder could not be opened.',
+      },
+    });
+    const list = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { flows: [], folders: [] } }),
+    );
+    window.conductor.flowList = list;
+    render(<FlowList />);
+
+    expect(screen.getByText('The flows folder could not be opened.')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+    expect(list).toHaveBeenCalledTimes(1);
   });
 });

@@ -58,12 +58,23 @@ describe('the bridge', () => {
       'configGet',
       'deviceAppInfo',
       'deviceList',
+      'flowCreate',
+      'flowCreateFolder',
+      'flowDelete',
+      'flowDeleteFolder',
+      'flowDuplicate',
+      'flowList',
+      'flowRead',
+      'flowRename',
+      'flowRenameFolder',
+      'flowSave',
       'maestroSnapshot',
       'maestroSynthesizeSelector',
       'mirrorInput',
       'mirrorStart',
       'mirrorStop',
       'onDeviceChanged',
+      'onFlowChanged',
       'onMirrorEvent',
       'onRunEvent',
       'runCancel',
@@ -96,6 +107,16 @@ describe('the bridge', () => {
     await api.maestroSynthesizeSelector('snapshot-1', [1, 2, 0]);
     await api.runStart('R9QYC01EMXL', 'appId: x\n---\n- launchApp\n');
     await api.runCancel('run-1');
+    await api.flowList();
+    await api.flowRead('checkout/pix.yml');
+    await api.flowSave('checkout/pix.yml', 'appId: x\n---\n');
+    await api.flowCreate('checkout', 'card');
+    await api.flowCreateFolder('drafts');
+    await api.flowRename('checkout/pix.yml', 'pix-2');
+    await api.flowRenameFolder('drafts', 'ideas');
+    await api.flowDuplicate('checkout/pix.yml');
+    await api.flowDelete('checkout/pix.yml');
+    await api.flowDeleteFolder('drafts');
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
@@ -106,6 +127,16 @@ describe('the bridge', () => {
       { channel: CHANNELS.maestroSynthesizeSelector, args: ['snapshot-1', [1, 2, 0]] },
       { channel: CHANNELS.runStart, args: ['R9QYC01EMXL', 'appId: x\n---\n- launchApp\n'] },
       { channel: CHANNELS.runCancel, args: ['run-1'] },
+      { channel: CHANNELS.flowList, args: [] },
+      { channel: CHANNELS.flowRead, args: ['checkout/pix.yml'] },
+      { channel: CHANNELS.flowSave, args: ['checkout/pix.yml', 'appId: x\n---\n'] },
+      { channel: CHANNELS.flowCreate, args: ['checkout', 'card'] },
+      { channel: CHANNELS.flowCreateFolder, args: ['drafts'] },
+      { channel: CHANNELS.flowRename, args: ['checkout/pix.yml', 'pix-2'] },
+      { channel: CHANNELS.flowRenameFolder, args: ['drafts', 'ideas'] },
+      { channel: CHANNELS.flowDuplicate, args: ['checkout/pix.yml'] },
+      { channel: CHANNELS.flowDelete, args: ['checkout/pix.yml'] },
+      { channel: CHANNELS.flowDeleteFolder, args: ['drafts'] },
     ]);
   });
 
@@ -129,13 +160,14 @@ describe('a subscription', () => {
     ['onDeviceChanged', PUSH_CHANNELS.deviceChanged],
     ['onMirrorEvent', PUSH_CHANNELS.mirrorEvent],
     ['onRunEvent', PUSH_CHANNELS.runEvent],
+    ['onFlowChanged', PUSH_CHANNELS.flowChanged],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
     expect(listeners.map((entry) => entry.channel)).toEqual([channel]);
   });
 
-  it.each(['onDeviceChanged', 'onMirrorEvent', 'onRunEvent'] as const)(
+  it.each(['onDeviceChanged', 'onMirrorEvent', 'onRunEvent', 'onFlowChanged'] as const)(
     '%s returns the unsubscribe that removes exactly its own listener',
     (name) => {
       const unsubscribe = api[name](() => {});

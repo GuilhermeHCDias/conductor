@@ -26,12 +26,16 @@ function connectDevice(): void {
   });
 }
 
+/** One command, like the flow the shell used to seed from the fixture. */
+const FLOW_YAML = 'appId: com.example.app\n---\n- launchApp:\n    clearState: true\n';
+
 beforeEach(() => {
   localStorage.clear();
   resetUiStore();
   resetDeviceStore();
   resetFlowStore();
   resetRunStore();
+  useFlowStore.setState({ openPath: 'teste.yaml', yaml: FLOW_YAML });
 });
 
 /** Criteria 10–13. */
@@ -83,15 +87,28 @@ describe('Toolbar', () => {
     expect(screen.getByText('2 commands · saved on this Mac')).toBeInTheDocument();
   });
 
-  it('follows the active document when the tab changes', () => {
+  it('follows the open flow when another one opens', () => {
     render(<Toolbar />);
 
     act(() => {
-      ui().openFlow('f-checkout');
+      useFlowStore.setState({ openPath: 'checkout/checkout.yaml', yaml: FLOW_YAML });
     });
 
     expect(screen.getByText('checkout.yaml')).toBeInTheDocument();
     expect(screen.queryByText('teste.yaml')).not.toBeInTheDocument();
+  });
+
+  /** Criterion 35 — with nothing open the title says so, and Run stays
+   * disabled through its own empty-flow guard. */
+  it('goes quiet when no flow is open', () => {
+    connectDevice();
+    act(() => {
+      useFlowStore.setState({ openPath: null, yaml: '' });
+    });
+    render(<Toolbar />);
+
+    expect(screen.getByText('No flow open')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
   });
 
   it('toggles the sidebar', async () => {

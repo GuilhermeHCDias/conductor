@@ -1,5 +1,4 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { OPEN_DOCUMENT } from '../fixtures/flows';
 import { setPrefersDark } from '../test-setup';
 import {
   APPEARANCE_KEY,
@@ -143,48 +142,6 @@ describe('sidebar', () => {
     expect(selectMirrorWidth(ui())).toBe(268);
     ui().setWindowWidth(900);
     expect(selectMirrorWidth(ui())).toBe(250);
-  });
-});
-
-/** Criteria 24 and 25 — the one open document. */
-describe('the open document', () => {
-  it('starts on the fixture document', () => {
-    expect(ui().document).toEqual(OPEN_DOCUMENT);
-  });
-
-  it('replaces the open document when a flow is opened from the sidebar', () => {
-    ui().openFlow('f-checkout');
-
-    expect(ui().document).toEqual({ id: 'f-checkout', label: 'checkout.yaml' });
-  });
-
-  // teste.yaml is the dirty one; nothing opened after it inherits that mark.
-  it('leaves none of the previous document behind', () => {
-    ui().openFlow('f-checkout');
-
-    expect(ui().document.dirty).toBeUndefined();
-  });
-
-  it('ignores a flow id that is not in the suite', () => {
-    ui().openFlow('f-nope');
-
-    expect(ui().document).toEqual(OPEN_DOCUMENT);
-  });
-
-  it('opens a new empty document', () => {
-    ui().newFlow();
-
-    expect(ui().document).toEqual({ id: 'f-new-1', label: 'novo-1.yaml' });
-  });
-
-  // Monotonic, so a new document never lands on the id of an earlier one.
-  it('never reuses a number', () => {
-    ui().newFlow();
-    ui().openFlow('f-login');
-
-    ui().newFlow();
-
-    expect(ui().document).toEqual({ id: 'f-new-2', label: 'novo-2.yaml' });
   });
 });
 
