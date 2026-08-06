@@ -189,6 +189,44 @@ describe('resolve events', () => {
     expect(store().resolveError?.body).toContain('loja-verde/pnp-fast-mode');
     expect(store().resolveError?.command).toBe('gh auth login');
   });
+
+  /**
+   * A missing `gh` fails before main's handler even returns, so its events
+   * are delivered ahead of the invoke reply — before the store knows its
+   * resolveId. They must wait for the reply, not vanish: this is the
+   * first-run failure whose whole point is showing `brew install gh`.
+   */
+  it('keeps a failure that outruns the invoke reply', async () => {
+    window.conductor.repoResolve = vi.fn(() => {
+      store().applyResolveEvent(ok({ kind: 'step', resolveId: 9, step: 0 }));
+      store().applyResolveEvent(
+        ok({ kind: 'failed', resolveId: 9, code: 'repo/gh-missing', message: 'not installed' }),
+      );
+      return Promise.resolve(ok({ resolveId: 9 }));
+    });
+    store().setUrl('github.com/loja-verde/pnp-fast-mode');
+
+    await store().submit();
+
+    expect(store().phase).toBe('error');
+    expect(store().resolveError?.command).toBe('brew install gh');
+  });
+
+  /** The buffer holds only the reply's own resolution — an early event from
+   * a superseded one still dies at the drain. */
+  it('drops a buffered event that belongs to another resolution', async () => {
+    window.conductor.repoResolve = vi.fn(() => {
+      store().applyResolveEvent(
+        ok({ kind: 'failed', resolveId: 3, code: 'repo/gh-missing', message: 'stale' }),
+      );
+      return Promise.resolve(ok({ resolveId: 9 }));
+    });
+    store().setUrl('github.com/loja-verde/pnp-fast-mode');
+
+    await store().submit();
+
+    expect(store().phase).toBe('resolving');
+  });
 });
 
 describe('confirm', () => {
@@ -232,6 +270,28 @@ describe('confirm', () => {
 
     expect(store().phase).toBe('error');
     expect(store().resolveError?.body).toBe('That resolution is not pending.');
+  });
+
+  /** A double-click is one confirm: the second call while the first is in
+   * flight must not earn a spurious resolve-not-found surface. */
+  it('confirms once however fast the clicks come', async () => {
+    await found();
+    let settle: (value: Result<RepoState>) => void = () => {};
+    const connect = vi.fn(
+      () =>
+        new Promise<Result<RepoState>>((resolve) => {
+          settle = resolve;
+        }),
+    );
+    window.conductor.repoConnect = connect;
+
+    const first = store().confirm();
+    const second = store().confirm();
+    settle(ok({ repos: [repo('slug')], active: 'slug' }));
+    await Promise.all([first, second]);
+
+    expect(connect).toHaveBeenCalledTimes(1);
+    expect(store().active).toBe('slug');
   });
 });
 

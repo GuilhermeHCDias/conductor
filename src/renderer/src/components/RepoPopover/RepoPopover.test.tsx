@@ -35,16 +35,20 @@ function popover(overrides: Partial<RepoPopoverProps> = {}): RepoPopoverProps {
 }
 
 describe('the repo popover', () => {
+  /** Criterion: every connected repo, bundle id AND flow count — the check
+   * marks the active row in addition to its count, never instead of it. */
   it('lists every connected repo with its bundle id and flow count', () => {
     render(<RepoPopover {...popover()} />);
 
     const active = screen.getByRole('menuitem', { name: /pnp-fast-mode/ });
     expect(within(active).getByText('com.lojaverde.pnp-slug')).toBeInTheDocument();
+    expect(within(active).getByText('4')).toBeInTheDocument();
     const other = screen.getByRole('menuitem', { name: /other-app/ });
-    expect(within(other).getByText('empty for now')).toBeInTheDocument();
+    expect(within(other).getByText('com.lojaverde.other-slug')).toBeInTheDocument();
+    expect(within(other).getByText('0')).toBeInTheDocument();
   });
 
-  it('checks the active repo and counts the others', () => {
+  it('checks only the active repo', () => {
     render(<RepoPopover {...popover()} />);
 
     const active = screen.getByRole('menuitem', { name: /pnp-fast-mode/ });

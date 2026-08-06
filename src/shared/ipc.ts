@@ -471,8 +471,10 @@ export const IPC = {
     request: noArguments,
     response: z.object({ text: z.string() }),
   },
+  // Bounded like `mirror:input`'s text: the only thing ever written is one
+  // of our own short commands, so anything huge is a bug, not a payload.
   [CHANNELS.appWriteClipboard]: {
-    request: z.tuple([z.string()]),
+    request: z.tuple([z.string().max(2048)]),
     response: z.object({ text: z.string() }),
   },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
@@ -481,7 +483,8 @@ export const IPC = {
   // derives slug and paths itself. The answer is the id, immediately —
   // progress arrives as `repo:resolve-event` pushes, and a clone against a
   // remote hangs often enough that awaiting it here would freeze the window.
-  [CHANNELS.repoResolve]: { request: z.tuple([z.string()]), response: repoResolveRef },
+  // Bounded: no repository address is measured in kilobytes.
+  [CHANNELS.repoResolve]: { request: z.tuple([z.string().max(2048)]), response: repoResolveRef },
   // Confirming names the resolution main already holds; the derived facts
   // never make a renderer round-trip.
   [CHANNELS.repoConnect]: { request: z.tuple([resolveId]), response: repoState },

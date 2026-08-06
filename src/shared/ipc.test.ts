@@ -719,6 +719,12 @@ describe('repo:resolve', () => {
     expect(schema.request.safeParse([]).success).toBe(false);
   });
 
+  /** No repository address is measured in kilobytes — a multi-megabyte
+   * paste is refused at the boundary, not round-tripped. */
+  it('refuses an address past any honest length', () => {
+    expect(schema.request.safeParse(['g'.repeat(3000)]).success).toBe(false);
+  });
+
   /** The start invoke returns an id immediately; progress arrives as
    * `repo:resolve-event` pushes, never in this answer. */
   it('answers with the resolve id and nothing else', () => {
@@ -783,6 +789,11 @@ describe('app:write-clipboard', () => {
     expect(schema.request.safeParse(['gh auth login']).success).toBe(true);
     expect(schema.request.safeParse([]).success).toBe(false);
     expect(schema.response.safeParse({ text: 'gh auth login' }).success).toBe(true);
+  });
+
+  /** Only our own short commands are ever written; anything huge is a bug. */
+  it('refuses a write past any honest command length', () => {
+    expect(schema.request.safeParse(['x'.repeat(3000)]).success).toBe(false);
   });
 });
 

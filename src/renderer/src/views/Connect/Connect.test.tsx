@@ -44,7 +44,7 @@ describe('the connect screen', () => {
   it('wears the real Conductor icon as its mark', () => {
     render(<Connect />);
 
-    expect(screen.getByTestId('connect-mark')).toHaveAttribute('src');
+    expect(screen.getByTestId('connect-mark').getAttribute('src')).toContain('icon.png');
   });
 
   it('focuses the address field on arrival', () => {

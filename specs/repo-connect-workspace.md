@@ -1,5 +1,5 @@
 # Repo connect & workspace switching
-status: doing
+status: done
 created: 2026-08-06
 
 ## Goal
@@ -86,3 +86,9 @@ The user's only configuration is pasting the GitHub URL of their Expo app reposi
 - (impl) `CONFIG.APP_ID`/`REPO_URL` removed (§12.6): DeviceService takes an appId getter, FlowService's header appId rides the workspace swap. CONFIG gains `GH_PATH` (same override pattern as `ADB_PATH`/`MAESTRO_PATH`).
 - (impl) `clipboard` and `package` glyphs vendored from Lucide v0.577 into `Icon.tsx` (CRepo.jsx names them; the DS asset folder lacks them).
 - (impl) RepoBar renders above FlowList inside an App-level sidebar wrapper (FlowList's asserted grid untouched); AddRepoDialog is its own view, opened via `repo.store` ui state.
+- (verify) A resolution that fails before main's handler returns (gh missing does — the prefix is synchronous) delivers its events ahead of the invoke reply; the store buffers unknown-id events while resolving and drains them, id-checked, when the reply names the resolution. Found by the independent verification pass; pinned by a store test.
+- (verify) The popover shows the flow count on **every** row, the check beside the active one's count — the criterion's additive reading wins over the kit's either/or (`CRepo.jsx:284`); rows carry the raw number, as the kit does.
+- (verify) `confirm` is single-flight: a double-click on "Open <app>" issues one `repo:connect`, never a spurious resolve-not-found surface.
+- (verify) `repo:resolve` and `app:write-clipboard` requests are bounded (2048 chars) — no address or command is measured in kilobytes.
+- (verify, known trade-off) A superseded/disposed mid-clone resolution leaves its partial directory in `userData/repos/<slug>`; discarding it there would race the next clone of the same slug, so it waits for the next resolve of that repo (which clears leftovers first). Never persisted as connected either way.
+- (note) The design canon this spec cites (`CRepo.jsx`, `connect.html`, connect screenshots) exists only untracked in the main checkout, not in git — strings were reproduced from it at implementation time; committing the kit file is the engineer's call, not this branch's.

@@ -89,6 +89,16 @@ describe('the steps', () => {
     expect(screen.getByText('Finding the app module')).toBeInTheDocument();
     expect(screen.getByText('Looking for conductor/')).toBeInTheDocument();
   });
+
+  /** `step` counts completed stages: behind it done, at it live, past it
+   * waiting — the visible half of the real-stages criterion. */
+  it('marks done, active and pending from the completed count', () => {
+    render(<RepoResolver {...resolver({ url: 'x', phase: 'resolving', step: 1 })} />);
+
+    expect(screen.getByText('Reading the repository')).toHaveAttribute('data-state', 'done');
+    expect(screen.getByText('Finding the app module')).toHaveAttribute('data-state', 'active');
+    expect(screen.getByText('Looking for conductor/')).toHaveAttribute('data-state', 'pending');
+  });
 });
 
 describe('the found card', () => {

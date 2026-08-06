@@ -1,4 +1,10 @@
-import type { ConnectedRepo, PushPayload, RepoState, ResolvedRepo } from '@shared/ipc';
+import type {
+  ConnectedRepo,
+  PushPayload,
+  RepoResolveEvent,
+  RepoState,
+  ResolvedRepo,
+} from '@shared/ipc';
 import { create } from 'zustand';
 import { type RepoErrorSurface, repoErrorSurface } from '../lib/repo-errors';
 import { type ParsedRepoUrl, parseRepoUrl } from '../lib/repo-url';
@@ -54,6 +60,17 @@ export type RepoStoreState = RepoData & RepoActions;
 let currentResolveId: number | null = null;
 /** What the pasted URL parsed to — the error surfaces name the repo. */
 let lastParsed: ParsedRepoUrl | null = null;
+/**
+ * Events that arrived before the `repo:resolve` reply told us our id. A
+ * resolution that fails before main's handler returns — gh missing does —
+ * has its events delivered *ahead* of the invoke reply, and dropping them
+ * would leave the spinner running forever. They wait here and drain, id
+ * checked, the moment the reply lands.
+ */
+let pendingEvents: RepoResolveEvent[] = [];
+/** One confirm at a time — a double-click must not earn a spurious
+ * resolve-not-found surface. */
+let confirming = false;
 
 function createRepoData(): RepoData {
   return {
@@ -104,6 +121,12 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
       return;
     }
     const event = payload.data;
+    if (currentResolveId === null && get().phase === 'resolving') {
+      // The reply has not named our resolution yet; hold the event rather
+      // than guess. `submit` drains this the moment the id arrives.
+      pendingEvents.push(event);
+      return;
+    }
     if (currentResolveId === null || event.resolveId !== currentResolveId) {
       // A superseded or abandoned resolution — someone else's story.
       return;
@@ -168,9 +191,12 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
       });
       return;
     }
+    currentResolveId = null;
+    pendingEvents = [];
     set({ phase: 'resolving', step: 0, found: null, resolveError: null });
     const result = await window.conductor.repoResolve(url);
     if (!result.ok) {
+      pendingEvents = [];
       set({
         phase: 'error',
         resolveError: repoErrorSurface(result.error.code, result.error.message, parsed),
@@ -178,26 +204,38 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
       return;
     }
     currentResolveId = result.data.resolveId;
+    // Whatever outran the reply replays now, through the same guard — an
+    // early event of another resolution still dies on the id check.
+    const queued = pendingEvents;
+    pendingEvents = [];
+    for (const event of queued) {
+      get().applyResolveEvent({ ok: true, data: event });
+    }
   },
 
   /** "Open <app>" — names the resolution and nothing else; main persists
    * what it already derived (§9.3). */
   confirm: async () => {
     const resolveId = currentResolveId;
-    if (resolveId === null || get().phase !== 'found') {
+    if (resolveId === null || get().phase !== 'found' || confirming) {
       return;
     }
-    const result = await window.conductor.repoConnect(resolveId);
-    if (!result.ok) {
-      set({
-        phase: 'error',
-        resolveError: repoErrorSurface(result.error.code, result.error.message, lastParsed),
-      });
-      return;
+    confirming = true;
+    try {
+      const result = await window.conductor.repoConnect(resolveId);
+      if (!result.ok) {
+        set({
+          phase: 'error',
+          resolveError: repoErrorSurface(result.error.code, result.error.message, lastParsed),
+        });
+        return;
+      }
+      get().applyState({ ok: true, data: result.data });
+      get().resetResolver();
+      set({ addOpen: false });
+    } finally {
+      confirming = false;
     }
-    get().applyState({ ok: true, data: result.data });
-    get().resetResolver();
-    set({ addOpen: false });
   },
 
   switchRepo: async (slug) => {
@@ -243,6 +281,7 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
   resetResolver: () => {
     currentResolveId = null;
     lastParsed = null;
+    pendingEvents = [];
     set({ phase: 'idle', step: 0, found: null, resolveError: null });
   },
 }));
@@ -258,6 +297,8 @@ function isConnected(repos: readonly ConnectedRepo[], parsed: ParsedRepoUrl): bo
 export function resetRepoStore(): void {
   currentResolveId = null;
   lastParsed = null;
+  pendingEvents = [];
+  confirming = false;
   useRepoStore.setState(createRepoData());
 }
 

@@ -1,6 +1,6 @@
 import type { ConnectedRepo } from '@shared/ipc';
 import { type JSX, useEffect } from 'react';
-import { flowCountLabel, primaryBundleId } from '../../lib/repo-labels';
+import { primaryBundleId } from '../../lib/repo-labels';
 import { Icon } from '../Icon/Icon';
 import styles from './RepoPopover.module.css';
 
@@ -79,7 +79,8 @@ type RepoRowProps = {
   readonly onSelect: (slug: string) => void;
 };
 
-/** The active row wears the check; the others carry their flow count. */
+/** Every row carries its flow count (the criterion asks for it on all of
+ * them); the active one wears the check beside its count, not instead. */
 function RepoRow({ repo, active, onSelect }: RepoRowProps): JSX.Element {
   return (
     <button
@@ -96,11 +97,12 @@ function RepoRow({ repo, active, onSelect }: RepoRowProps): JSX.Element {
         <span className={styles.rowName}>{repo.name}</span>
         <span className={styles.rowBundle}>{primaryBundleId(repo.appId)}</span>
       </span>
-      {active ? (
-        <Icon className={styles.check} data-testid="repo-active-check" name="check" size={13} />
-      ) : (
-        <span className={styles.count}>{flowCountLabel(repo.flowCount)}</span>
-      )}
+      <span className={styles.trailing}>
+        <span className={styles.count}>{repo.flowCount}</span>
+        {active ? (
+          <Icon className={styles.check} data-testid="repo-active-check" name="check" size={13} />
+        ) : null}
+      </span>
     </button>
   );
 }
