@@ -1,0 +1,347 @@
+import { describe, expect, it } from 'vitest';
+import { CHANNELS, ERROR_CODES, IPC, PUSH, PUSH_CHANNELS } from './ipc';
+
+/**
+ * The contract itself, pinned. These names cross a process boundary and a
+ * version boundary — main validates against them, the preload exposes them and
+ * the renderer types itself from them, so a rename that compiles is still a
+ * break.
+ */
+
+describe('the channels', () => {
+  /**
+   * `viewer:open` is gone with the feature behind it (criterion 24).
+   *
+   * ⚠️ Nothing was added in its place. `hierarchy` and `screenshot` are Gateway
+   * capabilities this spec keeps in main on purpose (criterion 3): there is no
+   * renderer code that calls them yet, and a channel with no caller is surface
+   * that has to be maintained before anyone knows what shape it wants. The
+   * snapshot spec is the one that needs this data in the renderer, and it is
+   * where the channels belong.
+   */
+  it('are exactly the invokes this app declares', () => {
+    expect(Object.values(CHANNELS)).toEqual([
+      'app:info',
+      'config:get',
+      'device:list',
+      'device:app-info',
+      'mirror:start',
+      'mirror:stop',
+      'mirror:input',
+    ]);
+  });
+
+  /** Criterion 3, stated where a future reader would otherwise add one out of
+   * tidiness. */
+  it('declares no channel for the hierarchy or the screenshot yet', () => {
+    const channels: string[] = [...Object.values(CHANNELS), ...Object.values(PUSH_CHANNELS)];
+
+    expect(channels.filter((channel) => /hierarchy|screenshot|snapshot/.test(channel))).toEqual([]);
+  });
+
+  it('are exactly the pushes this app declares', () => {
+    expect(Object.values(PUSH_CHANNELS)).toEqual(['device:changed', 'mirror:event']);
+  });
+
+  it('read as <domain>:<action> in kebab-case', () => {
+    for (const channel of [...Object.values(CHANNELS), ...Object.values(PUSH_CHANNELS)]) {
+      expect(channel).toMatch(/^[a-z]+:[a-z]+(-[a-z]+)*$/);
+    }
+  });
+
+  /** Criterion 26 — one Zod schema per payload, with no channel left undeclared. */
+  it('every invoke has a request and a response schema', () => {
+    for (const channel of Object.values(CHANNELS)) {
+      expect(IPC[channel]?.request).toBeDefined();
+      expect(IPC[channel]?.response).toBeDefined();
+    }
+  });
+
+  it('every push has a payload schema', () => {
+    for (const channel of Object.values(PUSH_CHANNELS)) {
+      expect(PUSH[channel]).toBeDefined();
+    }
+  });
+});
+
+describe('mirror:start', () => {
+  const schema = IPC[CHANNELS.mirrorStart];
+
+  it('takes the opaque device id and nothing else', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+    expect(schema.request.safeParse([42]).success).toBe(false);
+  });
+
+  /** Criterion 28 — the session id and the stream's own dimensions, immediately.
+   * Frames are never part of this answer. */
+  it('answers with the session and the stream it opened', () => {
+    const parsed = schema.response.safeParse({
+      sessionId: 'mirror-1',
+      codec: 'h264',
+      width: 464,
+      height: 1024,
+      control: true,
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('refuses a stream with no size', () => {
+    expect(schema.response.safeParse({ sessionId: 'mirror-1', codec: 'h264' }).success).toBe(false);
+  });
+
+  /** Criterion 4. A picture with no control is a real state, not a failure: the
+   * panel has to know which one it got before it offers a tap target. */
+  it('says whether the session can be driven as well as watched', () => {
+    const parsed = schema.response.safeParse({
+      sessionId: 'mirror-1',
+      codec: 'h264',
+      width: 464,
+      height: 1024,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+});
+
+describe('mirror:stop', () => {
+  it('takes the session id, not the device id', () => {
+    expect(IPC[CHANNELS.mirrorStop].request.safeParse(['mirror-1']).success).toBe(true);
+    expect(IPC[CHANNELS.mirrorStop].request.safeParse([]).success).toBe(false);
+  });
+});
+
+/**
+ * The outbound half. It names the session rather than the device: control
+ * belongs to the stream that is open, and a tap aimed at a session that has
+ * already been replaced must not reach the device under the new one.
+ */
+describe('mirror:input', () => {
+  const schema = IPC[CHANNELS.mirrorInput];
+  const tap = {
+    type: 'tap',
+    x: 232,
+    y: 534,
+    screenWidth: 464,
+    screenHeight: 1024,
+  };
+
+  it('takes the session id and one input', () => {
+    expect(schema.request.safeParse(['mirror-1', tap]).success).toBe(true);
+    expect(schema.request.safeParse([tap]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1']).success).toBe(false);
+  });
+
+  /**
+   * ⚠️ The screen size travels with the tap because `PositionMapper` drops any
+   * touch whose declared size is not the video's current one — and after a
+   * rotation the renderer is the only side that knows the new size.
+   */
+  it('carries the stream size the tap was aimed at', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, screenWidth: undefined }]).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses a tap outside the stream it names', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, x: -1 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { ...tap, x: 464 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { ...tap, y: 1024 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { ...tap, x: 463, y: 1023 }]).success).toBe(true);
+  });
+
+  it('refuses a screen size the wire cannot carry as a u16', () => {
+    expect(schema.request.safeParse(['mirror-1', { ...tap, screenWidth: 70_000 }]).success).toBe(
+      false,
+    );
+    expect(schema.request.safeParse(['mirror-1', { ...tap, screenWidth: 0 }]).success).toBe(false);
+  });
+
+  it('carries typed text', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'text', text: 'hello' }]).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['mirror-1', { type: 'text', text: '' }]).success).toBe(false);
+  });
+
+  /** `INJECT_TEXT_MAX_LENGTH` in the pinned server. */
+  it('refuses more text than the server will read', () => {
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'a'.repeat(300) }]).success,
+    ).toBe(true);
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'a'.repeat(301) }]).success,
+    ).toBe(false);
+  });
+
+  /** The server's cap is on the bytes it allocates, so the boundary has to
+   * count what the encoder counts. Measuring characters here would pass a
+   * payload the encoder then refuses — the same limit, disagreeing with
+   * itself across two layers. */
+  it('measures the cap in bytes, the way the encoder does', () => {
+    // 200 characters, 400 UTF-8 bytes: under any character count, over the cap.
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'é'.repeat(200) }]).success,
+    ).toBe(false);
+    // 150 characters, 300 bytes: exactly the cap, and still allowed.
+    expect(
+      schema.request.safeParse(['mirror-1', { type: 'text', text: 'é'.repeat(150) }]).success,
+    ).toBe(true);
+  });
+
+  /** Criterion 12. The renderer names a key; Android's numbers stay in main. */
+  it('names a key rather than an Android keycode', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 'backspace' }]).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 67 }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { type: 'key', key: 'meta' }]).success).toBe(
+      false,
+    );
+  });
+
+  it('carries the back action with nothing else', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'back' }]).success).toBe(true);
+  });
+
+  it('refuses an input that is none of those four', () => {
+    expect(schema.request.safeParse(['mirror-1', { type: 'swipe' }]).success).toBe(false);
+    expect(schema.request.safeParse(['mirror-1', { type: 'clipboard' }]).success).toBe(false);
+  });
+
+  it('answers with the session it reached', () => {
+    expect(schema.response.safeParse({ sessionId: 'mirror-1' }).success).toBe(true);
+  });
+});
+
+describe('mirror:event', () => {
+  const schema = PUSH[PUSH_CHANNELS.mirrorEvent];
+
+  /** Criterion 29 — bytes, never a file path. A remote device shares no
+   * filesystem with us (.context.md §10.1 rule 2). */
+  it('carries a frame as bytes', () => {
+    const parsed = schema.safeParse({
+      type: 'frame',
+      sessionId: 'mirror-1',
+      config: false,
+      keyFrame: true,
+      pts: 652021984203,
+      data: new Uint8Array([0, 0, 0, 1, 0x65]),
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it.each([
+    ['a path', '/tmp/frame-0001.h264'],
+    ['nothing at all', undefined],
+    ['a plain array', [0, 0, 0, 1]],
+  ])('refuses a frame whose payload arrived as %s', (_label, data) => {
+    const parsed = schema.safeParse({
+      type: 'frame',
+      sessionId: 'mirror-1',
+      config: false,
+      keyFrame: true,
+      pts: 0,
+      data,
+    });
+
+    expect(parsed.success).toBe(false);
+  });
+
+  /** Criterion 25 — a terminal event, with the code the panel reads. */
+  it('carries the end of a session with a stable code', () => {
+    const parsed = schema.safeParse({
+      type: 'ended',
+      sessionId: 'mirror-1',
+      code: ERROR_CODES.mirrorDeviceLost,
+      message: 'The device closed the mirror stream.',
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  it('is one of exactly those two things', () => {
+    expect(schema.safeParse({ type: 'started', sessionId: 'mirror-1' }).success).toBe(false);
+  });
+});
+
+/** Criterion 31 — the doctor and the panel tell one failure from another by the
+ * code alone, so the codes are part of the contract. */
+describe('the failure codes', () => {
+  it('namespaces every one of them by domain', () => {
+    for (const code of Object.values(ERROR_CODES)) {
+      expect(code).toMatch(/^[a-z]+\/[a-z-]+$/);
+    }
+  });
+
+  it('are unique', () => {
+    const codes = Object.values(ERROR_CODES);
+
+    expect(new Set(codes).size).toBe(codes.length);
+  });
+
+  it('tell the four ways a mirror fails apart', () => {
+    expect([
+      ERROR_CODES.mirrorStartFailed,
+      ERROR_CODES.mirrorHandshakeFailed,
+      ERROR_CODES.mirrorProtocolFailed,
+      ERROR_CODES.mirrorDeviceLost,
+    ]).toEqual([
+      'mirror/start-failed',
+      'mirror/handshake-failed',
+      'mirror/protocol-failed',
+      'mirror/device-lost',
+    ]);
+  });
+
+  /**
+   * Criterion 16 of the control-socket spec. Control failing is its own
+   * condition: the picture is still there, so the panel must not read it as the
+   * stream dying. It is the one mirror code that leaves the video path
+   * untouched.
+   */
+  it('gives a control failure a code of its own', () => {
+    expect(ERROR_CODES.mirrorControlFailed).toBe('mirror/control-failed');
+    expect(ERROR_CODES.mirrorControlFailed).not.toBe(ERROR_CODES.mirrorDeviceLost);
+  });
+
+  /**
+   * Criterion 22. The `maestro mcp` child's failures used to be namespaced
+   * `viewer/`, from when that child existed to open one. Nothing opens a viewer
+   * now, and a code naming a feature the app does not have tells whoever reads
+   * it next exactly the wrong thing.
+   */
+  it('name the mcp session rather than a viewer', () => {
+    expect(Object.values(ERROR_CODES).filter((code) => code.startsWith('viewer/'))).toEqual([]);
+    expect([
+      ERROR_CODES.maestroNotFound,
+      ERROR_CODES.mcpStartFailed,
+      ERROR_CODES.mcpHandshakeTimeout,
+      ERROR_CODES.mcpToolMissing,
+      ERROR_CODES.mcpCallFailed,
+    ]).toEqual([
+      'mcp/maestro-not-found',
+      'mcp/start-failed',
+      'mcp/handshake-timeout',
+      'mcp/tool-missing',
+      'mcp/call-failed',
+    ]);
+  });
+
+  /** There is no URL to trust once nothing opens one (criterion 22). */
+  it('no longer carries a code for an untrusted URL', () => {
+    expect(Object.values(ERROR_CODES)).not.toContain('viewer/untrusted-url');
+  });
+
+  /** The two this spec adds, each distinct from the other and from adb's —
+   * three different failures with three different fixes (criteria 10, 15). */
+  it('tell a bad hierarchy, a failed capture and a missing adb apart', () => {
+    expect([
+      ERROR_CODES.hierarchyParseFailed,
+      ERROR_CODES.captureFailed,
+      ERROR_CODES.adbNotFound,
+    ]).toEqual(['hierarchy/parse-failed', 'capture/failed', 'device/adb-not-found']);
+  });
+});

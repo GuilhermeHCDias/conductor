@@ -1,0 +1,17 @@
+<!-- @dsCard group="Glass" viewport="700x250" name="macOS conventions" subtitle="The details that make a window read as native rather than Apple-ish" -->
+<!DOCTYPE html><html data-theme="aurora-dark"><head><meta charset="utf-8"><link rel="stylesheet" href="../styles.css"><style>html,body{margin:0}body{padding:16px 18px;min-height:100vh;display:flex;align-items:center}.w{width:100%}.n{font:var(--type-mono-label);color:var(--text-tertiary);letter-spacing:0}.cap{font:var(--type-label);letter-spacing:var(--ls-caps);text-transform:uppercase;color:var(--text-disabled)}</style></head><body class="cd-wash"><div class="w"><div style="display:grid;grid-template-columns:1fr 1fr;gap:12px">
+<div class="cd-vibrant" style="border-radius:var(--radius-lg);border:var(--border-hair) solid var(--edge-1);padding:13px;display:grid;gap:8px">
+<span class="cap">Vibrant · chrome</span>
+<span style="font:var(--type-caption);color:var(--text-secondary);text-wrap:pretty">Sidebars, toolbars, floating layers. Translucent, saturation 210%, the desktop shows through.</span>
+<div style="display:flex;gap:6px;align-items:center"><span style="display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:var(--radius-sm);background:var(--accent);color:var(--accent-on);font:var(--type-caption)">Run Test</span><span style="display:inline-flex;align-items:center;height:26px;padding:0 11px;border-radius:var(--radius-sm);border:var(--border-hair) solid var(--edge-2);box-shadow:var(--glow-accent);font:var(--type-caption);color:var(--text-primary)">focused</span></div>
+<span class="n">--material-vibrant · .cd-vibrant</span></div>
+<div class="cd-content" style="border-radius:var(--radius-lg);border:var(--border-hair) solid var(--edge-1);padding:13px;display:grid;gap:8px">
+<span class="cap">Content · near-opaque</span>
+<span style="font:var(--type-caption);color:var(--text-secondary);text-wrap:pretty">Editor and logs. Text needs a still background — translucency behind body copy is the classic mistake.</span>
+<div style="font:var(--type-code-sm);color:var(--text-secondary)">- assertVisible: "SLR 701-001"</div>
+<span class="n">--material-content · .cd-content</span></div></div>
+<div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-top:12px">
+<div style="display:grid;gap:5px"><span class="n" style="color:var(--text-secondary)">0.5px hairlines</span><span class="n" style="color:var(--text-disabled)">--border-hair, crisp on Retina</span></div>
+<div style="display:grid;gap:5px"><span class="n" style="color:var(--text-secondary)">3px focus halo</span><span class="n" style="color:var(--text-disabled)">--glow-accent, no long bloom</span></div>
+<div style="display:grid;gap:5px"><span class="n" style="color:var(--text-secondary)">Traffic lights dim</span><span class="n" style="color:var(--text-disabled)">colour + glyphs on window hover</span></div>
+<div style="display:grid;gap:5px"><span class="n" style="color:var(--text-secondary)">Sheets drop down</span><span class="n" style="color:var(--text-disabled)">out of the 52px unified titlebar</span></div></div></div></body></html>

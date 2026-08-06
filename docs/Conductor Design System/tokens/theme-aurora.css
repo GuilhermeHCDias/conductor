@@ -1,0 +1,143 @@
+/* AURORA — light liquid glass, macOS. :root, and [data-theme="aurora"]
+   One window sitting on a desktop. The desktop is a quiet, near-neutral wallpaper; the window
+   is a single blurred slab, and the regions inside it differ only in how much of that blur
+   they let through — sidebar and inspector translucent, the working area near-opaque.
+
+   What keeps this modern rather than "frosted 2013":
+   1. The backdrop is DESATURATED (chroma ≤ 0.03) and STATIC. Saturated, moving gradients are
+      what make glass look like a screensaver. Colour in this theme comes from content.
+   2. One blur, at the window. Regions are alpha fills over it; frost is never nested.
+   3. Edges are hairlines plus a single white specular line along the top — never a gradient
+      "rim" that changes hue along its length.
+   4. Radii are small and system-like: 14 window, 10 region, 7 surface, 6 field. Big radii on
+      inner panels read as web cards, not as an app.
+
+   The ink ramp is the logo's cool near-black. Accent is the mark's cyan, taken down in
+   lightness until it carries white text. */
+:root,
+[data-theme="aurora"] {
+  color-scheme: light;
+
+  /* The desktop behind the window: a quiet wallpaper, not a light show. Static. */
+  --bg-window: oklch(89% 0.012 240);
+  --bg-wash:
+    radial-gradient(110% 80% at 82% -12%, oklch(94% 0.026 246 / 0.9) 0%, transparent 62%),
+    radial-gradient(90% 70% at 6% 4%, oklch(93% 0.02 256 / 0.85) 0%, transparent 64%),
+    radial-gradient(80% 62% at 97% 104%, oklch(93% 0.028 190 / 0.8) 0%, transparent 60%),
+    linear-gradient(180deg, oklch(92% 0.012 240) 0%, oklch(86% 0.016 242) 100%);
+
+  /* a-* are the layout tokens the kit reads. One blur (at the window) and three alpha fills. */
+  --a-chrome: oklch(100% 0 0 / 0.58);
+  --a-panel: oklch(100% 0 0 / 0.42);
+  --a-content: oklch(100% 0 0 / 0.86);
+  --a-well: oklch(100% 0 0 / 0.7);
+  --a-hair: oklch(28% 0.02 240 / 0.1);
+  --a-hair-strong: oklch(28% 0.02 240 / 0.16);
+  /* The edge of the window: a white specular line at the very top fading out by a third of the
+     way down, then the faintest ink hairline. No hue shift, no dark bottom-right. */
+  --a-rim: linear-gradient(
+    180deg,
+    oklch(100% 0 0 / 0.72) 0%,
+    oklch(100% 0 0 / 0.14) 34%,
+    oklch(28% 0.02 240 / 0.06) 100%
+  ); /* @kind color */
+  --a-refract: inset 0 1px 0 0 oklch(100% 0 0 / 0.6); /* @kind other */
+  --a-blur: 42px;
+  --a-saturate: 180%; /* @kind other */
+  --a-radius-window: 14px;
+  --a-radius-region: 10px;
+  --a-radius-surface: 7px;
+  --a-radius-field: 6px;
+
+  --glass-1: oklch(100% 0 0 / 0.44);
+  --glass-2: oklch(100% 0 0 / 0.66);
+  --glass-3: oklch(100% 0 0 / 0.86);
+  --glass-sunken: oklch(28% 0.03 240 / 0.045);
+  --material-vibrant: oklch(100% 0 0 / 0.52);
+  --material-content: oklch(100% 0 0 / 0.88);
+  --glass-hover: oklch(100% 0 0 / 0.66);
+  --glass-active: oklch(28% 0.03 240 / 0.07);
+  --glass-selected: oklch(100% 0 0 / 0.92);
+
+  --edge-1: oklch(28% 0.03 240 / 0.07);
+  --edge-2: oklch(28% 0.03 240 / 0.11);
+  --edge-strong: oklch(28% 0.03 240 / 0.2);
+  --edge-sunken: oklch(28% 0.03 240 / 0.09);
+  --specular: oklch(100% 0 0 / 0.9);
+
+  --text-primary: oklch(24% 0.028 240);
+  --text-secondary: oklch(44% 0.02 240);
+  --text-tertiary: oklch(56% 0.016 240);
+  --text-disabled: oklch(68% 0.012 240);
+  --text-inverse: oklch(100% 0 0);
+  --text-accent: oklch(47% 0.096 200);
+  --text-ai: oklch(50% 0.15 259);
+  --text-emphasis: oklch(47% 0.096 200);
+  --text-link: oklch(47% 0.096 200);
+  --text-link-hover: oklch(39% 0.086 201);
+
+  --accent: oklch(47% 0.096 200);
+  --accent-strong: oklch(40% 0.086 201);
+  --accent-quiet: oklch(47% 0.096 200 / 0.12);
+  --accent-quiet-hover: oklch(47% 0.096 200 / 0.18);
+  --accent-edge: oklch(47% 0.096 200 / 0.28);
+  --accent-on: oklch(100% 0 0);
+  --accent-ring: oklch(47% 0.096 200 / 0.4);
+
+  --emphasis: oklch(52% 0.1 199);
+  --emphasis-quiet: oklch(52% 0.1 199 / 0.12);
+
+  --ai: oklch(50% 0.15 259);
+  --ai-quiet: oklch(50% 0.15 259 / 0.11);
+  --ai-quiet-hover: oklch(50% 0.15 259 / 0.17);
+  --ai-edge: oklch(50% 0.15 259 / 0.26);
+  --ai-on: oklch(100% 0 0);
+
+  --state-pass: oklch(55% 0.14 146);
+  --state-pass-quiet: oklch(55% 0.14 146 / 0.16);
+  --state-pass-edge: oklch(55% 0.14 146 / 0.32);
+  --state-fail: oklch(57% 0.205 22);
+  --state-fail-quiet: oklch(57% 0.205 22 / 0.12);
+  --state-fail-quiet-hover: oklch(57% 0.205 22 / 0.18);
+  --state-fail-edge: oklch(57% 0.205 22 / 0.28);
+  --state-running: oklch(66% 0.165 62);
+  --state-running-quiet: oklch(66% 0.165 62 / 0.16);
+  --state-running-edge: oklch(66% 0.165 62 / 0.32);
+  --state-idle: oklch(72% 0.012 240);
+  --state-idle-quiet: oklch(60% 0.012 240 / 0.12);
+
+  /* The phone is the one dark object in the window — it is a real device, not a panel. */
+  --device-bezel: oklch(30% 0.014 240);
+  --device-screen: oklch(15% 0.012 240);
+  --device-highlight: oklch(47% 0.096 200 / 0.16);
+  --device-highlight-edge: oklch(47% 0.096 200);
+  --device-highlight-glow: oklch(47% 0.096 200 / 0.34);
+
+  --editor-bg: transparent;
+  --editor-gutter: oklch(70% 0.012 240);
+  --editor-active-line: oklch(47% 0.096 200 / 0.05);
+  --editor-selection: oklch(47% 0.096 200 / 0.16);
+  --editor-caret: oklch(47% 0.096 200);
+
+  --syn-key: oklch(42% 0.095 200);
+  --syn-anchor: oklch(46% 0.135 258);
+  --syn-string: oklch(46% 0.105 146);
+  --syn-number: oklch(52% 0.125 58);
+  --syn-punct: oklch(56% 0.016 240);
+  --syn-comment: oklch(70% 0.012 240);
+
+  /* Glass shadows: wide, soft, low opacity, tinted with the wash rather than black. */
+  --shadow-1: 0 1px 2px oklch(28% 0.03 240 / 0.06), 0 2px 10px oklch(28% 0.03 240 / 0.06);
+  --shadow-2: 0 2px 8px oklch(28% 0.03 240 / 0.07), 0 10px 30px oklch(28% 0.03 240 / 0.09);
+  --shadow-3: 0 8px 20px oklch(28% 0.03 240 / 0.09), 0 26px 64px oklch(28% 0.03 240 / 0.13);
+  --shadow-window:
+    0 0 0 0.5px oklch(28% 0.02 240 / 0.16), 0 18px 50px oklch(28% 0.02 240 / 0.22),
+    0 2px 6px oklch(28% 0.02 240 / 0.1);
+  --shadow-inset-top: inset 0 1px 0 0 oklch(100% 0 0 / 0.75);
+  --glow-accent: 0 0 0 var(--focus-ring-w) oklch(47% 0.096 200 / 0.32);
+  --glow-ai: 0 0 0 var(--focus-ring-w) oklch(50% 0.15 259 / 0.3);
+  /* Single-layer, for filter: drop-shadow() — which accepts one shadow, not a list. */
+  --device-drop: 0 14px 30px oklch(28% 0.02 240 / 0.24); /* @kind other */
+  --scrim-top: linear-gradient(to bottom, oklch(100% 0 0 / 0.8), transparent); /* @kind color */
+  --scrim-bottom: linear-gradient(to top, oklch(100% 0 0 / 0.8), transparent); /* @kind color */
+}

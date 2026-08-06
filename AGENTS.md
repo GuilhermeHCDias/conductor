@@ -4,7 +4,7 @@
 
 Conductor is an Electron desktop app that orchestrates the Maestro CLI so non-developers can author e2e tests.
 No backend exists and no credential is ours — every capability comes from the user's machine (`.context.md` §9.0, §12.15).
-The repo is **pre-scaffold**: only this file, `.context.md`, `.gitignore` and `.claude/` are here. Everything below — commands, layout, architecture, names — is the contract the scaffold and all later code must satisfy, not a description of what exists.
+The scaffold **exists**: the app boots, and the Commands and Layout tables below describe the tree as built. The directories they name that are not there yet — `maestro/`, `services/`, `views/`, `components/`, `hooks/`, `stores/`, `lib/` — are the contract each later spec must satisfy when it creates them.
 `.context.md` at the repo root is the source of truth for product and architecture decisions; this file is the working contract for how code is organized and written. If they conflict, `.context.md` wins — fix this file in the same change.
 
 ## Commands
@@ -32,7 +32,8 @@ src/
     ipc/                      # <domain>.ts — thin handlers: validate, call a service
     maestro/                  # MaestroGateway, LocalGateway, CliRunner,
                               # ScreenCapture, HierarchyParser, SelectorSynth (§9.2)
-    services/                 # <name>.service.ts — repo, gh, flow-index, doctor, ai
+    services/                 # <name>.service.ts — repo, gh, publish, flow-index,
+                              # doctor, ai
     process/run.ts            # the only execFile wrapper (§10.1)
   preload/
     index.ts                  # contextBridge only — implements ConductorApi, no logic
@@ -55,6 +56,8 @@ src/
     types.ts                  # TreeNode, Snapshot, Device, RunEvent… (split when it grows)
 out/                          # build output — package.json main is ./out/main/index.js
 resources/                    # runtime assets shipped with the app
+  conductor-plugin/           # our own claude plugin — carries the publish
+                              # skill, loaded with --plugin-dir (§8.4)
 build/                        # icons + entitlements for electron-builder
 ```
 
@@ -73,7 +76,7 @@ view / store action (renderer)
   → window.conductor.<fn>()               preload — the only bridge
   → ipc/<domain>.ts                       main — sender check + Zod parse
   → service · MaestroGateway              main — business logic
-  → run.ts | CliRunner | ScreenCapture    the only 3 process creators (§10.1)
+  → run.ts | CliRunner                    the only 2 process creators (§10.1)
   → maestro · gh · git · claude · adb · simctl
 ```
 
@@ -86,9 +89,10 @@ The product's core loop (§5.5) as a worked example: mirror frames stream in che
 - **`index.ts` is the composition root** — the only place services are constructed, wired together (plain constructor injection) and registered. No module-level singletons: a class you cannot instantiate in a test with fakes is shaped wrong.
 - **`ipc/` modules are thin controllers.** Validate, call one service method, shape the result. Business logic in a handler is in the wrong layer.
 - **Services own one domain each** and hold the business logic. They may use the Gateway and `run.ts`; they never import `child_process` (Biome enforces it, §10.1).
-- **`MaestroGateway` is the only door to Maestro** (§4.3.7). `LocalGateway` implements it via `CliRunner` (always `--no-reinstall-driver` + `MAESTRO_CLI_NO_ANALYTICS=1`, §12.10) and `ScreenCapture` (`adb`/`simctl`, §12.13). Keep the contract remote-safe: screenshots as bytes, `deviceId` opaque, everything async (§10.1's six rules).
+- **`MaestroGateway` is the only door to Maestro** (§4.3.7). `LocalGateway` implements it via `CliRunner` (always `--no-reinstall-driver` + `MAESTRO_CLI_NO_ANALYTICS=1`, §12.10), `ScreenCapture` (`adb`/`simctl`, §12.13) and `MaestroMcpService` (the one persistent `maestro mcp` child, which owns its own lifecycle — §12.9's amendment). Keep the contract remote-safe: screenshots as bytes, `deviceId` opaque, everything async (§10.1's six rules).
 - **`HierarchyParser` and `SelectorSynth` are pure** — no I/O, no Electron imports (§9.2). They read the top-level booleans of `TreeNode`, not `attributes` strings, and treat `null` as "not reported" (§5.2).
-- **Long work is streamed, never awaited in a handler.** A start invoke returns an id immediately; progress arrives as push events; cancellation is its own channel (`run:start` → `run:event` → `run:cancel`; same shape for `ai:*`). Never block main, and never use `sendSync` anywhere.
+- **Long work is streamed, never awaited in a handler.** A start invoke returns an id immediately; progress arrives as push events; cancellation is its own channel (`run:start` → `run:event` → `run:cancel`; same shape for `ai:*` and `publish:*` — a push against a remote hangs often enough to freeze the window). Never block main, and never use `sendSync` anywhere.
+- **Saving is local and immediate; Git runs only on publish** (§8.2, §12.23). `flow:save` writes the file (temp + rename) and nothing else — no commit, no push. `PublishService` is the only code that runs `git` beyond `fetch`, and it never runs `checkout`, `reset`, `stash` or `pull` under the user: the dirty working tree *is* the user's document.
 - **Every service holding a process, session or watcher implements `dispose()`**, called from `before-quit`. No orphaned JVMs, `claude` sessions or chokidar watchers.
 
 ### Renderer
@@ -99,9 +103,9 @@ Layers from dumb to wired — each may import only from the rows above it:
 |---|---|---|
 | `lib/` | Pure functions: hit-test, bounds/scale math, formatting. No React, no IPC. | `shared` (types) |
 | `components/` | Reusable presentational pieces. Props in, callbacks out. No stores, no `window.conductor`. | `lib`, other components |
-| `stores/` | Zustand, one per domain (`device`, `flow`, `run`, `ai`, `doctor`, `pr`). State + actions; **actions are the only renderer code that calls `window.conductor` commands**. | `lib` |
+| `stores/` | Zustand, one per domain (`device`, `flow`, `run`, `ai`, `doctor`, `publish`). State + actions; **actions are the only renderer code that calls `window.conductor` commands**. | `lib` |
 | `hooks/` | Subscriptions (`window.conductor.on*`) that write into stores, plus reusable view logic. | `stores`, `lib`, other hooks |
-| `views/` | One folder per §9.2 panel: `DeviceMirror`, `FlowEditor`, `AIPanel`, `RunPanel`, `PRPanel` — plus `Doctor` (§10). Compose components, select from stores, mount hooks. | everything above |
+| `views/` | One folder per §9.2 panel: `Toolbar`, `FlowList`, `DeviceMirror`, `FlowEditor`, `AIPanel`, `RunPanel`, `PublishSheet` — plus `Doctor` (§10). Compose components, select from stores, mount hooks. | everything above |
 
 Rules that keep the layers honest:
 
@@ -114,12 +118,12 @@ Rules that keep the layers honest:
 ### The IPC contract
 
 - `src/shared/ipc.ts` is the single contract: channel names, one Zod schema per channel, and the `ConductorApi` type derived from them. Main imports the schemas to validate; the preload implements `ConductorApi`; the renderer imports types only.
-- Channel names are `<domain>:<action>` in kebab-case: `maestro:hierarchy`, `flow:save`, `doctor:check`, `gh:open-pr`. Push channels read as events: `flow:changed`, `run:event`, `ai:event`.
+- Channel names are `<domain>:<action>` in kebab-case: `maestro:hierarchy`, `flow:save`, `doctor:check`, `publish:start`. Push channels read as events: `flow:changed`, `run:event`, `ai:event`, `publish:event`.
 - The preload exposes **one named function per channel** under `contextBridge.exposeInMainWorld('conductor', …)` and nothing else — never `ipcRenderer`, `send` or `invoke` raw. It holds no logic and no state; anything smarter than forwarding belongs in main or the renderer.
 - `src/preload/index.d.ts` augments `Window` with `ConductorApi` and is the only place the global is declared.
 - Every `ipcMain.handle` validates `event.senderFrame` against the app's own window before doing any work (Electron checklist item 17 — an addition to §9.3), then parses its args with the channel's schema.
 - Expected failures cross the boundary as values, not exceptions: handlers return `{ ok: true, data } | { ok: false, error: { code, message } }`, declared once in `shared/ipc.ts`. Electron strips custom fields from rejected `invoke`s, and the doctor UX needs stable `code`s to tell "gh missing" from "gh not authenticated" (§10, §8.1). Throwing across IPC is reserved for bugs.
-- Flow paths from the renderer resolve **inside** `.maestro/` and are rejected on traversal; sanitize branch and file names before they touch the filesystem or Git (§9.3).
+- Flow paths from the renderer resolve **inside** `conductor/` and are rejected on traversal; sanitize branch and file names before they touch the filesystem or Git (§9.3). A flow path legitimately carries folder segments (`checkout/pix.yml`, §7.2), so containment is checked by **resolving** against the root, never by pattern-matching the string.
 - Behind the channels, every Maestro call we make goes through `MaestroGateway`. The one exception is `maestro mcp`, which Claude Code manages as its own subprocess, outside the Gateway (§4.3.7, §12.9).
 
 ### Lifecycle
@@ -139,6 +143,7 @@ Rules that keep the layers honest:
 | Renderer pure module | kebab-case in `lib/` | `lib/hit-test.ts` |
 | Service (main only) | `<name>.service.ts`, one exported class | `services/repo.service.ts` → `RepoService` |
 | IPC module | `<domain>.ts` in `ipc/`, exports `register<Domain>Ipc` | `ipc/flow.ts` → `registerFlowIpc(deps)` |
+| Shared IPC guard | `ipc/handle.ts` — not a domain, so not `register<Domain>Ipc` | `ipc/handle.ts` → `handle(channel, schema, fn)` |
 | Main-process class module | `PascalCase.ts` | `maestro/CliRunner.ts` (path pinned by §10.1) |
 | Plain module / util | kebab-case | `process/run.ts`, `shared/config.ts` |
 | Test | sibling of its subject, `*.test.ts` / `*.test.tsx` | `maestro/SelectorSynth.test.ts` |
@@ -173,24 +178,25 @@ Import by full path — `@renderer/views/FlowEditor/FlowEditor`. There is no `in
 
 - Biome is the only linter and formatter: `biome.json` at the root. Do not introduce ESLint or Prettier, and delete either if a template ships it.
 - TypeScript runs in `strict` mode across all three tsconfigs. Rather than widening a type or reaching for `any` to clear an error, narrow at the boundary with a type guard, or derive the type from the channel's Zod schema.
-- When `noRestrictedImports` fires, you have put process creation in the wrong file. Move the code behind `src/main/process/run.ts`, `src/main/maestro/CliRunner.ts` or `src/main/maestro/ScreenCapture.ts` — the only three files that may create OS processes. Adding a Biome exception is almost always wrong (§10.1, §12.20).
+- When `noRestrictedImports` fires, you have put process creation in the wrong file. Move the code behind `src/main/process/run.ts` or `src/main/maestro/CliRunner.ts` — the only two files that may create OS processes. A module that merely *names* `adb`/`maestro` and takes its runner by constructor injection (`AdbBridge`, `ScrcpySource`, `ScreenCapture`) creates nothing and needs no exception. Adding a Biome exception is almost always wrong (§10.1, §12.20).
 
 ## Commits & branches
 
 - Commit messages are Conventional Commits: `feat:`, `fix:`, `docs:`, `chore:`, `refactor:`, `test:`.
 - Branches in this repo are `<type>/<slug>`, matching the commit type that carries the work — `feat/device-mirror`, `docs/agents-md-harness`.
-- Branches Conductor *creates* in the tests repo are named from the flow instead — `conductor/<flow-slug>`, cut from `CONFIG.REPO_BASE_BRANCH` (§8).
+- Branches Conductor *creates* in the tests repo carry a date and the flow that opened the publication — `conductor/2026-08-05-checkout-com-pix`, cut from `CONFIG.REPO_BASE_BRANCH` (§8.3). The date prefix is load-bearing: editing the same flow next month must not collide with a stale remote branch.
 
 ## Read before you touch
 
 | Working on | Read first in `.context.md` |
 |---|---|
-| Anything | §12 — the 22 standing rules |
+| Anything | §12 — the 25 standing rules |
 | Selector synthesis, hierarchy parsing | §5, especially §5.2–5.4 |
 | Maestro CLI invocation, flags, performance | §4.2, §4.4, §10.1 |
 | Device screenshot, mirror, hit-test | §4.4, §5.5 |
 | AI panel, `claude` CLI | §6 |
-| Git, repo cache, pull requests | §7, §8.1 |
+| Repo cache, the `conductor/` folder, subfolders | §7 |
+| Saving, publishing, the Publish button | §8 — and §8.0 before writing any user-facing string |
 | Environment prerequisites, doctor | §10 |
 | IPC, preload, new channels | §9.3 — plus the Architecture section above |
 

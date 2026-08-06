@@ -1,0 +1,200 @@
+.toolbar {
+  align-items: center;
+  background: var(--a-chrome);
+  border-bottom: 1px solid var(--a-hair);
+  display: flex;
+  flex: none;
+  gap: 10px;
+  height: 52px;
+  padding: 0 10px 0 14px;
+  /* Criterion 8: the toolbar background drags the window. */
+  -webkit-app-region: drag;
+}
+
+/* …and nothing you can click does. */
+.toolbar button,
+.toolbar input,
+.toolbar a {
+  -webkit-app-region: no-drag;
+}
+
+/* The OS draws the traffic lights over this. Three 12px lights with 8px gaps is
+   52px, offset 18px from the window edge — so nothing of ours starts before
+   70px, less the toolbar's own 14px of left padding. */
+.trafficLightInset {
+  flex: none;
+  height: 12px;
+  width: calc(70px - 14px);
+}
+
+.document {
+  display: grid;
+  gap: 1px;
+  margin-left: 4px;
+  min-width: 0;
+}
+
+/* Criterion 13: a long document name ellipsises rather than growing the
+   toolbar or wrapping it onto a second line. */
+.title {
+  color: var(--text-primary);
+  font: var(--type-body-strong);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.subtitle {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.environment {
+  align-items: center;
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 28px;
+  padding: 0 11px;
+  transition: var(--t-hover);
+}
+
+.environment:hover {
+  background: var(--glass-hover);
+}
+
+.environment:focus-visible,
+.run:focus-visible,
+.send:focus-visible,
+.sendReview:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* Criterion 11: the one saturated control in the window. */
+.run {
+  align-items: center;
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-field);
+  box-shadow: var(--a-refract);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  font: var(--type-body-strong);
+  gap: var(--space-3);
+  height: 28px;
+  padding: 0 13px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.run:active {
+  transform: scale(var(--press-scale));
+}
+
+/* Criterion 12: stopping a run is a destructive action, so it is quiet-red
+   rather than a second filled accent button. */
+.run[data-running="true"] {
+  background: var(--state-fail-quiet);
+  box-shadow: none;
+  color: var(--state-fail);
+}
+
+.separator {
+  background: var(--a-hair);
+  flex: none;
+  height: 20px;
+  width: 1px;
+}
+
+/* §8.5's Send control — three states sharing one 28px slot. */
+.send,
+.sendReview,
+.sendIdle {
+  align-items: center;
+  border-radius: var(--a-radius-field);
+  display: flex;
+  flex: none;
+  font: var(--type-caption);
+  gap: 6px;
+  height: 28px;
+  padding: 0 11px;
+}
+
+/* Criterion 6: the second saturated control — sending is what editing was for. */
+.send {
+  background: var(--accent);
+  border: 1px solid transparent;
+  box-shadow: var(--a-refract);
+  color: var(--accent-on);
+  cursor: pointer;
+  font: var(--type-body-strong);
+  transition: var(--t-hover), var(--t-press);
+}
+
+.send:hover {
+  background: var(--accent-strong);
+}
+
+.send:active {
+  transform: scale(var(--press-scale));
+}
+
+/* The count rides inside the fill, so it is white-on-accent like the label. */
+.sendCount {
+  background: oklch(100% 0 0 / 0.24);
+  border-radius: 999px;
+  display: grid;
+  font: var(--type-mono-label);
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  place-items: center;
+}
+
+/* Criterion 7: waiting for a colleague is normal — a quiet well, never amber. */
+.sendReview {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  color: var(--text-secondary);
+  cursor: pointer;
+  transition: var(--t-hover);
+}
+
+.sendReview:hover {
+  background: var(--glass-hover);
+}
+
+.sendReviewGlyph {
+  color: var(--text-tertiary);
+}
+
+.sendPlus {
+  color: var(--accent);
+  font: var(--type-mono-label);
+}
+
+/* Criterion 5: inert text — no cursor, no hover, nothing to press. */
+.sendIdle {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-disabled);
+}
+
+.sendIdleGlyph {
+  color: var(--state-pass);
+}

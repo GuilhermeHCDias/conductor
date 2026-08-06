@@ -1,0 +1,85 @@
+/* Criterion 31. */
+.empty {
+  align-content: center;
+  display: grid;
+  gap: var(--space-4);
+  justify-items: center;
+  padding: var(--space-9);
+}
+
+.emptyGlyph {
+  color: var(--text-disabled);
+}
+
+.emptyText {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  text-align: center;
+}
+
+.steps {
+  align-content: start;
+  display: grid;
+  list-style: none;
+  margin: 0;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+}
+
+/* Criterion 32. */
+.step {
+  align-items: center;
+  display: grid;
+  gap: 11px;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  min-height: 32px;
+  position: relative;
+}
+
+/* The thread running through the dots. It stops at the first and last dot
+   rather than running off the ends of the list. */
+.connector {
+  background: var(--a-hair-strong);
+  bottom: 0;
+  left: 7px;
+  position: absolute;
+  top: 0;
+  width: 1px;
+}
+
+.step:first-child .connector {
+  top: 50%;
+}
+
+.step:last-child .connector {
+  bottom: 50%;
+}
+
+.dotWell {
+  display: grid;
+  height: 16px;
+  place-items: center;
+  position: relative;
+  width: 16px;
+}
+
+/* The halo is what lifts the dot off the connector behind it. */
+.dot {
+  box-shadow: 0 0 0 3px var(--a-content);
+}
+
+.dot[data-state="running"] {
+  box-shadow: 0 0 0 4px var(--state-running-quiet);
+}
+
+.label {
+  color: var(--text-secondary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.duration {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+}

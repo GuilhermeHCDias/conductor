@@ -1,0 +1,286 @@
+/*
+ * §8.5's ephemeral sheet — the design system's one modal treatment, the same
+ * centred glass panel Doctor uses. It mounts on the WINDOW, not in a pane, so
+ * the scrim covers the toolbar too; the pixel literals are the ones the
+ * reference (`CReview.jsx`) hardcodes for its own layout math.
+ */
+
+/* The modal plane. The scrim and the dialog are siblings on it: clicks on the
+   dialog never touch the scrim, so nothing needs to stop propagation. */
+.plane {
+  inset: 0;
+  position: absolute;
+  z-index: 60;
+}
+
+/* The reference's own scrim ink, re-derived at the rehue's hue-240 ground —
+   265 was the retired ink. Its 3px blur is the reference's literal too: a
+   knock-back for the window behind, not a second glass surface. */
+.scrim {
+  animation: cd-fade-in var(--dur-base) var(--ease-out);
+  backdrop-filter: blur(3px);
+  background: oklch(16% 0.02 240 / 0.46);
+  inset: 0;
+  position: absolute;
+}
+
+/* Centres the dialog; clicks in the padding fall through to the scrim. */
+.frame {
+  display: grid;
+  inset: 0;
+  padding: 32px;
+  place-items: center;
+  pointer-events: none;
+  position: absolute;
+}
+
+.sheet {
+  animation: cd-dialog-in var(--dur-slow) var(--ease-glass);
+  backdrop-filter: blur(var(--a-blur)) saturate(var(--a-saturate));
+  background:
+    linear-gradient(0deg, oklch(100% 0 0 / 0.13), oklch(100% 0 0 / 0.13)), var(--a-content);
+  border-radius: var(--a-radius-window);
+  box-shadow: var(--a-refract), var(--shadow-window);
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr) auto;
+  max-height: 100%;
+  max-width: 100%;
+  overflow: hidden;
+  pointer-events: auto;
+  position: relative;
+  width: 520px;
+}
+
+/* The same specular rim the window edge draws, on the modal's own radius. */
+.sheet::before {
+  background: var(--a-rim);
+  border-radius: inherit;
+  content: "";
+  inset: 0;
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+  pointer-events: none;
+  position: absolute;
+  z-index: 1;
+}
+
+.header {
+  align-items: flex-start;
+  display: flex;
+  gap: 11px;
+  padding: 16px 16px 14px;
+}
+
+/* The 30px icon badge: accent while there is something to send, quiet once
+   the batch is out and the sheet is only reporting. */
+.emblem {
+  background: var(--accent-quiet);
+  border-radius: var(--a-radius-field);
+  color: var(--accent);
+  display: grid;
+  flex: none;
+  height: 30px;
+  place-items: center;
+  width: 30px;
+}
+
+.emblem[data-sent="true"] {
+  background: var(--a-well);
+  color: var(--text-tertiary);
+}
+
+.heading {
+  display: grid;
+  flex: 1;
+  gap: 3px;
+  min-width: 0;
+}
+
+.title {
+  color: var(--text-primary);
+  font: var(--type-title-3);
+}
+
+.subtitle {
+  color: var(--text-secondary);
+  font: var(--type-body);
+  text-wrap: pretty;
+}
+
+.body {
+  border-top: 1px solid var(--a-hair);
+  display: grid;
+  gap: 12px;
+  overflow-y: auto;
+  padding: 16px;
+}
+
+.list {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  overflow: hidden;
+}
+
+.row {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) auto;
+  padding: 9px 12px;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.rowText {
+  display: grid;
+  gap: 2px;
+  min-width: 0;
+}
+
+.rowName {
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowPath {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+}
+
+.rowVerb {
+  font: var(--type-caption);
+}
+
+/* Criterion 12: the glyph and the verb speak in the same colour — added is a
+   pass, deleted is a fail, changed is the accent's ordinary work. */
+.row[data-kind="new"] .rowGlyph,
+.row[data-kind="new"] .rowVerb {
+  color: var(--state-pass);
+}
+
+.row[data-kind="edited"] .rowGlyph,
+.row[data-kind="edited"] .rowVerb {
+  color: var(--accent);
+}
+
+.row[data-kind="deleted"] .rowGlyph,
+.row[data-kind="deleted"] .rowVerb {
+  color: var(--state-fail);
+}
+
+.note {
+  display: grid;
+  gap: 6px;
+}
+
+.noteHead {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+}
+
+.noteHelper {
+  color: var(--text-disabled);
+}
+
+.noteInput {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  box-sizing: border-box;
+  color: var(--text-primary);
+  font: var(--type-body);
+  outline: none;
+  padding: 8px 10px;
+  resize: none;
+  width: 100%;
+}
+
+.noteInput:focus-visible {
+  border-color: var(--accent-edge);
+  box-shadow: var(--glow-accent);
+}
+
+.footer {
+  align-items: center;
+  background: var(--a-well);
+  border-top: 1px solid var(--a-hair);
+  display: flex;
+  gap: 8px;
+  padding: 10px 16px;
+}
+
+.footerPath {
+  align-items: center;
+  color: var(--text-disabled);
+  display: flex;
+  flex: 1;
+  font: var(--type-mono-label);
+  gap: 6px;
+}
+
+/* The footer's two actions, drawn the way the toolbar draws its controls:
+   field radius, 28px tall, the accent doing the work. */
+.ghost,
+.primary {
+  align-items: center;
+  border-radius: var(--a-radius-field);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  gap: 6px;
+  height: 28px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  padding: 0 11px;
+}
+
+.ghost:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.primary {
+  background: var(--accent);
+  border: 1px solid transparent;
+  box-shadow: var(--a-refract);
+  color: var(--accent-on);
+  font: var(--type-body-strong);
+  padding: 0 13px;
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+}
+
+.ghost:active,
+.primary:active {
+  transform: scale(var(--press-scale));
+}
+
+.ghost:disabled,
+.primary:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.ghost:focus-visible,
+.primary:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

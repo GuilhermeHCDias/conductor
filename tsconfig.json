@@ -1,0 +1,5 @@
+{
+  "files": [],
+  "references": [{ "path": "./tsconfig.node.json" }, { "path": "./tsconfig.web.json" }],
+  "exclude": ["worktrees", "out", "dist", "node_modules"]
+}

@@ -1,0 +1,52 @@
+/* The recessed track. */
+.track {
+  align-items: center;
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  display: flex;
+  flex: none;
+  gap: var(--space-1);
+  padding: var(--space-1);
+}
+
+.segment {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-body);
+  gap: var(--space-3);
+  height: 22px;
+  padding: 0 var(--space-5);
+  transition:
+    var(--t-hover),
+    box-shadow var(--dur-fast) var(--ease-out);
+  white-space: nowrap;
+}
+
+/* The selected segment is a puck: lighter than its track, lifted by a hairline
+   and a small shadow rather than by a colour. */
+.segment[data-selected="true"] {
+  background: var(--glass-3);
+  border-color: var(--a-hair);
+  box-shadow: var(--shadow-1);
+  color: var(--text-primary);
+  font: var(--type-body-strong);
+}
+
+.segment:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.badge {
+  background: var(--state-running);
+  border-radius: var(--radius-pill);
+  flex: none;
+  height: 5px;
+  width: 5px;
+}

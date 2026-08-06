@@ -1,0 +1,64 @@
+<!-- @dsCard group="Components" viewport="700x430" name="Core controls" subtitle="Buttons, fields, badges, dots, keys" -->
+<!DOCTYPE html><html data-theme="aurora-dark"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:18px;min-height:100vh}#root{display:grid;gap:16px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.lbl{font:var(--type-label);letter-spacing:var(--ls-caps);text-transform:uppercase;color:var(--text-disabled);width:74px;flex:none}</style></head>
+<body class="cd-wash"><div id="root"></div>
+<script type="text/babel">
+const { Button, IconButton, Input, Select, Checkbox, Switch, Badge, StatusDot, Kbd, SegmentedControl, Tooltip, Icon } = window.ConductorDesignSystem_527814;
+function Demo(){
+  const [seg,setSeg]=React.useState('flow');
+  const [on,setOn]=React.useState(true);
+  return <>
+    <div className="row"><span className="lbl">Buttons</span>
+      <Button variant="primary" icon="play">Run Test</Button>
+      <Button icon="cloud">Cloud</Button>
+      <Button variant="ghost" icon="refresh-cw">Reload</Button>
+      <Button variant="ai" icon="sparkles">Generate</Button>
+      <Button variant="danger" icon="trash-2">Clear</Button>
+    </div>
+    <div className="row"><span className="lbl">States</span>
+      <Button size="sm" icon="play">sm</Button>
+      <Button icon="play">md</Button>
+      <Button size="lg" icon="play">lg</Button>
+      <Button loading>Running</Button>
+      <Button disabled icon="play">Disabled</Button>
+      <Button pill variant="ghost" size="sm">pill</Button>
+    </div>
+    <div className="row"><span className="lbl">Icon</span>
+      <IconButton icon="crosshair" label="Inspect" variant="glass" size="lg" />
+      <IconButton icon="panel-bottom" label="Logs" selected />
+      <IconButton icon="settings" label="Settings" />
+      <IconButton icon="x" label="Close" size="sm" />
+      <IconButton icon="trash-2" label="Delete" variant="danger" />
+      <IconButton icon="sparkles" label="Ask" variant="ai" />
+      <Tooltip content="Re-run last flow" shortcut="⌘R"><IconButton icon="refresh-cw" label="Re-run" variant="glass" /></Tooltip>
+    </div>
+    <div className="row"><span className="lbl">Fields</span>
+      <Input icon="search" placeholder="Filter elements" fullWidth={false} style={{width:180}} />
+      <Input mono value="id=checkout-cta" suffix="selector" fullWidth={false} style={{width:196}} readOnly />
+      <Select icon="smartphone" value="R9QYC01EMXL" options={['R9QYC01EMXL','emulator-5554']} />
+    </div>
+    <div className="row"><span className="lbl">Choice</span>
+      <SegmentedControl value={seg} onChange={setSeg} options={[{value:'flow',label:'Flow',icon:'file-code'},{value:'chat',label:'Conductor',icon:'sparkles'},{value:'logs',label:'Logs',icon:'scroll-text'}]} />
+      <Checkbox checked label="clearState" />
+      <Checkbox label="stopApp" />
+      <Switch checked={on} onChange={()=>setOn(!on)} label="Follow logs" />
+    </div>
+    <div className="row"><span className="lbl">Signals</span>
+      <Badge tone="pass" icon="circle-check">Passed</Badge>
+      <Badge tone="fail" icon="triangle-alert">Failed</Badge>
+      <Badge tone="running" icon="loader-circle">Running</Badge>
+      <Badge tone="ai" icon="sparkles">Generated</Badge>
+      <Badge mono>tapOn</Badge>
+      <Badge tone="idle" uppercase>skipped</Badge>
+      <StatusDot state="connected" label="R9QYC01EMXL" />
+      <StatusDot state="running" pulse />
+      <Kbd>⌘ + ↵</Kbd>
+    </div>
+  </>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

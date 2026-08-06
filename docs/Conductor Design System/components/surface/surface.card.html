@@ -1,0 +1,54 @@
+<!-- @dsCard group="Components" viewport="700x430" name="Surfaces & layers" subtitle="Glass depths, headers, tabs, menus, empty states" -->
+<!DOCTYPE html><html data-theme="aurora-dark"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:18px;min-height:100vh}#root{display:grid;gap:16px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.lbl{font:var(--type-label);letter-spacing:var(--ls-caps);text-transform:uppercase;color:var(--text-disabled);width:74px;flex:none}</style></head>
+<body class="cd-wash"><div id="root"></div>
+<script type="text/babel">
+const { GlassPanel, PanelHeader, Toolbar, TabStrip, Divider, ContextMenu, EmptyState, Button, IconButton, Badge, Icon, ACTION_ICONS } = window.ConductorDesignSystem_527814;
+function Demo(){
+  const [tab,setTab]=React.useState('a');
+  return <div style={{display:'grid',gridTemplateColumns:'1fr 244px',gap:14,alignItems:'start'}}>
+    <div style={{display:'grid',gap:12,minWidth:0}}>
+      <GlassPanel depth={1} radius="lg" sheen style={{overflow:'hidden'}}>
+        <PanelHeader icon="file-code" title="Flow" meta=".maestro/teste.yaml" actions={<><IconButton icon="undo-2" label="Undo" size="sm"/><IconButton icon="ellipsis" label="More" size="sm"/></>} />
+        <TabStrip tabs={[{id:'a',label:'teste.yaml',dirty:true},{id:'b',label:'checkout.yaml'}]} activeId={tab} onSelect={setTab} onClose={()=>{}} onAdd={()=>{}} />
+        <GlassPanel sunken radius="md" padding="10px 12px" style={{margin:10,font:'var(--type-code-sm)',color:'var(--text-secondary)'}}>depth 1 region › sunken well</GlassPanel>
+      </GlassPanel>
+      <div style={{display:'flex',gap:10}}>
+        <GlassPanel depth={2} radius="md" padding={12} style={{flex:1,display:'grid',gap:6}}>
+          <span style={{font:'var(--type-body-strong)'}}>depth 2 · card</span>
+          <span style={{font:'var(--type-caption)',color:'var(--text-tertiary)'}}>blur 22 · edge-2 · shadow-1</span>
+        </GlassPanel>
+        <GlassPanel depth={3} radius="md" padding={12} style={{flex:1,display:'grid',gap:6}}>
+          <span style={{font:'var(--type-body-strong)'}}>depth 3 · floating</span>
+          <span style={{font:'var(--type-caption)',color:'var(--text-tertiary)'}}>blur 40 · shadow-3</span>
+        </GlassPanel>
+      </div>
+      <GlassPanel depth={1} radius="lg" style={{height:118,overflow:'hidden'}}>
+        <EmptyState size="sm" icon="scroll-text" title="No runs yet" description="Press Run Test to execute this flow on the connected device." action={<Button size="sm" variant="primary" icon="play">Run Test</Button>} />
+      </GlassPanel>
+      <Toolbar align="between" divider="top" style={{padding:0}}>
+        <Badge mono>4 steps</Badge>
+        <div style={{display:'flex',gap:8,alignItems:'center'}}><Divider orientation="vertical"/><Button size="sm" icon="list-checks">Run All</Button></div>
+      </Toolbar>
+    </div>
+    <ContextMenu title='Text · "Pedidos pendentes"' width={244} items={[
+      {type:'label',label:'Interact'},
+      {label:'tapOn',icon:ACTION_ICONS.tapOn,mono:true,shortcut:'T'},
+      {label:'longPressOn',icon:ACTION_ICONS.longPressOn,mono:true},
+      {label:'inputText',icon:ACTION_ICONS.inputText,mono:true},
+      {type:'separator'},
+      {type:'label',label:'Assert'},
+      {label:'assertVisible',icon:ACTION_ICONS.assertVisible,mono:true},
+      {label:'assertNotVisible',icon:ACTION_ICONS.assertNotVisible,mono:true,disabled:true},
+      {type:'separator'},
+      {label:'Ask Conductor about this',icon:'sparkles',ai:true},
+      {label:'Remove last step',icon:'trash-2',destructive:true}
+    ]} />
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

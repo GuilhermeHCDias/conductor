@@ -1,0 +1,45 @@
+# Conductor itself. Distinct from CONFIG.APP_ID, which identifies the app under
+# test — neither is derived from the other (.context.md §2).
+appId: com.vtex.conductor
+productName: Conductor
+directories:
+  buildResources: build
+files:
+  - '!**/.vscode/*'
+  - '!src/**/*'
+  - '!specs/**/*'
+  - '!worktrees/**/*'
+  - '!.claude/**/*'
+  - '!.husky/**/*'
+  - '!electron.vite.config.{js,ts,mjs,cjs}'
+  - '!vitest.config.{js,ts,mjs,cjs}'
+  - '!commitlint.config.{js,ts,mjs,cjs}'
+  - '!biome.json'
+  - '!{.env,.env.*,.npmrc,.nvmrc,pnpm-lock.yaml,yarn.lock}'
+  - '!{tsconfig.json,tsconfig.node.json,tsconfig.web.json}'
+  - '!{CHANGELOG.md,README.md,AGENTS.md,CLAUDE.md,.context.md}'
+  # Shipped as extraResources instead — see below.
+  - '!resources/**/*'
+# The pinned scrcpy server. It has to be a real file on disk: `adb push` reads
+# it, and app.asar is a virtual filesystem no other process can open. Pinning
+# ours also means a `brew upgrade scrcpy` on someone's machine cannot break the
+# mirror — the client version argument must match the jar exactly.
+extraResources:
+  - from: resources/scrcpy
+    to: scrcpy
+mac:
+  target:
+    - dmg
+    - zip
+  category: public.app-category.developer-tools
+  # Unsigned: no certificate and no notarization credentials belong to us
+  # (.context.md §9.0 — no credential is ours).
+  identity: null
+  notarize: false
+win:
+  target:
+    - nsis
+linux:
+  target:
+    - AppImage
+  category: Development

@@ -1,0 +1,5 @@
+# Biome rewrites whole files, so a partially-staged file gets its unstaged
+# remainder staged too. Accepted, rather than adding lint-staged.
+biome check --staged --write --no-errors-on-unmatched
+git update-index --again
+npm run typecheck

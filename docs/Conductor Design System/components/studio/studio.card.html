@@ -1,0 +1,51 @@
+<!-- @dsCard group="Components" viewport="700x470" name="Studio surfaces" subtitle="Mirror, YAML editor, run bar, logs, chat, file tree" -->
+<!DOCTYPE html><html data-theme="aurora-dark"><head><meta charset="utf-8"><link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>body{margin:0;padding:18px;min-height:100vh}#root{display:grid;gap:16px}.row{display:flex;align-items:center;gap:10px;flex-wrap:wrap}.lbl{font:var(--type-label);letter-spacing:var(--ls-caps);text-transform:uppercase;color:var(--text-disabled);width:74px;flex:none}</style></head>
+<body class="cd-wash"><div id="root"></div>
+<script type="text/babel">
+const { TitleBar, DeviceSelector, DeviceMirror, YamlEditor, RunBar, LogStream, ChatMessage, ChatComposer, GlassPanel, PanelHeader, IconButton, Button, Toolbar } = window.ConductorDesignSystem_527814;
+const YAML = 'appId: com.example.app\n---\n- launchApp:\n    clearState: true\n- tapOn:\n    text: "Pedidos pendentes"\n- assertVisible: "SLR 701-001"';
+function Demo(){
+  const [draft,setDraft]=React.useState('Tap the first pending order');
+  return <div style={{display:'grid',gap:12}}>
+    <GlassPanel depth={1} radius="lg" style={{overflow:'hidden'}}>
+      <TitleBar center={<span style={{display:'flex',alignItems:'center',gap:8,height:26,padding:'0 12px',borderRadius:'var(--radius-sm)',background:'var(--glass-2)',border:'1px solid var(--edge-2)',boxShadow:'var(--shadow-inset-top)',font:'var(--type-code-sm)',color:'var(--text-primary)'}}>teste.yaml</span>} actions={<><IconButton icon="moon" label="Theme" size="lg"/><IconButton icon="settings" label="Settings" size="lg"/></>} />
+      <RunBar env="staging" envOptions={['staging','prod']} onEnvChange={()=>{}} onRunAll={()=>{}} />
+    </GlassPanel>
+    <div style={{display:'grid',gridTemplateColumns:'176px 1fr 224px',gap:12,alignItems:'start'}}>
+      <div style={{display:'grid',gap:8}}>
+        <DeviceSelector device="R9QYC01EMXL" platform="Android" state="connected" />
+        <DeviceMirror width={176} height={200} highlight={{x:10,y:24,width:156,height:44}} highlightLabel='Text · "Pedidos"'>
+          <div style={{padding:10,display:'grid',gap:8}}>
+            <div style={{font:'var(--type-body-strong)',color:'var(--text-primary)'}}>Pedidos pendentes</div>
+            <div style={{height:44,borderRadius:8,background:'var(--glass-2)',border:'1px solid var(--edge-2)'}}></div>
+            <div style={{height:44,borderRadius:8,background:'var(--glass-1)',border:'1px solid var(--edge-1)'}}></div>
+          </div>
+        </DeviceMirror>
+      </div>
+      <GlassPanel depth={1} radius="lg" style={{overflow:'hidden',display:'grid',gridTemplateRows:'auto 1fr auto'}}>
+        <PanelHeader icon="file-code" title="teste.yaml" meta=".maestro" actions={<IconButton icon="ellipsis" label="More" size="sm"/>} />
+        <div style={{height:170,overflow:'hidden'}}><YamlEditor value={YAML} activeLine={7} aiLines={[5,6]} /></div>
+        <LogStream runs={[{id:'r1',startedAt:'12:29 pm',flow:'teste',status:'fail',duration:'0:04'}]} selectedRunId="r1"
+          steps={[{label:'Launch app "com.example.app" with clear state',status:'fail',duration:'0:04',detail:'[INSTALL_APP] Failed to launch app com.example.app: Package com.example.app is not installed'}]}
+          footer={<Toolbar align="center" height={32} divider="top"><Button variant="ghost" size="sm" icon="trash-2">Clear history</Button></Toolbar>} style={{maxHeight:120}} />
+      </GlassPanel>
+      <div style={{display:'grid',gap:8}}>
+        <GlassPanel depth={1} radius="lg" style={{overflow:'hidden'}}>
+          <PanelHeader dense icon="sparkles" title="Conductor" />
+          <div style={{padding:'10px',display:'grid',gap:12}}>
+            <ChatMessage role="user">Tap the first pending order</ChatMessage>
+            <ChatMessage code={'- tapOn:\n    text: "Preparar até 3:30 PM"'} onInsert={()=>{}} onCopy={()=>{}}>Found a text node in the first card. This taps it by visible text.</ChatMessage>
+          </div>
+          <ChatComposer value={draft} onChange={e=>setDraft(e.target.value)} context='Text · "Pedidos"' />
+        </GlassPanel>
+      </div>
+    </div>
+  </div>;
+}
+ReactDOM.createRoot(document.getElementById('root')).render(<Demo/>);
+</script></body></html>

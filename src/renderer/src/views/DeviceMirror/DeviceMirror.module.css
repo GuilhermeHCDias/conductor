@@ -1,0 +1,197 @@
+/* Criterion 35: the inspector takes the same vibrancy as the sidebar, and is
+   the mirror plus its bay gutter wide. */
+.panel {
+  background: var(--a-panel);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px minmax(0, 1fr) auto;
+  min-height: 0;
+  min-width: 0;
+}
+
+.header {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+  height: 38px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 var(--space-4) 0 var(--space-5);
+}
+
+.caps {
+  color: var(--text-tertiary);
+  flex: none;
+  font: var(--type-label);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+}
+
+.device {
+  align-items: center;
+  color: var(--text-disabled);
+  display: flex;
+  font: var(--type-mono-label);
+  gap: var(--space-3);
+  min-width: 0;
+  overflow: hidden;
+}
+
+/* Criteria 28 and 38: the device's name gives ground rather than leaving the
+   header — it truncates instead of wrapping or pushing the tools out. */
+.serial {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Criterion 28: the app identity is the first thing to go, so what remains is
+   always the device itself. */
+.identity {
+  color: var(--text-tertiary);
+  font: var(--type-mono-label);
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.bayPad {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  padding: 14px;
+}
+
+.bay {
+  display: grid;
+  min-height: 0;
+  min-width: 0;
+  overflow: hidden;
+  place-items: center;
+}
+
+/* Criterion 40: reserves the scaled footprint, so the phone never overflows
+   the column even though `transform` takes it out of flow. */
+.footprint {
+  position: relative;
+}
+
+/*
+ * Criterion 42 — the phone's own palette, ported from the design system's
+ * DeviceMirror. Fixed, not themed: a real device does not repaint itself when
+ * Conductor switches to light mode.
+ */
+.phone {
+  --phone-bezel: oklch(16% 0.01 260);
+  --phone-bar: oklch(0% 0 0 / 0.28);
+  --phone-glyph: oklch(100% 0 0 / 0.6);
+  --phone-text: oklch(88% 0.006 254);
+  --phone-text-dim: oklch(72% 0.01 252);
+  /* The controls drawn on the screen belong to the phone too, so they take its
+     palette rather than the app's glass. */
+  --phone-choice: oklch(100% 0 0 / 0.06);
+  --phone-choice-hover: oklch(100% 0 0 / 0.11);
+  /* The rim and the lit top edge of a dark object, not of a themed panel:
+     `--edge-2` and `--shadow-inset-top` would flip with the app. */
+  --phone-edge: oklch(100% 0 0 / 0.09);
+  --phone-specular: inset 0 1px 0 0 oklch(100% 0 0 / 0.1);
+
+  background: var(--phone-bezel);
+  border: var(--border-hair) solid var(--phone-edge);
+  border-radius: var(--radius-device);
+  /* The 330 x 648 is the screen; the 8px bezel sits outside it, which is what
+     makes the reserved footprint 346 x 664 (criteria 39–40). */
+  box-sizing: content-box;
+  box-shadow: var(--phone-specular);
+  padding: var(--space-4);
+  transform-origin: top left;
+}
+
+.display {
+  background: var(--device-screen);
+  border-radius: calc(var(--radius-device) - 8px);
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  overflow: hidden;
+  width: 100%;
+}
+
+/* Criterion 33: the device's own framebuffer, at its own size. The canvas is
+   never resized to fit — its parent's `transform: scale()` is the whole of the
+   fitting, which is what keeps a mirror a mirror rather than a reflow. */
+.screen {
+  display: block;
+  height: 100%;
+  width: 100%;
+}
+
+/* Criterion 38: what the bezel holds when there is no picture to put in it —
+   one state and its next action. The drawn status bar and nav bar stay gone. */
+.state {
+  align-content: center;
+  display: grid;
+  flex: 1;
+  gap: var(--space-3);
+  justify-items: center;
+  min-height: 0;
+  padding: 0 24px;
+}
+
+.stateTitle {
+  color: var(--phone-text);
+  font: var(--type-body-strong);
+  text-align: center;
+}
+
+.stateBody {
+  color: var(--phone-text-dim);
+  font: var(--type-caption);
+  text-align: center;
+}
+
+.devices {
+  display: grid;
+  gap: var(--space-2);
+  justify-items: stretch;
+  width: 100%;
+}
+
+.deviceChoice {
+  background: var(--phone-choice);
+  border: var(--border-hair) solid var(--phone-edge);
+  border-radius: var(--a-radius-field);
+  color: var(--phone-text);
+  font: var(--type-mono-label);
+  padding: var(--space-2) var(--space-3);
+  transition: var(--t-hover);
+  width: 100%;
+}
+
+.deviceChoice:hover:not(:disabled) {
+  background: var(--phone-choice-hover);
+}
+
+.deviceChoice:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* What is left of the Viewer footer's note after criterion 23 removed the
+   footer: a control failure is said beside the phone, never over it, because
+   the picture is still arriving (control-socket criterion 16). It carries its
+   own top rule since there is no longer a footer to draw one. */
+.controlNote {
+  border-top: 1px solid var(--a-hair);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  padding: var(--space-3) var(--space-4);
+  text-align: center;
+}

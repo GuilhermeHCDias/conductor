@@ -1,0 +1,31 @@
+<!-- @dsCard group="Conductor Studio" viewport="1440x900" name="Doctor — diagnostics B" subtitle="Variation: the verdict first, then one table ordered by who has to act — needs you above ready" -->
+<!DOCTYPE html><html data-theme="aurora"><head><meta charset="utf-8"><title>Doctor — diagnostics B</title>
+<link rel="stylesheet" href="../../styles.css">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/@babel/standalone@7.29.0/babel.min.js" integrity="sha384-m08KidiNqLdpJqLq95G/LEi8Qvjl/xUYll3QILypMoQ65QorJ9Lvtp2RXYGBFj1y" crossorigin="anonymous"></script>
+<script src="../../_ds_bundle.js"></script>
+<style>html,body{height:100%;margin:0;overflow:hidden;background:var(--bg-window)}#root{height:100%}
+.a-rim{position:relative;isolation:isolate}
+.a-rim::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:var(--a-rim);-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;pointer-events:none;z-index:3}
+.a-wash{position:absolute;inset:0;background:var(--bg-wash);background-repeat:no-repeat;background-size:cover;pointer-events:none;z-index:0}
+.a-scroll{scrollbar-width:thin;scrollbar-color:var(--a-hair-strong) transparent}
+.a-scroll::-webkit-scrollbar{width:9px;height:9px}
+.a-scroll::-webkit-scrollbar-thumb{background:var(--a-hair-strong);border-radius:9px;border:2px solid transparent;background-clip:content-box}
+.a-scroll::-webkit-scrollbar-track{background:transparent}</style></head>
+<body><div id="root"></div>
+<script type="text/babel" src="data.jsx"></script>
+<script type="text/babel" src="AppUnderTest.jsx"></script>
+<script type="text/babel" src="useInspector.jsx"></script>
+<script type="text/babel" src="CRegions.jsx"></script>
+<script type="text/babel" src="CDoctor.jsx"></script>
+<script type="text/babel" src="CDoctorB.jsx"></script>
+<script type="text/babel" src="CShell.jsx"></script>
+<script type="text/babel">
+const mount = () => {
+  if (!window.StudioC || !window.useInspector || !window.useMirrorFit || !window.CFlows || !window.CDoctorSheetB) return setTimeout(mount, 40);
+  ReactDOM.createRoot(document.getElementById('root')).render(<window.StudioC doctor doctorVariant="b" />);
+};
+mount();
+</script>
+</body></html>

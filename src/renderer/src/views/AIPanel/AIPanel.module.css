@@ -1,0 +1,153 @@
+.thread {
+  align-content: start;
+  display: grid;
+  gap: var(--space-6);
+  padding: var(--space-6) var(--space-6) var(--space-4);
+}
+
+.turn {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+/* Criterion 33: the user's words are bubbled, the assistant's are not. */
+.turn[data-role="user"] {
+  align-items: flex-end;
+}
+
+.byline {
+  align-items: center;
+  display: flex;
+  gap: var(--space-3);
+}
+
+.bylineMark {
+  background: var(--ai-quiet);
+  border-radius: var(--radius-xs);
+  color: var(--text-ai);
+  display: grid;
+  flex: none;
+  height: 18px;
+  place-items: center;
+  width: 18px;
+}
+
+.bylineName {
+  color: var(--text-ai);
+  font: var(--type-label);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+}
+
+.body {
+  color: var(--text-secondary);
+  font: var(--type-body);
+  max-width: 100%;
+  text-wrap: pretty;
+}
+
+.turn[data-role="user"] .body {
+  background: var(--glass-2);
+  border: var(--border-hair) solid var(--edge-2);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-inset-top);
+  color: var(--text-primary);
+  max-width: 88%;
+  padding: var(--space-4) 11px;
+}
+
+/* A YAML block is a recessed surface, so it reads as the flow rather than as
+   more prose. */
+.code {
+  background: var(--a-well);
+  border: var(--border-hair) solid var(--ai-edge);
+  border-radius: var(--a-radius-region);
+  overflow: hidden;
+}
+
+.codeHeader {
+  align-items: center;
+  border-bottom: var(--border-hair) solid var(--edge-1);
+  display: flex;
+  gap: var(--space-4);
+  height: 26px;
+  padding: 0 var(--space-4);
+}
+
+.codeGlyph {
+  color: var(--text-ai);
+}
+
+.codeLabel {
+  color: var(--text-tertiary);
+  flex: 1;
+  font: var(--type-mono-label);
+}
+
+.codeBody {
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  margin: 0;
+  padding: var(--space-4) var(--space-5);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.codeActions {
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.insert {
+  align-items: center;
+  background: var(--ai-quiet);
+  border: var(--border-hair) solid var(--ai-edge);
+  border-radius: var(--a-radius-field);
+  color: var(--text-ai);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 26px;
+  justify-content: center;
+  padding: 0 11px;
+  transition: var(--t-hover);
+  width: 100%;
+}
+
+.insert:hover {
+  background: var(--ai-quiet-hover);
+}
+
+.insert:focus-visible {
+  box-shadow: var(--glow-ai);
+  outline: none;
+}
+
+.pills {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.pill {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: var(--type-caption);
+  height: 26px;
+  padding: 0 var(--space-5);
+  transition: var(--t-hover);
+}
+
+.pill:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.pill:focus-visible {
+  box-shadow: var(--glow-ai);
+  outline: none;
+}

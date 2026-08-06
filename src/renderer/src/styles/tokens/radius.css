@@ -1,0 +1,20 @@
+:root {
+  /* Concentric radii. Rule: a nested element's radius = parent radius − its inset.
+     Values follow macOS Big Sur onwards: 6px controls, 10px cards, 12px window. */
+  --radius-xs: 4px;
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 12px;
+  --radius-xl: 16px;
+  --radius-2xl: 22px;
+  --radius-window: 10px;
+  --radius-device: 30px;
+  --radius-pill: 999px;
+
+  /* macOS separators are hairlines: 0.5px, which renders crisply on any Retina display and
+     softens to a light 1px elsewhere. Raising the weight is never how importance is shown. */
+  --border-hair: 0.5px;
+  --border-thick: 1.5px;
+  --focus-ring-w: 2px;
+  --focus-ring-offset: 0px;
+}

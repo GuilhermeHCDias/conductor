@@ -1,0 +1,241 @@
+/* Criterion 14: header · search · rows · bottom bar. The explicit single column
+   matters — an implicit track resolves to min-content and overflows the column
+   the pane was given (criterion 46). */
+.panel {
+  background: var(--a-panel);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-rows: 38px auto minmax(0, 1fr) 34px;
+  min-height: 0;
+  min-width: 0;
+}
+
+/* Region headers: same height everywhere, hairline underneath, nothing else. */
+.header {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  display: flex;
+  flex: none;
+  gap: var(--space-4);
+  height: 38px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 0 var(--space-4) 0 var(--space-5);
+}
+
+.caps {
+  color: var(--text-tertiary);
+  flex: none;
+  font: var(--type-label);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+}
+
+.count {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.spacer {
+  flex: 1;
+}
+
+.searchRow {
+  padding: 10px 10px var(--space-3);
+}
+
+.searchField {
+  align-items: center;
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  display: flex;
+  gap: var(--space-3);
+  height: 26px;
+  padding: 0 var(--space-4);
+  transition:
+    box-shadow var(--dur-fast) var(--ease-out),
+    border-color var(--dur-fast) var(--ease-out);
+}
+
+/* Criterion 21. */
+.searchField:focus-within {
+  border-color: var(--accent-edge);
+  box-shadow: var(--glow-accent);
+}
+
+.searchIcon {
+  color: var(--text-tertiary);
+}
+
+.searchField:focus-within .searchIcon {
+  color: var(--accent);
+}
+
+.searchInput {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  flex: 1;
+  font: var(--type-caption);
+  min-width: 0;
+  outline: none;
+}
+
+.searchInput:focus-visible {
+  box-shadow: none;
+}
+
+/* Safari draws its own clear button on a search input; the row has one glyph. */
+.searchInput::-webkit-search-decoration,
+.searchInput::-webkit-search-cancel-button {
+  appearance: none;
+}
+
+.rows {
+  align-content: start;
+  display: grid;
+  gap: 1px;
+  list-style: none;
+  margin: 0;
+  min-height: 0;
+  overflow: auto;
+  padding: 0 var(--space-4) var(--space-4);
+}
+
+.row {
+  align-items: center;
+  border-radius: var(--a-radius-surface);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-right: 6px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.row:hover {
+  background: var(--glass-hover);
+}
+
+/* Criterion 17: an AppKit selection is a solid accent fill, never a tint — so
+   it has to win over the hover fill above. */
+.row[data-selected="true"] {
+  background: var(--accent);
+}
+
+.open {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--a-radius-surface);
+  cursor: pointer;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto minmax(0, 1fr);
+  min-width: 0;
+  padding: var(--space-3) 0 var(--space-3) 9px;
+  text-align: left;
+}
+
+.open:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.labels {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.name {
+  color: var(--text-secondary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.meta {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row[data-selected="true"] .name {
+  color: var(--accent-on);
+}
+
+.row[data-selected="true"] .meta {
+  color: var(--accent-on);
+  opacity: 0.72;
+}
+
+.row[data-selected="true"] .open [data-state] {
+  background: var(--accent-on);
+  opacity: 0.8;
+}
+
+.row[data-selected="true"] .actions {
+  color: var(--accent-on);
+}
+
+.row[data-selected="true"] .actions:hover {
+  background: var(--accent-strong);
+}
+
+.aiMark {
+  color: var(--ai);
+  margin-right: 5px;
+}
+
+/* Criterion 20. */
+.empty {
+  align-self: start;
+  color: var(--text-disabled);
+  font: var(--type-caption);
+  padding: var(--space-7) var(--space-5);
+  text-align: center;
+}
+
+/* macOS puts persistent actions on a bottom bar of the sidebar. */
+.bottomBar {
+  align-items: center;
+  border-top: 1px solid var(--a-hair);
+  display: flex;
+  flex: none;
+  gap: var(--space-2);
+  height: 34px;
+  padding: 0 var(--space-4);
+}
+
+.suiteRun {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  flex: 1;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 24px;
+  min-width: 0;
+  padding: 0 var(--space-3);
+  transition: var(--t-hover);
+}
+
+.suiteRun:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.suiteRun:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

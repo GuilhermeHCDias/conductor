@@ -1,0 +1,54 @@
+/* The design system's own styles.css, in its order. tokens/ and utilities/ are
+   copied byte-for-byte from `docs/Conductor Design System/`; only fonts.css
+   differs, and it says why at the top of itself. */
+@import "./tokens/fonts.css";
+@import "./tokens/palette.css";
+@import "./tokens/typography.css";
+@import "./tokens/spacing.css";
+@import "./tokens/radius.css";
+@import "./tokens/elevation.css";
+@import "./tokens/motion.css";
+/* The two themes. Aurora light is also :root, so a window with no data-theme is
+   already correct. */
+@import "./tokens/theme-aurora.css";
+@import "./tokens/theme-aurora-dark.css";
+@import "./utilities/base.css";
+@import "./utilities/glass.css";
+@import "./utilities/animation.css";
+
+/* Below: what belongs to the window itself rather than to any one module. The
+   wash and the rim live in `App.module.css`, with the window they draw; only
+   the scroller treatment is shared, by every pane that scrolls. */
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  /* The window is the whole viewport; only the panes inside it scroll. */
+  overflow: hidden;
+}
+
+/* macOS overlay scrollbars, ported from the Aurora kit's page <style>. */
+.a-scroll {
+  scrollbar-color: var(--a-hair-strong) transparent;
+  scrollbar-width: thin;
+}
+
+.a-scroll::-webkit-scrollbar {
+  height: 9px;
+  width: 9px;
+}
+
+.a-scroll::-webkit-scrollbar-thumb {
+  background: var(--a-hair-strong);
+  background-clip: content-box;
+  border: 2px solid transparent;
+  border-radius: 9px;
+}
+
+.a-scroll::-webkit-scrollbar-track {
+  background: transparent;
+}
