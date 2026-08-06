@@ -293,4 +293,14 @@ describe('the resolver field', () => {
 
     expect(store().url).toBe('github.com/loja-verde/pnp-fast-mode');
   });
+
+  /** The error surface's working Copy button, same road out (§9.3). */
+  it('copyCommand writes through main', async () => {
+    const write = vi.fn(() => Promise.resolve(ok({ text: 'gh auth login' })));
+    window.conductor.appWriteClipboard = write;
+
+    await store().copyCommand('gh auth login');
+
+    expect(write).toHaveBeenCalledExactlyOnceWith('gh auth login');
+  });
 });

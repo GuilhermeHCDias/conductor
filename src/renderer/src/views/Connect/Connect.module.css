@@ -1,0 +1,92 @@
+/* The whole window while no repo is active: drag strip · card · footer. */
+.connect {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
+/* The connect window renders no toolbar, so this strip is what the person
+   drags the frameless window by — the traffic lights sit over it. */
+.drag {
+  -webkit-app-region: drag;
+}
+
+.body {
+  align-content: start;
+  display: grid;
+  gap: var(--space-6);
+  min-height: 0;
+  overflow: hidden;
+  padding: 14px 30px 24px;
+}
+
+.heading {
+  display: grid;
+  gap: 6px;
+}
+
+/* The real Conductor icon, not the kit's gradient "C" (spec decision). */
+.mark {
+  border-radius: 11px;
+  box-shadow: var(--shadow-2);
+  height: 38px;
+  margin-bottom: 6px;
+  width: 38px;
+}
+
+.title {
+  color: var(--text-primary);
+  font: var(--type-title-2);
+  margin: 0;
+}
+
+.copy {
+  color: var(--text-secondary);
+  font: var(--type-body);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.footer {
+  align-items: center;
+  background: var(--a-well);
+  border-top: 1px solid var(--a-hair);
+  display: flex;
+  gap: var(--space-4);
+  padding: 10px 16px;
+}
+
+.footerNote {
+  color: var(--text-tertiary);
+  flex: 1;
+  font: var(--type-mono-label);
+}
+
+.open {
+  align-items: center;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 28px;
+  padding: 0 var(--space-6);
+  transition: var(--t-hover);
+}
+
+.open:hover:enabled {
+  background: var(--accent-strong);
+}
+
+.open:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.open:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

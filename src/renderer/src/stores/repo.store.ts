@@ -43,6 +43,7 @@ export type RepoActions = {
   openAdd: () => void;
   closeAdd: () => void;
   pasteFromClipboard: () => Promise<void>;
+  copyCommand: (command: string) => Promise<void>;
   resetResolver: () => void;
 };
 
@@ -228,6 +229,15 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
       return;
     }
     set({ url: result.data.text });
+  },
+
+  /** The error surface's Copy button — the write crosses through main for
+   * the same reason the read does. */
+  copyCommand: async (command) => {
+    const result = await window.conductor.appWriteClipboard(command);
+    if (!result.ok) {
+      console.error('The command could not be copied:', result.error);
+    }
   },
 
   resetResolver: () => {

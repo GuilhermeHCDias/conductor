@@ -14,6 +14,9 @@ export type DialogProps = {
   readonly title: string;
   readonly subtitle?: string;
   readonly icon?: IconName;
+  /** The panel's width when the content needs more than the default 460px —
+   * the add-repository sheet is 520 per the kit. */
+  readonly width?: number;
   readonly onClose: () => void;
   readonly children?: ReactNode;
   readonly footer?: ReactNode;
@@ -23,6 +26,7 @@ export function Dialog({
   title,
   subtitle,
   icon,
+  width,
   onClose,
   children,
   footer,
@@ -56,7 +60,13 @@ export function Dialog({
         tabIndex={-1}
         type="button"
       />
-      <div aria-labelledby={titleId} aria-modal="true" className={styles.panel} role="dialog">
+      <div
+        aria-labelledby={titleId}
+        aria-modal="true"
+        className={styles.panel}
+        role="dialog"
+        style={width === undefined ? undefined : { width }}
+      >
         <div className={styles.header}>
           {icon !== undefined ? (
             <span className={styles.badge}>
