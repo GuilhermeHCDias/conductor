@@ -13,6 +13,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { hashText } from '@shared/hash';
 import { ERROR_CODES, type Result } from '@shared/ipc';
 import type { FlowIndex, FlowMeta } from '@shared/types';
+import { countCommands, flowBody, flowExtensionOf } from './flow-classify';
 import { TreeWatcher } from './TreeWatcher';
 
 /**
@@ -469,13 +470,7 @@ export class FlowService {
 
   /** The extension as the file actually wears it — case preserved. */
   private flowExtensionOf(name: string): string {
-    const lower = name.toLowerCase();
-    for (const extension of this.deps.extensions) {
-      if (lower.endsWith(extension)) {
-        return name.slice(name.length - extension.length);
-      }
-    }
-    return '';
+    return flowExtensionOf(name, this.deps.extensions);
   }
 
   /** Criterion 18 — type `checkout`, get `checkout.yaml`; a typed extension
@@ -512,26 +507,6 @@ export class FlowService {
     }
     return unavailable('The flows folder could not be read.', error);
   }
-}
-
-/** §7.1 — a flow is classified by its header: an `appId:` line before the
- * `---` separator. What fails the test is not a flow, and is never touched. */
-function flowBody(content: string): string | null {
-  const lines = content.split('\n');
-  const separator = lines.findIndex((line) => line.trim() === '---');
-  if (separator === -1) {
-    return null;
-  }
-  if (!lines.slice(0, separator).some((line) => line.startsWith('appId:'))) {
-    return null;
-  }
-  return lines.slice(separator + 1).join('\n');
-}
-
-/** Criterion 2 — top-level `- ` lines after the separator: the commands, and
- * never a header list like `tags:`. */
-function countCommands(body: string): number {
-  return body.split('\n').filter((line) => line.startsWith('- ')).length;
 }
 
 /**
