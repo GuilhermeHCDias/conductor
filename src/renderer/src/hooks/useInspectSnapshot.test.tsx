@@ -224,6 +224,60 @@ describe('while a flow runs', () => {
     expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
   });
 
+  /** The same politeness for criterion 20's rotation: a flow that rotates the
+   * device mid-run must not have the overlay collect a refusal per turn. */
+  it('schedules no recapture for a size change while the run is active', async () => {
+    renderHook(() => {
+      useInspectSnapshot();
+    });
+    await streaming();
+    await waitFor(() => {
+      expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      useRunStore.setState({ running: true, runId: 'run-1' });
+    });
+
+    act(() => {
+      device().mirrorResized('mirror-1', 1024, 464);
+    });
+
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+  });
+
+  /** The run's end already recaptures (criterion 13); a rotation the run made
+   * must not add a second capture on top when the gate reopens. */
+  it('recaptures once when a run that rotated the screen ends', async () => {
+    renderHook(() => {
+      useInspectSnapshot();
+    });
+    await streaming();
+    await waitFor(() => {
+      expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+    });
+    act(() => {
+      useRunStore.setState({ running: true, runId: 'run-1' });
+    });
+    act(() => {
+      device().mirrorResized('mirror-1', 1024, 464);
+    });
+
+    act(() => {
+      useRunStore.getState().applyEvent({
+        ok: true,
+        data: { type: 'finished', runId: 'run-1', outcome: 'passed', message: null },
+      });
+    });
+
+    await waitFor(() => {
+      expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+    });
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+  });
+
   /** Criterion 13 — the §5.5 end-of-flow recapture, automatic: the overlay
    * recovers without the person touching anything. */
   it('recaptures the moment the run ends', async () => {

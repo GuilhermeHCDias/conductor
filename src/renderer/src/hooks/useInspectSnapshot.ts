@@ -88,9 +88,12 @@ export function useInspectSnapshot(): void {
       return;
     }
     const size = `${width}x${height}`;
-    if (seenSize.current !== null && seenSize.current !== size) {
+    // Run criterion 11 again: a rotation the flow itself makes must not
+    // collect a refusal per turn. The size still counts as seen, so the gate
+    // reopening captures once — through the run's end, not a second time here.
+    if (!running && seenSize.current !== null && seenSize.current !== size) {
       void capture(deviceId);
     }
     seenSize.current = size;
-  }, [streaming, deviceId, width, height, capture]);
+  }, [streaming, deviceId, width, height, running, capture]);
 }

@@ -366,7 +366,7 @@ export const IPC = {
   // (criterion 15), and an empty flow is refused at the boundary the way the
   // Run button already disables it (criterion 17).
   [CHANNELS.runStart]: {
-    request: z.tuple([z.string(), z.string().min(1)]),
+    request: z.tuple([z.string(), z.string().refine((yaml) => yaml.trim() !== '')]),
     response: runRef,
   },
   [CHANNELS.runCancel]: { request: z.tuple([z.string()]), response: runRef },

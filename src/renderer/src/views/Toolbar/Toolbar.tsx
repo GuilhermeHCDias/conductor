@@ -2,15 +2,13 @@ import type { JSX } from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { Tooltip } from '../../components/Tooltip/Tooltip';
-import { ENVIRONMENT, FLOW_YAML } from '../../fixtures/flows';
+import { ENVIRONMENT } from '../../fixtures/flows';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
 import { selectYaml, useFlowStore } from '../../stores/flow.store';
 import { selectRunning, useRunStore } from '../../stores/run.store';
 import { selectSidebarVisible, useUiStore } from '../../stores/ui.store';
 import styles from './Toolbar.module.css';
-
-const COMMAND_COUNT = countCommands(FLOW_YAML);
 
 /**
  * The unified macOS toolbar (criteria 10–13). The traffic lights are the OS's
@@ -69,7 +67,7 @@ export function Toolbar(): JSX.Element {
       {/* macOS document title: the name plus a quiet subtitle, left of centre. */}
       <span className={styles.document}>
         <span className={styles.title}>{title}</span>
-        <span className={styles.subtitle}>{COMMAND_COUNT} commands · saved to suite</span>
+        <span className={styles.subtitle}>{countCommands(yaml)} commands · saved to suite</span>
       </span>
 
       <span className={styles.spacer} />

@@ -408,6 +408,12 @@ describe('run:start', () => {
     expect(schema.request.safeParse(['R9QYC01EMXL', '']).success).toBe(false);
   });
 
+  /** Same rule, same measure as the button's disable: a flow of nothing but
+   * whitespace is an empty flow, not a runnable file. */
+  it('refuses a whitespace-only flow', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL', ' \n\t\n']).success).toBe(false);
+  });
+
   /** Criterion 1 — the fresh run id, immediately, and nothing else: progress
    * arrives as `run:event` pushes, never in this answer. */
   it('answers with the run id and nothing else', () => {

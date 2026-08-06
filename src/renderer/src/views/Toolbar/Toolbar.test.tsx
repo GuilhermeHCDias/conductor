@@ -53,6 +53,18 @@ describe('Toolbar', () => {
     expect(screen.getByText('1 commands · saved to suite')).toBeInTheDocument();
   });
 
+  /** The count is the open flow's own — the store the Run button executes —
+   * not a fixture's; a step the command menu appends moves it. */
+  it('counts the commands of the flow as edited', () => {
+    render(<Toolbar />);
+
+    act(() => {
+      useFlowStore.getState().appendStep('- tapOn: "Buy"');
+    });
+
+    expect(screen.getByText('2 commands · saved to suite')).toBeInTheDocument();
+  });
+
   it('follows the active document when the tab changes', () => {
     render(<Toolbar />);
 
