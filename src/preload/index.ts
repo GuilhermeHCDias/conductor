@@ -20,6 +20,16 @@ const api: ConductorApi = {
     ipcRenderer.invoke(CHANNELS.maestroSynthesizeSelector, snapshotId, path),
   runStart: (deviceId, yaml) => ipcRenderer.invoke(CHANNELS.runStart, deviceId, yaml),
   runCancel: (runId) => ipcRenderer.invoke(CHANNELS.runCancel, runId),
+  flowList: () => ipcRenderer.invoke(CHANNELS.flowList),
+  flowRead: (path) => ipcRenderer.invoke(CHANNELS.flowRead, path),
+  flowSave: (path, yaml) => ipcRenderer.invoke(CHANNELS.flowSave, path, yaml),
+  flowCreate: (folder, name) => ipcRenderer.invoke(CHANNELS.flowCreate, folder, name),
+  flowCreateFolder: (name) => ipcRenderer.invoke(CHANNELS.flowCreateFolder, name),
+  flowRename: (path, name) => ipcRenderer.invoke(CHANNELS.flowRename, path, name),
+  flowRenameFolder: (folder, name) => ipcRenderer.invoke(CHANNELS.flowRenameFolder, folder, name),
+  flowDuplicate: (path) => ipcRenderer.invoke(CHANNELS.flowDuplicate, path),
+  flowDelete: (path) => ipcRenderer.invoke(CHANNELS.flowDelete, path),
+  flowDeleteFolder: (folder) => ipcRenderer.invoke(CHANNELS.flowDeleteFolder, folder),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -53,6 +63,17 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.runEvent, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.runEvent, forward);
+    };
+  },
+
+  // And again — the watcher reports every save, Conductor's own included.
+  onFlowChanged: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'flow:changed'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.flowChanged, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.flowChanged, forward);
     };
   },
 };

@@ -6,6 +6,7 @@ import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
 import { app, BrowserWindow } from 'electron';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
+import { registerFlowIpc } from './ipc/flow';
 import { registerMaestroIpc } from './ipc/maestro';
 import { registerRunIpc } from './ipc/run';
 import { AdbBridge } from './maestro/AdbBridge';
@@ -16,6 +17,7 @@ import { ScreenCapture } from './maestro/ScreenCapture';
 import { isExecutable } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
+import { FlowService } from './services/flow.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
 import { RunService } from './services/run.service';
 import { SnapshotService } from './services/snapshot.service';
@@ -190,16 +192,29 @@ if (!app.requestSingleInstanceLock()) {
       },
       runsDir: join(app.getPath('userData'), 'runs'),
     });
-    services.push(device, mcp, runService);
+    // The local flow workspace (§7): userData/repo is where the publish spec
+    // will later put the clone, so user files never move when it arrives. The
+    // root is computed here and nowhere else (criterion 1).
+    const flowService = new FlowService({
+      root: join(app.getPath('userData'), 'repo', CONFIG.FLOWS_DIR),
+      appId: CONFIG.APP_ID,
+      extensions: CONFIG.FLOW_EXTENSIONS,
+      emit: (payload) => {
+        broadcast(PUSH_CHANNELS.flowChanged, payload);
+      },
+    });
+    services.push(device, mcp, runService, flowService);
 
     registerAppIpc();
     registerDeviceIpc({ device });
     registerMaestroIpc({ snapshot });
     registerRunIpc({ run: runService });
+    registerFlowIpc({ flow: flowService });
 
     watchRenderer(createWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.
     device.start();
+    void flowService.start();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {

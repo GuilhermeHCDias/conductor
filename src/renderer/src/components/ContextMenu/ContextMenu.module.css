@@ -101,15 +101,17 @@
   text-align: left;
   cursor: pointer;
   transition: background-color var(--dur-instant) var(--ease-out);
-  /* The glyph reads this, so the highlighted row recolours it with no
-     descendant rule of its own. */
+  /* The glyph and the shortcut read these, so the highlighted row recolours
+     them with no descendant rule of its own. */
   --menu-glyph: var(--text-tertiary);
+  --menu-shortcut: var(--text-disabled);
 }
 
 .item:hover {
   background: var(--accent);
   color: var(--accent-on);
   --menu-glyph: var(--accent-on);
+  --menu-shortcut: oklch(100% 0 0 / 0.7);
 }
 
 /* Keyboard focus keeps the AppKit fill and adds the shell's focus glow — the
@@ -118,8 +120,43 @@
   background: var(--accent);
   color: var(--accent-on);
   --menu-glyph: var(--accent-on);
+  --menu-shortcut: oklch(100% 0 0 / 0.7);
   outline: none;
   box-shadow: var(--glow-accent);
+}
+
+/* The irreversible commands keep their own hue — at rest a fail-tinted label,
+   highlighted a solid fail fill, exactly the AppKit pattern the accent rows
+   follow (DS surface/ContextMenu). */
+.item[data-destructive="true"] {
+  color: var(--state-fail);
+  --menu-glyph: var(--state-fail);
+}
+
+.item[data-destructive="true"]:hover {
+  background: var(--state-fail);
+  color: var(--accent-on);
+  --menu-glyph: var(--accent-on);
+}
+
+.item[data-destructive="true"]:focus-visible {
+  background: var(--state-fail);
+  color: var(--accent-on);
+  --menu-glyph: var(--accent-on);
+  outline: none;
+  box-shadow: var(--glow-accent);
+}
+
+/* Offered, not available: the row stays put and nothing highlights. */
+.item:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.item:disabled:hover {
+  background: transparent;
+  color: var(--text-primary);
+  --menu-glyph: var(--text-tertiary);
 }
 
 .glyph {
@@ -141,4 +178,10 @@
   flex: 1;
   white-space: nowrap;
   font: var(--type-code-sm);
+}
+
+.shortcut {
+  flex: none;
+  font: var(--type-mono-label);
+  color: var(--menu-shortcut);
 }

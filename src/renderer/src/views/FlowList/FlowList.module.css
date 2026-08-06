@@ -193,6 +193,308 @@
   margin-right: 5px;
 }
 
+/* ── the folder tree ─────────────────────────────────────────────────────── */
+
+.folderRow {
+  align-items: center;
+  border-radius: var(--a-radius-surface);
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding-right: 5px;
+  transition: background var(--dur-fast) var(--ease-out);
+}
+
+.folderRow:hover {
+  background: var(--glass-hover);
+}
+
+.folderToggle {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--a-radius-surface);
+  color: inherit;
+  cursor: pointer;
+  display: flex;
+  gap: var(--space-3);
+  min-width: 0;
+  padding: 5px 6px 5px 5px;
+  text-align: left;
+}
+
+.folderToggle:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* The chevron rotates rather than swapping glyphs — the mock's motion. */
+.chevron {
+  color: var(--text-tertiary);
+  display: grid;
+  flex: none;
+  place-items: center;
+  transition: transform var(--dur-base) var(--ease-spring);
+  width: 12px;
+}
+
+.chevron[data-open="true"] {
+  transform: rotate(90deg);
+}
+
+.folderGlyph {
+  color: var(--text-tertiary);
+  flex: none;
+}
+
+.folderRow:hover .folderGlyph {
+  color: var(--text-secondary);
+}
+
+.folderName {
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.folderTrail {
+  align-items: center;
+  display: flex;
+  flex: none;
+  gap: 1px;
+  justify-content: center;
+  min-height: 22px;
+  min-width: 22px;
+}
+
+.folderCount {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+  padding-right: 4px;
+}
+
+/* Criterion 13 — the affordance an empty folder holds open. */
+.emptyFolderItem {
+  display: grid;
+}
+
+.emptyFolder {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--a-radius-surface);
+  color: var(--text-disabled);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: 7px;
+  padding: 5px 6px 5px 23px;
+  text-align: left;
+}
+
+.emptyFolder:hover {
+  background: var(--glass-hover);
+  color: var(--text-tertiary);
+}
+
+.emptyFolder:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* ── the draft row (criteria 16–17) ──────────────────────────────────────── */
+
+.draftItem {
+  display: grid;
+}
+
+.draft {
+  display: grid;
+  gap: 3px;
+  padding: 1px 0;
+}
+
+.draftField {
+  align-items: center;
+  background: var(--a-well);
+  border: 1px solid var(--accent-edge);
+  border-radius: var(--a-radius-surface);
+  box-shadow: var(--glow-accent);
+  display: grid;
+  gap: 8px;
+  grid-template-columns: auto minmax(0, 1fr);
+  padding: 5px 7px;
+}
+
+/* The collision state: the field goes fail-edged and the glow leaves. */
+.draftField[data-error="true"] {
+  border-color: var(--state-fail);
+  box-shadow: none;
+}
+
+.draftGlyph {
+  color: var(--accent);
+  flex: none;
+}
+
+.draftField[data-error="true"] .draftGlyph {
+  color: var(--state-fail);
+}
+
+.draftInput {
+  background: none;
+  border: none;
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  min-width: 0;
+  outline: none;
+}
+
+/* The field carries the focus glow for the whole row, the way the search
+   field does — the ring is replaced, never merely suppressed. */
+.draftInput:focus-visible {
+  box-shadow: none;
+}
+
+.draftError {
+  color: var(--state-fail);
+  font: var(--type-caption);
+  margin: 0;
+  padding: 0 8px 2px;
+}
+
+/* ── the delete confirmation (criterion 23) ──────────────────────────────── */
+
+.dialogWell {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  display: grid;
+  gap: 6px;
+  padding: 11px 13px;
+}
+
+.dialogTarget {
+  align-items: center;
+  color: var(--text-tertiary);
+  display: flex;
+  gap: 8px;
+}
+
+.dialogTargetName {
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.dialogList {
+  color: var(--text-tertiary);
+  display: grid;
+  font: var(--type-mono-label);
+  gap: 3px;
+  padding-left: 21px;
+}
+
+.dialogMore {
+  color: var(--text-disabled);
+}
+
+.dialogGhost {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  height: 26px;
+  padding: 0 var(--space-5);
+}
+
+.dialogGhost:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.dialogGhost:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* The irreversible verb wears the fail hue — never "OK" (criterion 23). */
+.dialogDanger {
+  align-items: center;
+  background: var(--state-fail);
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 26px;
+  padding: 0 var(--space-5);
+}
+
+.dialogDanger:hover {
+  filter: brightness(1.08);
+}
+
+.dialogDanger:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* ── the states that replace the tree ────────────────────────────────────── */
+
+.retry {
+  background: none;
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: var(--type-caption);
+  height: 26px;
+  padding: 0 var(--space-5);
+}
+
+.retry:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.retry:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.primaryAction {
+  align-items: center;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 26px;
+  padding: 0 var(--space-5);
+}
+
+.primaryAction:hover {
+  background: var(--accent-strong);
+}
+
+.primaryAction:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
 /* Criterion 20. */
 .empty {
   align-self: start;

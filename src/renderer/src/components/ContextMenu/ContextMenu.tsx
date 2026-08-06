@@ -25,6 +25,13 @@ export type ContextMenuItem =
       /** Command labels are written verbatim into the .yaml, so they read in
        * the code face (DS rule). */
       readonly mono?: boolean;
+      /** The irreversible ones — Delete flow, Delete folder — wear the fail
+       * hue at rest and fill with it on hover (DS rule). */
+      readonly destructive?: boolean;
+      /** Right-aligned, mono — `⌘N` on the header's New flow. */
+      readonly shortcut?: string;
+      /** Offered but not available — Run now with no device (criterion 25). */
+      readonly disabled?: boolean;
     };
 
 export type ContextMenuProps = {
@@ -192,6 +199,8 @@ export function ContextMenu({
           return (
             <button
               className={styles.item}
+              data-destructive={item.destructive === true ? 'true' : undefined}
+              disabled={item.disabled === true}
               key={key}
               onClick={() => {
                 onSelect(item.id);
@@ -212,6 +221,9 @@ export function ContextMenu({
               <span className={item.mono === true ? styles.mono : styles.itemLabel}>
                 {item.label}
               </span>
+              {item.shortcut !== undefined ? (
+                <span className={styles.shortcut}>{item.shortcut}</span>
+              ) : null}
             </button>
           );
         })}
@@ -221,5 +233,8 @@ export function ContextMenu({
 }
 
 function commandButtons(menu: HTMLDivElement | null): HTMLButtonElement[] {
-  return [...(menu?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]') ?? [])];
+  // Disabled commands are visible but are neither a click nor a keyboard stop.
+  return [
+    ...(menu?.querySelectorAll<HTMLButtonElement>('button[role="menuitem"]:not(:disabled)') ?? []),
+  ];
 }
