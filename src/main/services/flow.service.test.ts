@@ -811,3 +811,101 @@ describe('the watcher', () => {
     );
   });
 });
+
+/**
+ * The repo-connect spec: the workspace root is the active repo's
+ * `conductor/`, it can be absent before the first connect, and switching
+ * repos re-points root, watcher and index with no restart.
+ */
+describe('the swappable workspace', () => {
+  /** Before the first connect there is no workspace at all — every operation
+   * answers the stable code, and nothing crashes for lack of a root. */
+  it('answers flow/workspace-unavailable while no repo is connected', async () => {
+    const { service } = harness({ root: null, appId: null });
+    await service.start();
+
+    expect(code(await service.list())).toBe('flow/workspace-unavailable');
+    expect(code(await service.read('a.yaml'))).toBe('flow/workspace-unavailable');
+    expect(code(await service.save('a.yaml', FLOW))).toBe('flow/workspace-unavailable');
+    expect(code(await service.createFlow('', 'x'))).toBe('flow/workspace-unavailable');
+    expect(code(await service.createFolder('drafts'))).toBe('flow/workspace-unavailable');
+    expect(code(await service.deleteFlow('a.yaml'))).toBe('flow/workspace-unavailable');
+  });
+
+  /** First connect: the workspace points at the clone and the fresh index is
+   * announced without anyone asking. */
+  it('points at the active repo once setWorkspace names it', async () => {
+    const { service, dir, events } = harness({ root: null, appId: null });
+    await service.start();
+    const clone = join(dir, 'repos', 'a', 'conductor');
+    seed(clone, 'checkout/pix.yaml');
+
+    await service.setWorkspace({ root: clone, appId: 'com.a' });
+
+    const result = await service.list();
+    expect(data(result).flows.map((flow) => flow.path)).toEqual(['checkout/pix.yaml']);
+    expect(
+      events.some(
+        (event) => event.ok && event.data.flows.some((flow) => flow.path === 'checkout/pix.yaml'),
+      ),
+    ).toBe(true);
+  });
+
+  /** A switch disposes the previous watcher: the old tree goes quiet, the new
+   * one drives the index (criterion: previous watcher disposed, no restart). */
+  it('swaps the watcher with the root', {
+    timeout: 15_000,
+  }, async () => {
+    const { service, root: previous, dir, events } = harness();
+    await service.start();
+    const next = join(dir, 'repos', 'b', 'conductor');
+    mkdirSync(next, { recursive: true });
+
+    await service.setWorkspace({ root: next, appId: 'com.b' });
+    events.length = 0;
+
+    // The old tree changes; a disposed watcher hears nothing.
+    seed(previous, 'old.yaml');
+    await new Promise((resolve) => setTimeout(resolve, 400));
+    expect(events).toEqual([]);
+
+    // The new tree changes; the swapped watcher reports it.
+    seed(next, 'new.yaml');
+    await until(
+      () =>
+        events.some(
+          (event) => event.ok && event.data.flows.some((flow) => flow.path === 'new.yaml'),
+        ),
+      () => JSON.stringify(events),
+    );
+  });
+
+  /** §12.6 — the header follows the active repo, never a constant. */
+  it('writes the new workspace appId into a created flow', async () => {
+    const { service, dir } = harness();
+    await service.start();
+    const next = join(dir, 'repos', 'c', 'conductor');
+
+    await service.setWorkspace({ root: next, appId: 'com.next.app' });
+
+    const created = data(await service.createFlow('', 'novo'));
+    expect(readFileSync(join(next, created.path), 'utf8')).toBe(
+      'appId: com.next.app\n---\n- launchApp:\n    clearState: true\n',
+    );
+  });
+
+  /** §2.1's divergence ❓ — there is no single header value, so creating a
+   * flow refuses with the clear message instead of choosing in silence
+   * (§12.22). Everything else about the workspace still works. */
+  it('refuses to create a flow while the header appId is unknown', async () => {
+    const { service, dir } = harness();
+    await service.start();
+    const next = join(dir, 'repos', 'd', 'conductor');
+    seed(next, 'existing.yaml');
+
+    await service.setWorkspace({ root: next, appId: null });
+
+    expect(code(await service.createFlow('', 'x'))).toBe('flow/app-id-unknown');
+    expect(data(await service.list()).flows.map((flow) => flow.path)).toEqual(['existing.yaml']);
+  });
+});

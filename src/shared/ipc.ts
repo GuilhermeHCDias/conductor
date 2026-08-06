@@ -698,6 +698,10 @@ export const ERROR_CODES = {
   /** Criterion 5 — empty once trimmed, carrying a separator, or resolving
    * outside the root (§9.3, checked by resolution, never by pattern). */
   flowInvalidName: 'flow/invalid-name',
+  /** §2.1's open ❓ — the repo's Android and iOS ids diverge, so a new flow
+   * has no single header value yet. Creating refuses with the reason rather
+   * than choosing in silence (§12.22). */
+  flowAppIdUnknown: 'flow/app-id-unknown',
   /** The pasted text does not parse as a repository address at all. */
   repoInvalidUrl: 'repo/invalid-url',
   /** It parsed, but the host is not github.com — GitHub only, for now. */
