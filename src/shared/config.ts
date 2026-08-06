@@ -5,7 +5,7 @@ export const CONFIG = {
    * Google Calendar por enquanto — um app que qualquer device Google já tem,
    * para testar de ponta a ponta até o app real ser definido.
    */
-  APP_ID: process.env.CONDUCTOR_APP_ID ?? 'com.google.android.calendar',
+  APP_ID: process.env.CONDUCTOR_APP_ID ?? 'com.kuei.ainativesampleapp',
 
   /**
    * Repositório canônico que contém os testes e2e.

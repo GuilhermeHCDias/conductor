@@ -63,7 +63,7 @@ build/                        # icons + entitlements for electron-builder
 
 Root config files: `electron.vite.config.ts`, `tsconfig.json` (references only), `tsconfig.node.json` (main + preload + shared), `tsconfig.web.json` (renderer + shared), `biome.json`, `electron-builder.yml`, `vitest.config.ts`.
 
-A sandboxed renderer has no `process.env`, so it receives `CONFIG` through the preload bridge; `src/shared/config.ts` stays the single source and the renderer imports **types only** from `shared/`. Never hardcode a `CONFIG` value outside that file (§2, §12.6).
+A sandboxed renderer has no `process.env`, so it receives `CONFIG` through the preload bridge; `src/shared/config.ts` stays the single source and the renderer imports **types only** from `shared/`. Never hardcode a `CONFIG` value outside that file (§2, §12.6). `CONFIG` holds only true constants: the app under test — `appId`, display name, repo URL — is **runtime state** derived from the Expo `app.json` of the repo the user pasted and selected (§2.1); it is owned by main, reaches consumers by injection or push event, and is never a constant anywhere.
 
 ## Architecture
 
