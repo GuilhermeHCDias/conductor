@@ -13,12 +13,12 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { hashText } from '@shared/hash';
 import { ERROR_CODES, type Result } from '@shared/ipc';
 import type { FlowIndex, FlowMeta } from '@shared/types';
-import { type FSWatcher, watch } from 'chokidar';
+import { TreeWatcher } from './TreeWatcher';
 
 /**
  * The flow domain: the workspace on disk (§7), its index, atomic saves
- * (§8.2), file and folder management (§7.2 as amended), and the one chokidar
- * watcher behind `flow:changed` (§12.21). What AGENTS.md sketched as
+ * (§8.2), file and folder management (§7.2 as amended), and the one
+ * `TreeWatcher` behind `flow:changed` (§12.21). What AGENTS.md sketched as
  * `flow-index`, grown to carry the whole domain.
  *
  * Everything here is `node:fs/promises` — the service creates no process, so
@@ -40,13 +40,8 @@ export type FlowServiceDeps = {
   readonly emit: (payload: Result<FlowIndex>) => void;
   /** The watcher's settle time. Tests shorten it. */
   readonly debounceMs?: number;
-  /**
-   * Test hook: watch by polling instead of the OS's native events. The app
-   * never sets it — one long-lived watcher is what fsevents is good at — but
-   * a suite spinning up dozens of short-lived sibling watchers under load
-   * starves fsevents into dropping events, and a flaky watcher test teaches
-   * everyone to ignore red.
-   */
+  /** Test hook, forwarded to the watcher — see `TreeWatcherOptions`. The app
+   * never sets it. */
   readonly usePolling?: boolean;
 };
 
@@ -54,7 +49,7 @@ const DEFAULT_DEBOUNCE_MS = 150;
 
 export class FlowService {
   private readonly deps: FlowServiceDeps;
-  private watcher: FSWatcher | null = null;
+  private watcher: TreeWatcher | null = null;
   private watcherReady: Promise<void> | null = null;
   private debounce: NodeJS.Timeout | null = null;
   private disposed = false;
@@ -68,9 +63,9 @@ export class FlowService {
    * A failure here is not fatal: `list` re-ensures per call, which is what
    * criterion 36's retry leans on.
    *
-   * Resolving means the watcher is actually watching: chokidar swallows
-   * events that land during its initial scan, so "started" before `ready`
-   * would be a window where an edit changes nothing on screen.
+   * Resolving means the watcher is actually watching: a watcher only reports
+   * what happens *after* it settles, so "started" before `ready` would be a
+   * window where an edit changes nothing on screen.
    */
   async start(): Promise<void> {
     try {
@@ -365,11 +360,11 @@ export class FlowService {
     if (this.disposed || this.watcher !== null) {
       return;
     }
-    const watcher = watch(this.rootAbsolute(), {
-      ignoreInitial: true,
-      ...(this.deps.usePolling === true ? { usePolling: true, interval: 25 } : {}),
+    const watcher = new TreeWatcher({
+      path: this.rootAbsolute(),
+      ...(this.deps.usePolling === true ? { usePolling: true } : {}),
     });
-    watcher.on('all', () => {
+    watcher.on('change', () => {
       this.scheduleReindex();
     });
     // Without a listener, an emitted 'error' throws in main. The UI hears it
@@ -388,11 +383,7 @@ export class FlowService {
       }
     });
     this.watcher = watcher;
-    // Never rejects: a dispose mid-scan leaves it pending, and the only
-    // awaiter is `start`, whose caller does not block the app on it.
-    this.watcherReady = new Promise((resolveReady) => {
-      watcher.once('ready', resolveReady);
-    });
+    this.watcherReady = watcher.ready;
   }
 
   private scheduleReindex(): void {

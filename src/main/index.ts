@@ -31,7 +31,7 @@ import { createWindow, ICON_PATH } from './window';
 
 /** Anything holding a process, session or watcher implements this and is
  * pushed here, so `before-quit` leaves no orphaned JVM, `claude` session or
- * chokidar watcher behind. */
+ * filesystem watcher behind. */
 interface Service {
   dispose: () => void | Promise<void>;
 }

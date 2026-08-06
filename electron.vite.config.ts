@@ -62,10 +62,7 @@ function contentSecurityPolicy(): Plugin {
 
 export default defineConfig({
   main: {
-    // chokidar 5 ships ESM only while the main bundle is CJS — excluded from
-    // externalization so Rollup compiles it in, instead of emitting a bare
-    // `require('chokidar')` that throws the moment the app launches.
-    plugins: [externalizeDepsPlugin({ exclude: ['chokidar'] })],
+    plugins: [externalizeDepsPlugin()],
     resolve: { alias },
   },
   // A sandboxed preload cannot `require` anything but `electron`, so its

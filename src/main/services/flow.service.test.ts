@@ -672,11 +672,9 @@ describe('deleting', () => {
 
 describe('the watcher', () => {
   /**
-   * Starts the service and steps past the millisecond it started in. The
-   * polled watcher compares directory mtimes in whole milliseconds
-   * (`fs.watchFile`), so a write landing in the very ms of the root's mkdir
-   * is invisible to it forever. Production — fsevents, event-driven — has no
-   * such window; only the polling backend these tests choose does.
+   * Starts the service and gives the watcher a beat past its own baseline.
+   * `start` already awaits readiness; the extra tick is belt-and-braces for
+   * the seed that follows, and costs the suite nothing.
    */
   async function started(
     overrides: Partial<FlowServiceDeps> = {},
@@ -734,6 +732,26 @@ describe('the watcher', () => {
     expect(events.length).toBe(1);
   });
 
+  /**
+   * Every test above polls, for the reason `harness` gives — but the app
+   * itself passes no `usePolling` at all, so the backend it actually ships on
+   * is the one none of them exercise. This is that wiring, once: default
+   * options, the OS's own events, an external edit reaching `flow:changed`.
+   */
+  it('pushes on an external change with the app’s own options', {
+    timeout: 15_000,
+  }, async () => {
+    const { service, root, events } = harness({ usePolling: undefined });
+    await service.start();
+
+    seed(root, 'native.yaml');
+
+    await until(
+      () => events.some((event) => event.ok && event.data.flows.length === 1),
+      () => JSON.stringify(events),
+    );
+  });
+
   /** Criterion 4 — dispose closes the watcher; nothing pushes after it. */
   it('goes quiet after dispose', async () => {
     const { service, root, events } = harness();
@@ -778,9 +796,8 @@ describe('the watcher', () => {
 
     await service.list();
     // `list` starts the new watcher but does not await its readiness (unlike
-    // `start`); with `ignoreInitial: true`, seeding before the poller's own
-    // initial scan settles would land in the same blind spot `started()`
-    // steps past above — so give the fresh watcher a beat to get there.
+    // `start`), and a watcher reports only what happens after it settles — so
+    // give the fresh one a beat to take its baseline before seeding into it.
     await new Promise((resolve) => setTimeout(resolve, 200));
     seed(root, 'after-recovery.yaml');
 

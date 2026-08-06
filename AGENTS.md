@@ -33,7 +33,9 @@ src/
     maestro/                  # MaestroGateway, LocalGateway, CliRunner,
                               # ScreenCapture, HierarchyParser, SelectorSynth (§9.2)
     services/                 # <name>.service.ts — repo, gh, publish, flow,
-                              # doctor, ai
+                              # doctor, ai. Plus TreeWatcher, the recursive
+                              # fs.watch behind flow:changed — a class module
+                              # (PascalCase), owned by the one service beside it
     process/run.ts            # the only execFile wrapper (§10.1)
   preload/
     index.ts                  # contextBridge only — implements ConductorApi, no logic
@@ -93,7 +95,7 @@ The product's core loop (§5.5) as a worked example: mirror frames stream in che
 - **`HierarchyParser` and `SelectorSynth` are pure** — no I/O, no Electron imports (§9.2). They read the top-level booleans of `TreeNode`, not `attributes` strings, and treat `null` as "not reported" (§5.2).
 - **Long work is streamed, never awaited in a handler.** A start invoke returns an id immediately; progress arrives as push events; cancellation is its own channel (`run:start` → `run:event` → `run:cancel`; same shape for `ai:*` and `publish:*` — a push against a remote hangs often enough to freeze the window). Never block main, and never use `sendSync` anywhere.
 - **Saving is local and immediate; Git runs only on publish** (§8.2, §12.23). `flow:save` writes the file (temp + rename) and nothing else — no commit, no push. `PublishService` is the only code that runs `git` beyond `fetch`, and it never runs `checkout`, `reset`, `stash` or `pull` under the user: the dirty working tree *is* the user's document.
-- **Every service holding a process, session or watcher implements `dispose()`**, called from `before-quit`. No orphaned JVMs, `claude` sessions or chokidar watchers.
+- **Every service holding a process, session or watcher implements `dispose()`**, called from `before-quit`. No orphaned JVMs, `claude` sessions or filesystem watchers.
 
 ### Renderer
 
