@@ -230,6 +230,7 @@ export const useUiStore = create<UiState>((set, get) => ({
     const batch = get().changes;
     set({ sendPhase: 'sending' });
     sendTimer = setTimeout(() => {
+      sendTimer = undefined;
       const sent = new Set(batch.map((change) => change.id));
       set({
         sendPhase: 'review',

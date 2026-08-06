@@ -1,7 +1,8 @@
-import { type JSX, useId, useState } from 'react';
+import { type JSX, type KeyboardEvent, useEffect, useId, useRef, useState } from 'react';
 import { Icon, type IconName } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { type FlowChange, REVIEWER } from '../../fixtures/flows';
+import { counted } from '../../lib/plural';
 import { type ChangedFlow, selectUnsentChanges, useUiStore } from '../../stores/ui.store';
 import styles from './PublishSheet.module.css';
 
@@ -15,6 +16,13 @@ import styles from './PublishSheet.module.css';
  * Everything renders and transitions on fixture state in `ui.store.ts` — the
  * real `gh pr create` belongs to `PublishService`, in a later spec.
  */
+
+/**
+ * What Tab may land on inside the sheet. The dialog itself is `tabindex="-1"`
+ * — focusable by script, skipped by Tab — so it is excluded here.
+ */
+const FOCUSABLE =
+  'button:not([disabled]), textarea:not([disabled]), input:not([disabled]), [href], [tabindex]:not([tabindex="-1"])';
 
 /** How each kind of change presents; the colours ride on `data-kind` in CSS. */
 const KIND: Record<FlowChange, { readonly icon: IconName; readonly verb: string }> = {
@@ -58,6 +66,40 @@ function SendSheet(): JSX.Element {
   const [note, setNote] = useState('');
   const titleId = useId();
   const noteId = useId();
+  const sheetRef = useRef<HTMLDivElement>(null);
+
+  // `aria-modal` promises the rest of the window is unreachable while this is
+  // open, so the promise has to be kept rather than only declared: focus
+  // enters the sheet on open and returns to whatever opened it on close.
+  // Mounting IS opening — `PublishSheet` renders nothing when it is shut.
+  useEffect(() => {
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null;
+    sheetRef.current?.focus();
+    return () => {
+      opener?.focus();
+    };
+  }, []);
+
+  // The other half of that promise: Tab cycles inside the sheet instead of
+  // walking out into the toolbar the scrim only *looks* like it is covering.
+  function trapTab(event: KeyboardEvent<HTMLDivElement>): void {
+    if (event.key !== 'Tab' || sheetRef.current === null) {
+      return;
+    }
+    const focusable = [...sheetRef.current.querySelectorAll<HTMLElement>(FOCUSABLE)];
+    const first = focusable.at(0);
+    const last = focusable.at(-1);
+    if (first === undefined || last === undefined) {
+      return;
+    }
+    if (event.shiftKey && document.activeElement === first) {
+      event.preventDefault();
+      last.focus();
+    } else if (!event.shiftKey && document.activeElement === last) {
+      event.preventDefault();
+      first.focus();
+    }
+  }
 
   const sending = phase === 'sending';
   const sent = phase === 'review';
@@ -78,18 +120,22 @@ function SendSheet(): JSX.Element {
         onClick={sending ? undefined : closeSend}
       />
       <div className={styles.frame}>
-        <div aria-labelledby={titleId} aria-modal="true" className={styles.sheet} role="dialog">
+        <div
+          aria-labelledby={titleId}
+          aria-modal="true"
+          className={styles.sheet}
+          onKeyDown={trapTab}
+          ref={sheetRef}
+          role="dialog"
+          tabIndex={-1}
+        >
           <div className={styles.header}>
             <span className={styles.emblem} data-sent={sent ? 'true' : undefined}>
               <Icon name={sent ? 'clock' : 'send'} size={15} />
             </span>
             <div className={styles.heading}>
               <h2 className={styles.title} id={titleId}>
-                {sent
-                  ? 'Waiting for review'
-                  : changes.length === 1
-                    ? 'Send 1 change'
-                    : `Send ${changes.length} changes`}
+                {sent ? 'Waiting for review' : `Send ${counted(changes.length, 'change')}`}
               </h2>
               <p className={styles.subtitle}>
                 {sent

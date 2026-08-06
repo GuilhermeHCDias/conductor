@@ -254,6 +254,12 @@ style, and the pattern for extending it when `window.ts` changes.
 42. The system shall paint the phone's own chrome — bezel, status bar, nav bar — from the fixed
     device palette, unchanged when the app theme changes, and shall give it its own
     `filter: drop-shadow(var(--device-drop))`.
+    **The drop-shadow half is superseded** (2026-08-05, by
+    `specs/aurora-rehue-toolbar-publish.md`, at the engineer's direct request): the phone sits
+    flat on the panel and `.footprint` casts nothing, which `styles.test.ts` now asserts as an
+    absence. The fixed-palette half stands unchanged and is still asserted. `--device-drop`
+    stays defined in the vendored token files, which are copied byte-for-byte from the design
+    system and are not ours to prune.
 43. The system shall render the phone screen empty in this spec, over an opaque
     `--device-screen` fill, with the centred empty state `No device connected` /
     `Conductor talks to Android over adb. Plug in a phone or start an emulator.`

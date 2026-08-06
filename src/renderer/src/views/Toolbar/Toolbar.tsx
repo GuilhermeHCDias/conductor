@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { Tooltip } from '../../components/Tooltip/Tooltip';
 import { ENVIRONMENT, FLOW_YAML, SENT_AT } from '../../fixtures/flows';
+import { counted } from '../../lib/plural';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSidebarVisible, selectUnsentChanges, useUiStore } from '../../stores/ui.store';
 import styles from './Toolbar.module.css';
@@ -43,9 +44,7 @@ function SendControl(): JSX.Element {
   }
 
   return (
-    <Tooltip
-      content={count === 1 ? 'Send 1 change to the team' : `Send ${count} changes to the team`}
-    >
+    <Tooltip content={`Send ${counted(count, 'change')} to the team`}>
       <button className={styles.send} onClick={openSend} type="button">
         <Icon name="send" size={13} />
         Send changes
@@ -90,8 +89,7 @@ export function Toolbar(): JSX.Element {
       <span className={styles.document}>
         <span className={styles.title}>{title}</span>
         <span className={styles.subtitle}>
-          {COMMAND_COUNT} {COMMAND_COUNT === 1 ? 'command' : 'commands'} ·{' '}
-          {running ? 'running' : 'saved on this Mac'}
+          {counted(COMMAND_COUNT, 'command')} · {running ? 'running' : 'saved on this Mac'}
         </span>
       </span>
 

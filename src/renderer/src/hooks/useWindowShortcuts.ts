@@ -15,6 +15,20 @@ export function useWindowShortcuts(): void {
       const { toggleSidebar, toggleLowerPanel, clearQuery, closeSend, query, sendOpen, sendPhase } =
         useUiStore.getState();
 
+      // The Send sheet owns the window while it is open — it sits over
+      // everything, so nothing under it may react, ⌘B and ⌘J included:
+      // rearranging the panes behind a modal moves furniture the person can
+      // neither see nor reach. Escape is the one key it answers, and even that
+      // is swallowed mid-send, when the batch is already on its way
+      // (criteria 16–17 of the publish spec).
+      if (sendOpen) {
+        if (event.key === 'Escape' && sendPhase !== 'sending') {
+          event.preventDefault();
+          closeSend();
+        }
+        return;
+      }
+
       if (event.metaKey) {
         const key = event.key.toLowerCase();
         if (key === 'b') {
@@ -24,17 +38,6 @@ export function useWindowShortcuts(): void {
         if (key === 'j') {
           event.preventDefault();
           toggleLowerPanel();
-        }
-        return;
-      }
-
-      // The Send sheet owns Escape while it is open — it sits over everything,
-      // so nothing under it may react. Mid-send it swallows the key outright:
-      // the batch is already on its way (criteria 16–17 of the publish spec).
-      if (event.key === 'Escape' && sendOpen) {
-        if (sendPhase !== 'sending') {
-          event.preventDefault();
-          closeSend();
         }
         return;
       }

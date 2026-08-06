@@ -310,4 +310,54 @@ describe('PublishSheet', () => {
 
     expect(screen.getByRole('button', { name: 'Close' })).toBeInTheDocument();
   });
+
+  /**
+   * `aria-modal="true"` asserts that everything behind the sheet is
+   * unreachable. That has to be true, not just declared — so focus enters on
+   * open, cycles inside, and returns to whatever opened it.
+   */
+  describe('focus', () => {
+    it('moves focus into the sheet when it opens', () => {
+      useUiStore.setState({ sendOpen: true });
+      render(<PublishSheet />);
+
+      expect(screen.getByRole('dialog')).toHaveFocus();
+    });
+
+    it('returns focus to whatever opened it', () => {
+      const opener = document.createElement('button');
+      document.body.append(opener);
+      opener.focus();
+      useUiStore.setState({ sendOpen: true });
+      render(<PublishSheet />);
+
+      act(() => {
+        ui().closeSend();
+      });
+
+      expect(opener).toHaveFocus();
+      opener.remove();
+    });
+
+    it('wraps Tab from the last control back to the first', async () => {
+      useUiStore.setState({ sendOpen: true });
+      render(<PublishSheet />);
+      const primary = screen.getByRole('button', { name: 'Send for review' });
+      primary.focus();
+
+      await userEvent.tab();
+
+      expect(screen.getByRole('button', { name: 'Close' })).toHaveFocus();
+    });
+
+    it('wraps Shift+Tab from the first control back to the last', async () => {
+      useUiStore.setState({ sendOpen: true });
+      render(<PublishSheet />);
+      screen.getByRole('button', { name: 'Close' }).focus();
+
+      await userEvent.tab({ shift: true });
+
+      expect(screen.getByRole('button', { name: 'Send for review' })).toHaveFocus();
+    });
+  });
 });

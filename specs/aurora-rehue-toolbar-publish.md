@@ -157,7 +157,10 @@ for CSS-shape criteria (jsdom applies no stylesheet, so `toHaveStyle` can't see 
 7. While the send phase is `'review'`, the system shall render a quiet `var(--a-well)` pill with
    a `clock` glyph reading `Waiting for review`, a tooltip `Waiting for review · sent <fixture
    time>`, and — while the unsent count is greater than `0` — an additional accent `+<n>` badge.
-8. When the Send control is activated in any state, the system shall open `PublishSheet`.
+8. When the Send control is activated in either of its two interactive states, the system shall
+   open `PublishSheet`. (Corrected from "in any state" during implementation: the everything-sent
+   state is inert by criterion 5 and renders a `<span>` in `CReview.jsx`, so it has nothing to
+   activate — and criterion 18's `getByRole('button')` reach applies to the same two states.)
 
 ### PublishSheet
 
@@ -335,6 +338,11 @@ for CSS-shape criteria (jsdom applies no stylesheet, so `toHaveStyle` can't see 
   prop (`loader-circle` on a hardcoded 700ms spin): the spinner glyph is outside criterion
   19's exhaustive list and its clock outside the motion guard, and criterion 14 asks only for
   a disabled loading button reading `Sending`.
+- **The device preview's drop-shadow was removed** (engineer's request, after the criteria
+  above were already green). This reverses half of `specs/aurora-layout-shell.md` criterion 42,
+  which criterion 3 here otherwise carries forward — so that criterion has been amended in
+  place to record the supersession rather than left reading as a live requirement.
+  `styles.test.ts` flipped from asserting the `drop-shadow` to asserting its absence.
 - **Two working-tree diffs predate this spec and are baseline, not this change**: the
   focus-ring guard's wrapper-glow escape in `styles.test.ts` (with the `.input:focus-visible`
   rules in `Composer` / `FlowList` it pairs with), and `FlowList`'s header now reading

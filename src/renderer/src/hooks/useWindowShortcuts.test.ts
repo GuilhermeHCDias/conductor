@@ -127,6 +127,22 @@ describe('useWindowShortcuts', () => {
       expect(ui().query).toBe('check');
     });
 
+    // The sheet sits over the whole window, so a shortcut that rearranged the
+    // panes behind it would move furniture the person cannot see or reach.
+    it('ignores ⌘B and ⌘J', () => {
+      renderHook(() => {
+        useWindowShortcuts();
+      });
+      ui().setWindowWidth(1440);
+      ui().openSend();
+
+      press('b', { meta: true });
+      press('j', { meta: true });
+
+      expect(selectSidebarVisible(ui())).toBe(true);
+      expect(ui().lowerPanel).toBe('assistant');
+    });
+
     it('ignores Escape while the send is in flight', () => {
       renderHook(() => {
         useWindowShortcuts();
