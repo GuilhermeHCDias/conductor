@@ -47,6 +47,21 @@
   z-index: 1;
 }
 
+/* First run: no toolbar row — the connect card is the whole window. */
+.window[data-view="connect"] {
+  grid-template-rows: minmax(0, 1fr);
+}
+
+/* The sidebar column while a repo is active: the repo bar names the project
+   the whole sidebar belongs to (repo-connect spec), the flow list fills the
+   rest of the track. */
+.sidebar {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
+  min-width: 0;
+}
+
 /* The window edge: a white specular line along the top fading out, then the
    faintest hairline all the way round. One masked pseudo-element, because a
    border cannot fade along its length. No radius — macOS rounds its own

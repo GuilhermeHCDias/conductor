@@ -56,6 +56,10 @@ it('finds the renderer’s CSS modules', () => {
  * their depth through it ("Dialogs blur heavier than any other layer"). The
  * failure mode this guards — frost nested inside the window's panes — is
  * still forbidden: no view or region module may join this list.
+ *
+ * ⏸️ Amended again by the repo-connect spec: the switcher popover is the
+ * third floating layer, same family as the command menu, and floats for the
+ * same reason.
  */
 describe('the single blur', () => {
   it('is declared only by the window and the floating layers', () => {
@@ -65,6 +69,7 @@ describe('the single blur', () => {
       'App.module.css',
       'components/ContextMenu/ContextMenu.module.css',
       'components/Dialog/Dialog.module.css',
+      'components/RepoPopover/RepoPopover.module.css',
     ]);
   });
 
@@ -156,14 +161,17 @@ describe('motion', () => {
   // spec's floating layers) — the fake caret's hardcoded 1s blink left with
   // the editable body, whose caret is the platform's own.
   // `utilities/animation.css` neutralises the entrances under reduced motion
-  // (`animation-duration: .01ms !important`), which is what criterion 9 is
-  // protecting; nothing may animate on any hardcoded clock.
+  // (`animation-duration: .01ms !important`, one iteration), which is what
+  // criterion 9 is protecting; nothing may animate on any hardcoded clock.
+  // ⏸️ Amended by the repo-connect spec: the resolver's progress spinner is
+  // the DS's own `cd-spin`, on the token clock — reduced motion stops it
+  // like everything else.
   it.each(MODULES)('$name animates only a DS entrance, on token clocks', ({ css }) => {
     const animations = css.match(/animation:[^;]*/g) ?? [];
 
     for (const declaration of animations) {
       expect(declaration).toMatch(
-        /^animation: cd-(fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)$/,
+        /^animation: cd-((fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)|spin var\(--dur-lazy\) linear infinite)$/,
       );
     }
   });
@@ -272,10 +280,16 @@ describe('the drag region', () => {
     expect(cssOf('views/Toolbar/Toolbar.module.css')).toContain('-webkit-app-region: no-drag');
   });
 
+  // ⏸️ Amended by the repo-connect spec: the connect window renders no
+  // toolbar, so its top strip is the one other thing the frameless window
+  // can be dragged by.
   it('is declared nowhere else', () => {
     const declaring = MODULES.filter((module) => module.css.includes('-webkit-app-region'));
 
-    expect(declaring.map((module) => module.name)).toEqual(['views/Toolbar/Toolbar.module.css']);
+    expect(declaring.map((module) => module.name).sort()).toEqual([
+      'views/Connect/Connect.module.css',
+      'views/Toolbar/Toolbar.module.css',
+    ]);
   });
 });
 

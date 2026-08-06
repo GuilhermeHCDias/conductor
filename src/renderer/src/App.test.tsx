@@ -1,9 +1,11 @@
+import type { ConnectedRepo } from '@shared/ipc';
 import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { resetDeviceStore, useDeviceStore } from './stores/device.store';
 import { resetFlowStore, useFlowStore } from './stores/flow.store';
+import { resetRepoStore, useRepoStore } from './stores/repo.store';
 import { resetRunStore, useRunStore } from './stores/run.store';
 import { resetUiStore, useUiStore } from './stores/ui.store';
 import { resizeElement } from './test-setup';
@@ -17,12 +19,35 @@ function sizeWindow(width: number): void {
   });
 }
 
+/** The workspace exists only around an active repo now (repo-connect spec),
+ * so the shell tests seed one — the way a persisted launch arrives. */
+const ACTIVE_REPO: ConnectedRepo = {
+  url: 'https://github.com/loja-verde/pnp-fast-mode',
+  org: 'loja-verde',
+  name: 'pnp-fast-mode',
+  slug: 'loja-verde-pnp-fast-mode-1a2b3c4d',
+  appName: 'PnP Fast Mode',
+  appId: { android: 'com.lojaverde.pnp', ios: 'com.lojaverde.pnp' },
+  branch: 'main',
+  flowCount: 0,
+  connectedAt: '2026-08-06T12:00:00.000Z',
+};
+
 beforeEach(() => {
   localStorage.clear();
   resetUiStore();
   resetDeviceStore();
   resetFlowStore();
   resetRunStore();
+  resetRepoStore();
+  // Seeded before render so the first paint is already the workspace, and
+  // mirrored in the list answer so the mount-time refresh changes nothing.
+  useRepoStore.setState({ repos: [ACTIVE_REPO], active: ACTIVE_REPO.slug, loaded: true });
+  window.conductor.repoList = () =>
+    Promise.resolve({
+      ok: true as const,
+      data: { repos: [ACTIVE_REPO], active: ACTIVE_REPO.slug },
+    });
   delete document.documentElement.dataset.theme;
 });
 
@@ -36,6 +61,50 @@ describe('App', () => {
     expect(screen.getByRole('region', { name: 'Flows' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Editor' })).toBeInTheDocument();
     expect(screen.getByRole('region', { name: 'Device' })).toBeInTheDocument();
+  });
+
+  /** The repo-connect spec: connect first, workspace only around a repo. */
+  describe('connect or workspace', () => {
+    it('shows only the connect screen while no repo is connected', () => {
+      useRepoStore.setState({ repos: [], active: null, loaded: true });
+      window.conductor.repoList = () =>
+        Promise.resolve({ ok: true as const, data: { repos: [], active: null } });
+      render(<App />);
+
+      expect(
+        screen.getByRole('heading', { name: 'Point Conductor at a repository' }),
+      ).toBeInTheDocument();
+      expect(screen.queryByRole('toolbar', { name: 'Window' })).not.toBeInTheDocument();
+    });
+
+    /** On a persisted launch the connect screen must never appear — until
+     * the truth arrives, the window holds nothing at all. */
+    it('holds a blank window until the repo truth arrives', () => {
+      useRepoStore.setState({ repos: [], active: null, loaded: false });
+      window.conductor.repoList = () => new Promise(() => {});
+      render(<App />);
+
+      expect(
+        screen.queryByRole('heading', { name: 'Point Conductor at a repository' }),
+      ).not.toBeInTheDocument();
+      expect(screen.queryByRole('toolbar', { name: 'Window' })).not.toBeInTheDocument();
+    });
+
+    it('tops the sidebar with the repo switcher', () => {
+      render(<App />);
+      sizeWindow(1440);
+
+      expect(screen.getByRole('button', { name: /pnp-fast-mode/ })).toBeInTheDocument();
+    });
+
+    it('mounts the add sheet over the workspace', () => {
+      render(<App />);
+      act(() => {
+        useRepoStore.getState().openAdd();
+      });
+
+      expect(screen.getByRole('dialog', { name: 'Add repository' })).toBeInTheDocument();
+    });
   });
 
   /** Criterion 4. */
@@ -167,16 +236,14 @@ describe('App', () => {
       reached.push(active?.getAttribute('aria-label') ?? active?.textContent ?? '');
     }
 
-    // Toolbar left to right, then the sidebar: its header, its search, and
-    // the empty workspace's own New flow action (criterion 35).
-    expect(reached.slice(0, 5)).toEqual([
-      'Toggle sidebar',
-      'staging',
-      'Dark appearance',
-      'New flow or folder',
-      'Search flows',
-    ]);
-    expect(reached[5]).toContain('New flow');
+    // Toolbar left to right, then the sidebar: the repo switcher at its top
+    // (repo-connect spec), its header, its search, and the empty workspace's
+    // own New flow action (criterion 35).
+    expect(reached.slice(0, 3)).toEqual(['Toggle sidebar', 'staging', 'Dark appearance']);
+    expect(reached[3]).toContain('pnp-fast-mode');
+    expect(reached[4]).toBe('New flow or folder');
+    expect(reached[5]).toBe('Search flows');
+    expect(reached[6]).toContain('New flow');
   });
 
   /** Criterion 12 of the shell spec, fed by the real run now (run criterion
