@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
 import { useElementWidth } from './hooks/useElementWidth';
+import { useFlowIndex } from './hooks/useFlowIndex';
 import { useRunEvents } from './hooks/useRunEvents';
 import { useWindowShortcuts } from './hooks/useWindowShortcuts';
 import { countCommands } from './lib/yaml-tokens';
@@ -37,6 +38,9 @@ export function App(): JSX.Element {
   useWindowShortcuts();
   // App-wide, not view-scoped: the run outlives whichever lower tab is open.
   useRunEvents();
+  // Same rule for the workspace: the index and its watcher events belong to
+  // the window, and the close-time save flush rides on this one too.
+  useFlowIndex();
 
   // A layout effect, not a plain one: the appearance has to be on the document
   // before the first paint, or the window flashes light and then goes dark

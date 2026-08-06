@@ -1,9 +1,18 @@
-import { type JSX, useEffect, useRef, useState } from 'react';
+import { type JSX, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { Icon } from '../../components/Icon/Icon';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
 import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
+import { type EditorKey, indentEdit } from '../../lib/yaml-indent';
 import { tokenizeYamlLine } from '../../lib/yaml-tokens';
-import { selectDirty, selectRevision, selectYaml, useFlowStore } from '../../stores/flow.store';
+import {
+  selectOpenName,
+  selectOpenPath,
+  selectRevision,
+  selectUnsaved,
+  selectYaml,
+  useFlowStore,
+} from '../../stores/flow.store';
 import { selectRunning, useRunStore } from '../../stores/run.store';
 import { useUiStore } from '../../stores/ui.store';
 import { AIPanel } from '../AIPanel/AIPanel';
@@ -21,22 +30,20 @@ const PANEL_ID = 'lower-panel';
  * of that list.
  */
 function DocumentBar(): JSX.Element {
-  // Not `document`: shadowing the DOM global inside a component is a trap for
-  // whoever next reaches for `document.querySelector` in here.
-  const flowDocument = useUiStore((state) => state.document);
-  // Inspect criterion 39: the mark follows the flow's own text — dirty is what
-  // the append made true, not what a fixture said.
-  const dirty = useFlowStore(selectDirty);
+  const openName = useFlowStore(selectOpenName);
+  // Criterion 8 — the dot is the save state: an edit not yet handed to
+  // `flow:save`, or a write still in flight. Once it lands, the dot leaves.
+  const unsaved = useFlowStore(selectUnsaved);
 
   return (
     <div
       className={styles.documentBar}
-      data-dirty={dirty ? 'true' : undefined}
+      data-dirty={unsaved ? 'true' : undefined}
       data-testid="document-bar"
     >
       <Icon className={styles.documentGlyph} name="file-code" size={12} />
-      <span className={styles.documentName}>{flowDocument.label}</span>
-      {dirty ? <span aria-hidden="true" className={styles.dirty} /> : null}
+      <span className={styles.documentName}>{openName ?? '—'}</span>
+      {unsaved ? <span aria-hidden="true" className={styles.dirty} /> : null}
       <span className={styles.spacer} />
       <span className={styles.language}>YAML</span>
     </div>
@@ -126,6 +133,48 @@ function YamlBody(): JSX.Element {
     setCaretLine(box.value.slice(0, box.selectionStart).split('\n').length);
   };
 
+  /**
+   * Criteria 28–34: the decision is `lib/yaml-indent`'s, pure; this only
+   * routes it. The edit goes through `execCommand` — the platform's own edit
+   * path — so native undo carries every auto-indent, Tab and dedent
+   * (criterion 33), and the `input` event it fires lands in `onChange`, which
+   * is how the store still receives every resulting text: one truth.
+   */
+  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>): void => {
+    if (event.nativeEvent.isComposing) {
+      // Criterion 34 — an IME composition owns the keyboard.
+      return;
+    }
+    const key: EditorKey | null =
+      event.key === 'Enter'
+        ? { key: 'Enter' }
+        : event.key === 'Tab'
+          ? { key: 'Tab', shift: event.shiftKey }
+          : event.key === 'Backspace'
+            ? { key: 'Backspace' }
+            : null;
+    if (key === null) {
+      return;
+    }
+    const box = event.currentTarget;
+    const change = indentEdit(
+      { text: box.value, selectionStart: box.selectionStart, selectionEnd: box.selectionEnd },
+      key,
+    );
+    if (change === null) {
+      return;
+    }
+    event.preventDefault();
+    box.setSelectionRange(change.start, change.end);
+    if (change.insert === '') {
+      document.execCommand('delete');
+    } else {
+      document.execCommand('insertText', false, change.insert);
+    }
+    box.setSelectionRange(change.selectionStart, change.selectionEnd);
+    syncCaret(box);
+  };
+
   return (
     <div className={styles.yaml} style={{ '--gutter-w': gutterWidth }}>
       {Array.from({ length: total }, (_unused, index) => {
@@ -165,6 +214,7 @@ function YamlBody(): JSX.Element {
         onFocus={(event) => {
           syncCaret(event.currentTarget);
         }}
+        onKeyDown={onKeyDown}
         onSelect={(event) => {
           syncCaret(event.currentTarget);
         }}
@@ -185,13 +235,36 @@ export function FlowEditor(): JSX.Element {
   const lowerPanel = useUiStore((state) => state.lowerPanel);
   const setLowerPanel = useUiStore((state) => state.setLowerPanel);
   const running = useRunStore(selectRunning);
+  const openPath = useFlowStore(selectOpenPath);
+  const startDraft = useFlowStore((state) => state.startDraft);
 
   return (
     <section aria-label="Editor" className={styles.column}>
       <DocumentBar />
 
       <div className={`${styles.body} a-scroll`}>
-        <YamlBody />
+        {openPath === null ? (
+          /* Criterion 35 — the editor column's own zero-state. */
+          <EmptyState
+            action={
+              <button
+                className={styles.emptyAction}
+                onClick={() => {
+                  startDraft('flow', '');
+                }}
+                type="button"
+              >
+                <Icon name="plus" size={12} />
+                New flow
+              </button>
+            }
+            description="Pick a flow in the sidebar, or start a new one."
+            icon="file-code"
+            title="No flow open"
+          />
+        ) : (
+          <YamlBody />
+        )}
       </div>
 
       <div className={styles.subTabs}>

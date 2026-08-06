@@ -10,6 +10,14 @@ import { FlowEditor } from './FlowEditor';
 const ui = () => useUiStore.getState();
 const flow = () => useFlowStore.getState();
 
+/** Four lines, like the flow the editor used to seed from the fixture. */
+const FLOW_YAML = 'appId: com.example.app\n---\n- launchApp:\n    clearState: true\n';
+
+/** The editor edits the open flow; the sidebar is what opens one. */
+function openSeed(path = 'teste.yaml', yaml: string = FLOW_YAML): void {
+  useFlowStore.setState({ openPath: path, yaml });
+}
+
 const lineOf = (n: number) => screen.getByTestId(`yaml-line-${n}`);
 const editor = () => screen.getByRole('textbox', { name: 'Flow YAML' }) as HTMLTextAreaElement;
 
@@ -25,6 +33,7 @@ beforeEach(() => {
   resetUiStore();
   resetFlowStore();
   resetRunStore();
+  openSeed();
 });
 
 afterEach(() => {
@@ -39,9 +48,9 @@ describe('FlowEditor', () => {
     expect(screen.getByRole('region', { name: 'Editor' })).toBeInTheDocument();
   });
 
-  /** Criteria 23 and 24. */
+  /** Criteria 23 and 24 of the layout, and criterion 8 of this spec. */
   describe('document bar', () => {
-    it('names the open document', () => {
+    it('names the open flow from its identity', () => {
       render(<FlowEditor />);
 
       expect(
@@ -53,7 +62,7 @@ describe('FlowEditor', () => {
       render(<FlowEditor />);
 
       act(() => {
-        ui().openFlow('f-login');
+        openSeed('checkout/login.yaml');
       });
 
       const bar = screen.getByTestId('document-bar');
@@ -61,8 +70,16 @@ describe('FlowEditor', () => {
       expect(within(bar).queryByText('teste.yaml')).not.toBeInTheDocument();
     });
 
-    /** Inspect criterion 39 — the dirty mark follows the flow's own text now,
-     * not a fixture flag: clean until something is actually appended. */
+    it('goes quiet when nothing is open', () => {
+      act(() => {
+        useFlowStore.setState({ openPath: null, yaml: '' });
+      });
+      render(<FlowEditor />);
+
+      expect(within(screen.getByTestId('document-bar')).getByText('—')).toBeInTheDocument();
+    });
+
+    /** Criterion 8 — the dot is the save state: pending or in flight. */
     it('opens clean until a step is appended', () => {
       render(<FlowEditor />);
 
@@ -77,6 +94,27 @@ describe('FlowEditor', () => {
       });
 
       expect(screen.getByTestId('document-bar')).toHaveAttribute('data-dirty', 'true');
+    });
+
+    /** Criterion 8 — once the write lands, the dot leaves. */
+    it('drops the mark when the save lands', async () => {
+      vi.useFakeTimers();
+      window.conductor.flowSave = vi.fn((path: string) =>
+        Promise.resolve({ ok: true as const, data: { path } }),
+      );
+      render(<FlowEditor />);
+
+      act(() => {
+        flow().appendStep('- waitForAnimationToEnd');
+      });
+      expect(screen.getByTestId('document-bar')).toHaveAttribute('data-dirty', 'true');
+
+      await act(async () => {
+        await vi.advanceTimersByTimeAsync(500);
+      });
+
+      expect(screen.getByTestId('document-bar')).not.toHaveAttribute('data-dirty');
+      vi.useRealTimers();
     });
 
     // Criterion 23: the sidebar is the only place a document is opened or started.
@@ -281,6 +319,125 @@ describe('FlowEditor', () => {
       });
 
       expect(lineOf(1)).not.toHaveAttribute('data-line');
+    });
+  });
+
+  /**
+   * Criteria 28–34 — the wiring, not the rules: the pure `yaml-indent` module
+   * owns the decision (its own suite proves it), and the editor routes the
+   * edit through `document.execCommand` so the platform's undo stack carries
+   * it (criterion 33). jsdom implements no `execCommand`, so it is mocked and
+   * the contract is what gets asserted.
+   */
+  describe('real-time indentation', () => {
+    beforeEach(() => {
+      document.execCommand = vi.fn(() => true);
+    });
+
+    afterEach(() => {
+      Reflect.deleteProperty(document, 'execCommand');
+    });
+
+    it('pads to the next multiple of 2 on Tab, through the platform edit path', () => {
+      render(<FlowEditor />);
+      act(() => {
+        placeCaret(0);
+      });
+
+      const notPrevented = fireEvent.keyDown(editor(), { key: 'Tab' });
+
+      expect(notPrevented).toBe(false);
+      expect(document.execCommand).toHaveBeenCalledExactlyOnceWith('insertText', false, '  ');
+    });
+
+    /** Criterion 29 — Enter after `- launchApp:` opens the block at 4. */
+    it('breaks with the block indent after a colon', () => {
+      render(<FlowEditor />);
+      const caret = FLOW_YAML.indexOf('\n    clearState');
+      act(() => {
+        placeCaret(caret);
+      });
+
+      const notPrevented = fireEvent.keyDown(editor(), { key: 'Enter' });
+
+      expect(notPrevented).toBe(false);
+      expect(document.execCommand).toHaveBeenCalledExactlyOnceWith('insertText', false, '\n    ');
+    });
+
+    /** Criterion 32 — Backspace inside the indent retreats through a real
+     * deletion, so ⌘Z gets it back. */
+    it('dedents on Backspace as a platform deletion', () => {
+      render(<FlowEditor />);
+      const caret = FLOW_YAML.indexOf('clearState');
+      act(() => {
+        placeCaret(caret);
+      });
+
+      const notPrevented = fireEvent.keyDown(editor(), { key: 'Backspace' });
+
+      expect(notPrevented).toBe(false);
+      expect(document.execCommand).toHaveBeenCalledExactlyOnceWith('delete');
+      expect(editor().selectionStart).toBe(caret - 2);
+    });
+
+    it('dedents the line on Shift+Tab', () => {
+      render(<FlowEditor />);
+      const caret = FLOW_YAML.indexOf('clearState');
+      act(() => {
+        placeCaret(caret);
+      });
+
+      fireEvent.keyDown(editor(), { key: 'Tab', shiftKey: true });
+
+      expect(document.execCommand).toHaveBeenCalledExactlyOnceWith(
+        'insertText',
+        false,
+        '  clearState: true',
+      );
+    });
+
+    /** Enter that opens no block still keeps the platform path untouched
+     * where the rule says "not handled" — a plain letter, for instance. */
+    it('leaves other keys to the platform', () => {
+      render(<FlowEditor />);
+      act(() => {
+        placeCaret(0);
+      });
+
+      const notPrevented = fireEvent.keyDown(editor(), { key: 'a' });
+
+      expect(notPrevented).toBe(true);
+      expect(document.execCommand).not.toHaveBeenCalled();
+    });
+
+    /** Criterion 34 — while an IME composition is active, nothing intercepts. */
+    it('intercepts nothing while composing', () => {
+      render(<FlowEditor />);
+      act(() => {
+        placeCaret(0);
+      });
+
+      const notPrevented = fireEvent.keyDown(editor(), { key: 'Tab', isComposing: true });
+
+      expect(notPrevented).toBe(true);
+      expect(document.execCommand).not.toHaveBeenCalled();
+    });
+  });
+
+  /** Criterion 35 — the editor column's own empty state. */
+  describe('with no flow open', () => {
+    beforeEach(() => {
+      useFlowStore.setState({ openPath: null, yaml: '' });
+    });
+
+    it('shows the empty state with a New flow action instead of the editor', async () => {
+      render(<FlowEditor />);
+
+      expect(screen.queryByRole('textbox', { name: 'Flow YAML' })).not.toBeInTheDocument();
+      expect(screen.getByText('No flow open')).toBeInTheDocument();
+
+      await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+      expect(flow().draft).toMatchObject({ kind: 'flow', folder: '' });
     });
   });
 

@@ -1,6 +1,6 @@
 # Local flow workspace: files on disk, folder tree, smart YAML indent
 
-status: todo
+status: done
 created: 2026-08-06
 
 ## Goal
@@ -282,3 +282,25 @@ spec will commit and push.
 - (Assumed) `run.service.ts` keeps materializing the open YAML to its temp file — running
   the saved file in place is a later concern (matters only when `runFlow:` subflows
   arrive).
+- (Implementation, 2026-08-06) `.context.md` §9.1/§9.2 still named CodeMirror 6 for the
+  editor (🔷 proposed); since this spec decided the hand-rolled textarea + pure lib, both
+  lines received a spec-driven dated amendment in the same change — criterion 38 listed
+  only §7.2, but shipping a documented contradiction would break CLAUDE.md's "fix this
+  file in the same change" rule.
+- (Implementation) `FlowMeta` carries §7's `hash` (FNV-1a in `src/shared/hash.ts`, pure —
+  `shared/` allows no `node:` imports): the editor compares the pushed hash against its
+  own text to tell Conductor's save from an external edit (criteria 9–10) without a file
+  body ever riding `flow:changed`.
+- (Implementation) Duplicate preserves the source's own extension — `pix.yml` →
+  `pix-copy.yml`; criterion 22's `.yaml` reads as the default-extension case, and
+  changing the extension would change more identity than a copy should.
+- (Implementation) The kit has no sidebar zero-state, so criterion 35's copy is written
+  fresh in the DS voice: sidebar "No flows yet / Create a flow and it saves itself here
+  as you edit."; editor "No flow open / Pick a flow in the sidebar, or start a new one.";
+  with nothing open the Toolbar reads "No flow open" and the DocumentBar goes quiet ("—").
+- (Implementation) `FlowService` tests run chokidar in polling mode (`usePolling` dep,
+  never set by the app) and step 5ms past `start()` before the first write: dozens of
+  short-lived sibling watchers starve fsevents under parallel-suite load, and
+  `fs.watchFile` compares directory mtimes in whole milliseconds — a write landing in
+  the mkdir's own millisecond is invisible to a poller forever. Production keeps
+  fsevents and has neither window.

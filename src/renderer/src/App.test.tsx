@@ -146,9 +146,9 @@ describe('App', () => {
   });
 
   /** Criterion 54 — Tab reaches every control, in the order they are drawn.
-   * With a device connected — answered by the channel, because mounting the
-   * window refreshes the list: the Run button is rightly disabled without one
-   * (run criterion 17), and a disabled control is not a Tab stop. */
+   * With a device connected but the workspace empty, the Run button is
+   * rightly disabled — there is no flow to run (criterion 35) — and a
+   * disabled control is not a Tab stop. */
   it('walks the window in visual order', async () => {
     const snapshot = {
       devices: [{ id: 'R9QYC01EMXL', model: 'SM-A075M', state: 'device' as const }],
@@ -167,15 +167,16 @@ describe('App', () => {
       reached.push(active?.getAttribute('aria-label') ?? active?.textContent ?? '');
     }
 
-    // Toolbar left to right, then the sidebar, then its first row.
+    // Toolbar left to right, then the sidebar: its header, its search, and
+    // the empty workspace's own New flow action (criterion 35).
     expect(reached.slice(0, 5)).toEqual([
       'Toggle sidebar',
       'staging',
-      'Run',
       'Dark appearance',
-      'New flow',
+      'New flow or folder',
+      'Search flows',
     ]);
-    expect(reached[5]).toBe('Search flows');
+    expect(reached[5]).toContain('New flow');
   });
 
   /** Criterion 12 of the shell spec, fed by the real run now (run criterion
@@ -210,8 +211,12 @@ describe('App', () => {
     });
 
     /** The denominator is the open flow's, live — a step the menu appended
-     * mid-edit widens the run it starts, not the fixture it replaced. */
+     * mid-edit widens the run it starts. */
     it('measures against the flow store’s current text', () => {
+      useFlowStore.setState({
+        openPath: 'teste.yaml',
+        yaml: 'appId: com.example.app\n---\n- launchApp:\n',
+      });
       useFlowStore.getState().appendStep('- tapOn: "Entrar"');
       useRunStore.setState({
         running: true,

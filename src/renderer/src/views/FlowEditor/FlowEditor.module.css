@@ -196,3 +196,27 @@
   min-height: 0;
   overflow: auto;
 }
+
+/* Criterion 35 — the New flow action inside the editor's zero-state. */
+.emptyAction {
+  align-items: center;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 26px;
+  padding: 0 var(--space-5);
+}
+
+.emptyAction:hover {
+  background: var(--accent-strong);
+}
+
+.emptyAction:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

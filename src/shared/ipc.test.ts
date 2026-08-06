@@ -27,6 +27,16 @@ describe('the channels', () => {
       'maestro:synthesize-selector',
       'run:start',
       'run:cancel',
+      'flow:list',
+      'flow:read',
+      'flow:save',
+      'flow:create',
+      'flow:create-folder',
+      'flow:rename',
+      'flow:rename-folder',
+      'flow:duplicate',
+      'flow:delete',
+      'flow:delete-folder',
     ]);
   });
 
@@ -43,7 +53,12 @@ describe('the channels', () => {
   });
 
   it('are exactly the pushes this app declares', () => {
-    expect(Object.values(PUSH_CHANNELS)).toEqual(['device:changed', 'mirror:event', 'run:event']);
+    expect(Object.values(PUSH_CHANNELS)).toEqual([
+      'device:changed',
+      'mirror:event',
+      'run:event',
+      'flow:changed',
+    ]);
   });
 
   it('read as <domain>:<action> in kebab-case', () => {
@@ -433,6 +448,194 @@ describe('run:cancel', () => {
   });
 });
 
+/** A complete index entry, the shape §7 keeps in memory and criterion 2 answers. */
+const FLOW_META = {
+  path: 'checkout/pix.yml',
+  name: 'pix.yml',
+  folder: 'checkout',
+  commandCount: 3,
+  hash: '811c9dc5',
+};
+
+describe('flow:list', () => {
+  const schema = IPC[CHANNELS.flowList];
+
+  it('takes nothing', () => {
+    expect(schema.request.safeParse([]).success).toBe(true);
+    expect(schema.request.safeParse(['conductor']).success).toBe(false);
+  });
+
+  /** Criterion 2 — every flow with its identity (§7.2: the root-relative path),
+   * name, folder, command count and hash; and every directory, empty ones
+   * included, so a folder just made does not vanish (criterion 13). */
+  it('answers flows and folders, and an empty folder is still a folder', () => {
+    const parsed = schema.response.safeParse({
+      flows: [FLOW_META],
+      folders: ['checkout', 'drafts'],
+    });
+
+    expect(parsed.success).toBe(true);
+  });
+
+  /** §7.2 — an index entry without its path is an identity crisis, refused. */
+  it('refuses a flow entry that lost its identity', () => {
+    expect(
+      schema.response.safeParse({
+        flows: [{ name: 'pix.yml', folder: '', commandCount: 3, hash: 'x' }],
+        folders: [],
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('flow:read', () => {
+  const schema = IPC[CHANNELS.flowRead];
+
+  /** §7.2 — the identity legitimately carries `/`, so the schema takes any
+   * string; main refuses by resolving against the root (§9.3), never here. */
+  it('takes the root-relative path', () => {
+    expect(schema.request.safeParse(['checkout/pix.yml']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers the file text', () => {
+    expect(schema.response.safeParse({ yaml: 'appId: x\n---\n' }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('flow:save', () => {
+  const schema = IPC[CHANNELS.flowSave];
+
+  it('takes the path and the text', () => {
+    expect(schema.request.safeParse(['pix.yml', 'appId: x\n---\n']).success).toBe(true);
+    expect(schema.request.safeParse(['pix.yml']).success).toBe(false);
+  });
+
+  /** Criterion 6 — editing is saving, and clearing the editor is an edit: an
+   * emptied flow still lands on disk, unlike `run:start` which refuses it. */
+  it('accepts an empty text', () => {
+    expect(schema.request.safeParse(['pix.yml', '']).success).toBe(true);
+  });
+
+  it('answers with the path it wrote', () => {
+    expect(schema.response.safeParse({ path: 'pix.yml' }).success).toBe(true);
+  });
+});
+
+describe('flow:create', () => {
+  const schema = IPC[CHANNELS.flowCreate];
+
+  /** Criterion 16 — the draft lands inside the folder it was started in; `''`
+   * is the root. The name is as typed: the extension is main's job
+   * (criterion 18), and an invalid name earns a stable code, never a schema
+   * error (criterion 5). */
+  it('takes the target folder and the typed name', () => {
+    expect(schema.request.safeParse(['checkout', 'pix']).success).toBe(true);
+    expect(schema.request.safeParse(['', 'pix.yml']).success).toBe(true);
+    expect(schema.request.safeParse(['pix']).success).toBe(false);
+  });
+
+  it('answers with the created path', () => {
+    expect(schema.response.safeParse({ path: 'checkout/pix.yaml' }).success).toBe(true);
+  });
+});
+
+describe('flow:create-folder', () => {
+  const schema = IPC[CHANNELS.flowCreateFolder];
+
+  /** Criterion 20 — folders are created at the root, so only the name crosses. */
+  it('takes the typed name', () => {
+    expect(schema.request.safeParse(['drafts']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers with the folder it made', () => {
+    expect(schema.response.safeParse({ folder: 'drafts' }).success).toBe(true);
+  });
+});
+
+describe('flow:rename', () => {
+  const schema = IPC[CHANNELS.flowRename];
+
+  /** Criterion 21 — a rename stays in its parent directory: the path names the
+   * flow, the new name is a single segment, and main refuses anything else. */
+  it('takes the path and the new name', () => {
+    expect(schema.request.safeParse(['checkout/pix.yml', 'card']).success).toBe(true);
+    expect(schema.request.safeParse(['checkout/pix.yml']).success).toBe(false);
+  });
+
+  it('answers with the path the flow lives at now', () => {
+    expect(schema.response.safeParse({ path: 'checkout/card.yaml' }).success).toBe(true);
+  });
+});
+
+describe('flow:rename-folder', () => {
+  const schema = IPC[CHANNELS.flowRenameFolder];
+
+  it('takes the folder and the new name', () => {
+    expect(schema.request.safeParse(['drafts', 'checkout']).success).toBe(true);
+    expect(schema.request.safeParse(['drafts']).success).toBe(false);
+  });
+
+  it('answers with the folder it lives at now', () => {
+    expect(schema.response.safeParse({ folder: 'checkout' }).success).toBe(true);
+  });
+});
+
+describe('flow:duplicate', () => {
+  const schema = IPC[CHANNELS.flowDuplicate];
+
+  /** Criterion 22 — the copy's name is derived main-side (`-copy`, `-copy-2`…),
+   * so only the source crosses. */
+  it('takes the source path alone', () => {
+    expect(schema.request.safeParse(['pix.yml']).success).toBe(true);
+    expect(schema.request.safeParse(['pix.yml', 'pix-copy.yml']).success).toBe(false);
+  });
+
+  it('answers with the copy it made', () => {
+    expect(schema.response.safeParse({ path: 'pix-copy.yml' }).success).toBe(true);
+  });
+});
+
+describe('flow:delete', () => {
+  const schema = IPC[CHANNELS.flowDelete];
+
+  it('takes the path', () => {
+    expect(schema.request.safeParse(['checkout/pix.yml']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers with the path it removed', () => {
+    expect(schema.response.safeParse({ path: 'checkout/pix.yml' }).success).toBe(true);
+  });
+});
+
+describe('flow:delete-folder', () => {
+  const schema = IPC[CHANNELS.flowDeleteFolder];
+
+  it('takes the folder', () => {
+    expect(schema.request.safeParse(['checkout']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers with the folder it removed', () => {
+    expect(schema.response.safeParse({ folder: 'checkout' }).success).toBe(true);
+  });
+});
+
+describe('flow:changed', () => {
+  const schema = PUSH[PUSH_CHANNELS.flowChanged];
+
+  /** Criterion 4 — the watcher pushes the fresh index itself, one event for
+   * every kind of change (§12.21). Metadata only: file bodies never ride a
+   * push (constraint), the editor pulls them over `flow:read`. */
+  it('carries the same index flow:list answers', () => {
+    expect(schema.safeParse({ flows: [FLOW_META], folders: ['checkout'] }).success).toBe(true);
+    expect(schema.safeParse({ flows: [FLOW_META] }).success).toBe(false);
+  });
+});
+
 describe('run:event', () => {
   const schema = PUSH[PUSH_CHANNELS.runEvent];
 
@@ -637,6 +840,27 @@ describe('the failure codes', () => {
       ERROR_CODES.runNotFound,
       ERROR_CODES.runStartFailed,
     ]).toEqual(['run/active', 'run/maestro-not-found', 'run/not-found', 'run/start-failed']);
+  });
+
+  /**
+   * The flow workspace's four (criteria 5, 36). `flow/workspace-unavailable`
+   * is the sidebar's error state, so it must survive the trip distinct from
+   * "that flow is gone"; the two name refusals are what the draft row's inline
+   * error is built from, told apart because only one of them keeps the typed
+   * name worth correcting.
+   */
+  it('tell the flow workspace refusals apart', () => {
+    expect([
+      ERROR_CODES.flowWorkspaceUnavailable,
+      ERROR_CODES.flowNotFound,
+      ERROR_CODES.flowNameTaken,
+      ERROR_CODES.flowInvalidName,
+    ]).toEqual([
+      'flow/workspace-unavailable',
+      'flow/not-found',
+      'flow/name-taken',
+      'flow/invalid-name',
+    ]);
   });
 
   /** The inspect spec's four: a stale snapshot re-captures and retries, a

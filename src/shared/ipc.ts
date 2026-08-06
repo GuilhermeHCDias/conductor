@@ -1,5 +1,5 @@
 import { z } from 'zod';
-import type { RunEvent, SnapshotView, TreeNode } from './types';
+import type { FlowIndex, FlowMeta, RunEvent, SnapshotView, TreeNode } from './types';
 
 /**
  * The single IPC contract: channel names, one Zod schema per channel payload,
@@ -21,6 +21,16 @@ export const CHANNELS = {
   maestroSynthesizeSelector: 'maestro:synthesize-selector',
   runStart: 'run:start',
   runCancel: 'run:cancel',
+  flowList: 'flow:list',
+  flowRead: 'flow:read',
+  flowSave: 'flow:save',
+  flowCreate: 'flow:create',
+  flowCreateFolder: 'flow:create-folder',
+  flowRename: 'flow:rename',
+  flowRenameFolder: 'flow:rename-folder',
+  flowDuplicate: 'flow:duplicate',
+  flowDelete: 'flow:delete',
+  flowDeleteFolder: 'flow:delete-folder',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -30,6 +40,7 @@ export const PUSH_CHANNELS = {
   deviceChanged: 'device:changed',
   mirrorEvent: 'mirror:event',
   runEvent: 'run:event',
+  flowChanged: 'flow:changed',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -346,6 +357,40 @@ const runEvent: z.ZodType<RunEvent> = z.discriminatedUnion('type', [
   }),
 ]);
 
+/**
+ * A flow's identity — its path relative to `conductor/`, which legitimately
+ * carries `/` (§7.2). Deliberately just a string here: refusal happens in main
+ * by *resolving* against the root (§9.3), and it answers with a stable
+ * `flow/…` code the sidebar's states are built from — never a schema error
+ * (criterion 5). The same goes for typed names: an empty or separator-carrying
+ * name earns `flow/invalid-name`, so the schema must let it through.
+ */
+const flowPathArgument = z.string();
+
+/** One index entry, pinned to the shared `FlowMeta` the way `treeNode` pins
+ * `TreeNode` — a drift is a compile error here. */
+const flowMeta: z.ZodType<FlowMeta> = z.object({
+  path: z.string(),
+  name: z.string(),
+  folder: z.string(),
+  commandCount: z.number().int().nonnegative(),
+  hash: z.string(),
+});
+
+/** Criterion 2's answer and criterion 4's push — metadata only, never file
+ * bodies (the editor pulls those over `flow:read`). */
+const flowIndex: z.ZodType<FlowIndex> = z.object({
+  flows: z.array(flowMeta).readonly(),
+  folders: z.array(z.string()).readonly(),
+});
+
+/** Names the flow an answer is about — where it lives now, after a save,
+ * create, rename, duplicate, or where it lived until a delete. */
+const flowRef = z.object({ path: z.string() });
+
+/** The folder-shaped twin. */
+const flowFolderRef = z.object({ folder: z.string() });
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
@@ -370,6 +415,46 @@ export const IPC = {
     response: runRef,
   },
   [CHANNELS.runCancel]: { request: z.tuple([z.string()]), response: runRef },
+  [CHANNELS.flowList]: { request: noArguments, response: flowIndex },
+  [CHANNELS.flowRead]: {
+    request: z.tuple([flowPathArgument]),
+    response: z.object({ yaml: z.string() }),
+  },
+  // The path and the text — and an empty text is a legal save: editing is
+  // saving (criterion 6), and clearing the editor is an edit. `run:start`
+  // refuses the same emptiness because an empty *run* is meaningless.
+  [CHANNELS.flowSave]: {
+    request: z.tuple([flowPathArgument, z.string()]),
+    response: flowRef,
+  },
+  // The target folder (`''` is the root) and the name as typed — appending
+  // the extension is main's job (criterion 18), never the person's problem.
+  [CHANNELS.flowCreate]: {
+    request: z.tuple([flowPathArgument, z.string()]),
+    response: flowRef,
+  },
+  [CHANNELS.flowCreateFolder]: {
+    request: z.tuple([z.string()]),
+    response: flowFolderRef,
+  },
+  // A rename never moves: the new name is a single segment resolved in the
+  // old parent (criterion 21; §7.2 keeps *move* out deliberately).
+  [CHANNELS.flowRename]: {
+    request: z.tuple([flowPathArgument, z.string()]),
+    response: flowRef,
+  },
+  [CHANNELS.flowRenameFolder]: {
+    request: z.tuple([flowPathArgument, z.string()]),
+    response: flowFolderRef,
+  },
+  // The copy's name is derived main-side — `-copy`, then `-copy-2` while
+  // taken (criterion 22) — so only the source crosses.
+  [CHANNELS.flowDuplicate]: { request: z.tuple([flowPathArgument]), response: flowRef },
+  [CHANNELS.flowDelete]: { request: z.tuple([flowPathArgument]), response: flowRef },
+  [CHANNELS.flowDeleteFolder]: {
+    request: z.tuple([flowPathArgument]),
+    response: flowFolderRef,
+  },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
@@ -377,6 +462,7 @@ export const PUSH = {
   [PUSH_CHANNELS.deviceChanged]: deviceSnapshot,
   [PUSH_CHANNELS.mirrorEvent]: mirrorEvent,
   [PUSH_CHANNELS.runEvent]: runEvent,
+  [PUSH_CHANNELS.flowChanged]: flowIndex,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -496,6 +582,23 @@ export const ERROR_CODES = {
    * The honest fallback for `run:start`, the way `capture/failed` is for the
    * snapshot path. */
   runStartFailed: 'run/start-failed',
+  /**
+   * Criterion 36. The workspace root could not be created, read or written —
+   * the sidebar's error state with its retry, never a silent empty tree. The
+   * fallback for every flow operation the way `run/start-failed` is for the
+   * run path.
+   */
+  flowWorkspaceUnavailable: 'flow/workspace-unavailable',
+  /** An operation naming a flow or folder that is not on disk any more — an
+   * external delete racing a click is a state, not a bug. */
+  flowNotFound: 'flow/not-found',
+  /** Criterion 17 — the name collides (case-insensitively, §7.2's macOS
+   * filesystems) inside its folder. The draft row stays open with the inline
+   * error: the typed name is worth correcting. */
+  flowNameTaken: 'flow/name-taken',
+  /** Criterion 5 — empty once trimmed, carrying a separator, or resolving
+   * outside the root (§9.3, checked by resolution, never by pattern). */
+  flowInvalidName: 'flow/invalid-name',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -531,6 +634,30 @@ export interface ConductorApi {
   /** Criterion 9. Cancellation is its own channel: a push against a device that
    * hangs must never be what stands between the person and the Stop button. */
   runCancel: (...args: Request<'run:cancel'>) => Promise<Result<Response<'run:cancel'>>>;
+  /** The index on demand — the retry behind criterion 36's error state. The
+   * steady state arrives on `onFlowChanged` instead. */
+  flowList: (...args: Request<'flow:list'>) => Promise<Result<Response<'flow:list'>>>;
+  flowRead: (...args: Request<'flow:read'>) => Promise<Result<Response<'flow:read'>>>;
+  /** §8.2 — writes the file, atomically, and nothing else: no commit, no
+   * push. Editing is saving; there is no Save button anywhere. */
+  flowSave: (...args: Request<'flow:save'>) => Promise<Result<Response<'flow:save'>>>;
+  /** Criterion 19 — the file lands on disk with the `CONFIG.APP_ID` header the
+   * moment the draft commits; the appId never exists renderer-side. */
+  flowCreate: (...args: Request<'flow:create'>) => Promise<Result<Response<'flow:create'>>>;
+  flowCreateFolder: (
+    ...args: Request<'flow:create-folder'>
+  ) => Promise<Result<Response<'flow:create-folder'>>>;
+  flowRename: (...args: Request<'flow:rename'>) => Promise<Result<Response<'flow:rename'>>>;
+  flowRenameFolder: (
+    ...args: Request<'flow:rename-folder'>
+  ) => Promise<Result<Response<'flow:rename-folder'>>>;
+  flowDuplicate: (
+    ...args: Request<'flow:duplicate'>
+  ) => Promise<Result<Response<'flow:duplicate'>>>;
+  flowDelete: (...args: Request<'flow:delete'>) => Promise<Result<Response<'flow:delete'>>>;
+  flowDeleteFolder: (
+    ...args: Request<'flow:delete-folder'>
+  ) => Promise<Result<Response<'flow:delete-folder'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
@@ -540,4 +667,7 @@ export interface ConductorApi {
   /** Criterion 25. Same rule again — a run's log can be thousands of lines,
    * and the subscription is consumed in one app-wide hook's effect cleanup. */
   onRunEvent: (listener: (payload: PushPayload<'run:event'>) => void) => () => void;
+  /** Criterion 4 — one event for every kind of change, Conductor's own or an
+   * external editor's (§12.21). Carries the fresh index, never file bodies. */
+  onFlowChanged: (listener: (payload: PushPayload<'flow:changed'>) => void) => () => void;
 }

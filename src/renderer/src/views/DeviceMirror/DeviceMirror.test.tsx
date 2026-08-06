@@ -10,7 +10,6 @@ import type { SnapshotView, TreeNode } from '@shared/types';
 import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { FLOW_YAML } from '../../fixtures/flows';
 import { DEVICE as PHONE } from '../../lib/mirror-fit';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
@@ -25,6 +24,9 @@ const ui = () => useUiStore.getState();
 const device = () => useDeviceStore.getState();
 const inspect = () => useInspectStore.getState();
 const flow = () => useFlowStore.getState();
+
+/** The open flow the command menu appends into — the editor's usual state. */
+const FLOW_YAML = 'appId: com.example.app\n---\n- launchApp:\n    clearState: true\n';
 
 const ANDROID: Device = { id: 'R9QYC01EMXL', model: 'SM_G991B', state: 'device' };
 const SECOND: Device = { id: 'emulator-5554', model: 'sdk_gphone64', state: 'device' };
@@ -122,6 +124,9 @@ beforeEach(() => {
   resetDeviceStore();
   resetInspectStore();
   resetFlowStore();
+  // The command menu appends into the open flow; without one open, appending
+  // is a no-op by design — so these tests always hold one open.
+  useFlowStore.setState({ openPath: 'teste.yaml', yaml: FLOW_YAML });
   conductor = {
     deviceList: vi.fn(() =>
       Promise.resolve<Result<DeviceSnapshot>>({

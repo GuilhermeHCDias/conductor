@@ -56,6 +56,39 @@ export type TreeNode = {
 };
 
 /**
+ * One flow of the workspace index (§7). The identity is `path`, relative to
+ * `conductor/` — `checkout/pix.yml`, never `pix.yml` (§7.2): two folders can
+ * hold a `login.yml` each, and an index keyed by file name opens one and
+ * edits the other.
+ */
+export type FlowMeta = {
+  /** Root-relative, `/`-separated. The identity everything else keys on. */
+  readonly path: string;
+  /** The file name with its extension — what the sidebar row shows. */
+  readonly name: string;
+  /** Root-relative directory, `''` at the root. */
+  readonly folder: string;
+  /** Top-level `- ` lines after the `---` separator — the flow's commands. */
+  readonly commandCount: number;
+  /** `hashText` of the file's text. The editor compares it against its own
+   * text to tell Conductor's save from an external edit (criteria 9–10) —
+   * bodies never ride the index. */
+  readonly hash: string;
+};
+
+/**
+ * What `flow:list` answers and `flow:changed` pushes: metadata over
+ * `conductor/**`, never file bodies. `folders` carries every directory —
+ * empty ones included, because a folder just made must stay visible
+ * (criterion 13) even though Git will not see it until it holds a file
+ * (§7.2).
+ */
+export type FlowIndex = {
+  readonly flows: readonly FlowMeta[];
+  readonly folders: readonly string[];
+};
+
+/**
  * How a run ended. The outcome derives from the process exit — the exit code,
  * a kill we requested, or a child that never started — and never from parsing
  * alone (run criterion 7): parsed step events are best-effort decoration, and

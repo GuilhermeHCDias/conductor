@@ -1,0 +1,54 @@
+/* Ported from the DS surface/EmptyState: a chip, a title, one instruction,
+   and the action that takes it — centred in whatever panel went quiet. */
+
+.empty {
+  display: grid;
+  place-items: center;
+  align-content: center;
+  gap: var(--space-5);
+  height: 100%;
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.empty[data-size="sm"] {
+  gap: var(--space-4);
+}
+
+.chip {
+  display: grid;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  border-radius: var(--radius-md);
+  background: var(--glass-1);
+  border: var(--border-hair) solid var(--edge-1);
+  box-shadow: var(--shadow-inset-top);
+  color: var(--text-tertiary);
+}
+
+.empty[data-size="sm"] .chip {
+  width: 34px;
+  height: 34px;
+}
+
+.text {
+  display: grid;
+  gap: 4px;
+  max-width: 300px;
+}
+
+.title {
+  font: var(--type-title-3);
+  color: var(--text-secondary);
+}
+
+.empty[data-size="sm"] .title {
+  font: var(--type-body-strong);
+}
+
+.description {
+  font: var(--type-caption);
+  color: var(--text-tertiary);
+  text-wrap: pretty;
+}
