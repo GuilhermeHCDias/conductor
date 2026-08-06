@@ -22,6 +22,43 @@ describe('the open flow', () => {
     expect(store().revision).toBe(0);
   });
 
+  /** Every test file opens on the clear-state init, so a run always starts
+   * from zero — no state left over from whatever ran before it. */
+  it('opens the seed with the clear-state init as its first step', () => {
+    expect(FLOW_YAML).toMatch(/^appId: [^\n]+\n---\n- launchApp:\n {4}clearState: true\n/);
+  });
+
+  it('returns to the seed when a new flow starts, keeping nothing of the last one', () => {
+    resetFlowStore();
+    store().appendStep(STEP);
+
+    store().startNew();
+
+    expect(store().yaml).toBe(FLOW_YAML);
+    expect(store().dirty).toBe(false);
+    expect(store().revision).toBe(0);
+  });
+
+  it('replaces the text wholesale when the user edits, marking it dirty', () => {
+    resetFlowStore();
+
+    store().edit('appId: com.google.android.calendar\n');
+
+    expect(store().yaml).toBe('appId: com.google.android.calendar\n');
+    expect(store().dirty).toBe(true);
+  });
+
+  /** The reveal-scroll follows the revision, and the revision counts blocks
+   * that arrive from outside the editor — the user's own keystrokes must not
+   * yank the view to the end of the file. */
+  it('leaves the revision alone on an edit', () => {
+    resetFlowStore();
+
+    store().edit('- launchApp\n');
+
+    expect(store().revision).toBe(0);
+  });
+
   /** Criterion 38 — one block appended at the end, a trailing newline, and
    * every existing byte exactly where it was. */
   it('appends one step block leaving the existing bytes identical', () => {

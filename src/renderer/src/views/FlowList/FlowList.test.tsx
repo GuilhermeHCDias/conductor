@@ -1,7 +1,8 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
-import { FLOWS } from '../../fixtures/flows';
+import { FLOW_YAML, FLOWS } from '../../fixtures/flows';
+import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
 import { FlowList } from './FlowList';
 
@@ -12,6 +13,7 @@ const rowNames = () => rows().map((row) => within(row).getByRole('button').textC
 
 beforeEach(() => {
   resetUiStore();
+  resetFlowStore();
 });
 
 /** Criteria 14–21. */
@@ -100,6 +102,18 @@ describe('FlowList', () => {
     await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
 
     expect(ui().document).toEqual({ id: 'f-new-1', label: 'novo-1.yaml' });
+  });
+
+  // ...and the text it starts on is the seed — the clear-state init — with
+  // none of the previous file's steps surviving into it.
+  it('reseeds the editor on the clear-state init when a document starts', async () => {
+    useFlowStore.getState().appendStep('- tapOn:\n    text: "Entrar"');
+    render(<FlowList />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+
+    expect(useFlowStore.getState().yaml).toBe(FLOW_YAML);
+    expect(useFlowStore.getState().dirty).toBe(false);
   });
 
   // A brand-new document is not in the suite, so no row can claim it.

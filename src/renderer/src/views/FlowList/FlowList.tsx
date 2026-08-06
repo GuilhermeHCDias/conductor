@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { StatusDot } from '../../components/StatusDot/StatusDot';
 import { FLOWS, type Flow } from '../../fixtures/flows';
+import { useFlowStore } from '../../stores/flow.store';
 import { useUiStore } from '../../stores/ui.store';
 import styles from './FlowList.module.css';
 
@@ -73,6 +74,7 @@ export function FlowList(): JSX.Element {
   const setQuery = useUiStore((state) => state.setQuery);
   const openFlow = useUiStore((state) => state.openFlow);
   const newFlow = useUiStore((state) => state.newFlow);
+  const startNew = useFlowStore((state) => state.startNew);
   const openId = useUiStore((state) => state.document.id);
 
   const needle = query.trim().toLowerCase();
@@ -86,8 +88,17 @@ export function FlowList(): JSX.Element {
         <span className={styles.caps}>Flows</span>
         <span className={styles.count}>conductor/ · {failing} failing</span>
         <span className={styles.spacer} />
-        {/* Criterion 25: the one control that starts a document. */}
-        <IconButton icon="plus" label="New flow" onClick={newFlow} size="sm" />
+        {/* Criterion 25: the one control that starts a document — relabelled
+            by the shell, reseeded on the clear-state init by the flow store. */}
+        <IconButton
+          icon="plus"
+          label="New flow"
+          onClick={() => {
+            newFlow();
+            startNew();
+          }}
+          size="sm"
+        />
       </header>
 
       <div className={styles.searchRow}>

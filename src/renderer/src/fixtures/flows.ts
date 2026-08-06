@@ -40,8 +40,14 @@ export type ChatTurn = {
   readonly code?: string;
 };
 
-/** The starting flow, as Maestro would write it. */
-export const FLOW_YAML = 'appId: com.example.app\n---\n- launchApp:\n    clearState: true\n';
+/**
+ * The starting flow, as Maestro would write it — and the seed every new file
+ * opens on: the clear-state init keeps each run starting from zero. The appId
+ * mirrors `CONFIG.APP_ID` by hand until the shell fetches config over the
+ * bridge; both point at Google Calendar while the real app is undecided.
+ */
+export const FLOW_YAML =
+  'appId: com.google.android.calendar\n---\n- launchApp:\n    clearState: true\n';
 
 /**
  * The project's suite. Sorted by last run, most recent first — people come back

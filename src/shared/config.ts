@@ -1,7 +1,11 @@
 // src/shared/config.ts — fonte única de verdade
 export const CONFIG = {
-  /** Package name (Android) / bundle id (iOS) do app sob teste. */
-  APP_ID: process.env.CONDUCTOR_APP_ID ?? 'com.vtex.pnp',
+  /**
+   * Package name (Android) / bundle id (iOS) do app sob teste.
+   * Google Calendar por enquanto — um app que qualquer device Google já tem,
+   * para testar de ponta a ponta até o app real ser definido.
+   */
+  APP_ID: process.env.CONDUCTOR_APP_ID ?? 'com.google.android.calendar',
 
   /**
    * Repositório canônico que contém os testes e2e.

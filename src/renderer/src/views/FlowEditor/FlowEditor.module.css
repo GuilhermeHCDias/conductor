@@ -61,13 +61,15 @@
   overflow: auto;
 }
 
-/* Criterion 26. */
+/* Criterion 26. Relative, because the editable overlay is absolutely laid
+   over the coloured lines. */
 .yaml {
   align-content: start;
   display: grid;
   font: var(--type-code);
   letter-spacing: var(--ls-mono);
   padding: var(--space-5) 0;
+  position: relative;
   tab-size: 2;
 }
 
@@ -139,15 +141,35 @@
   color: var(--text-primary);
 }
 
-/* Criterion 28. */
-.caret {
-  animation: cd-caret 1s steps(1) infinite;
-  background: var(--editor-caret);
-  display: inline-block;
-  height: 1.05em;
-  margin-left: 1px;
-  vertical-align: text-bottom;
-  width: 1.5px;
+/* Criterion 28, amended by editability: the caret is the textarea's native
+   one. The input holds the same text as the underlay in the same metrics —
+   font inherited, wrap rules identical, left padding clearing the gutter
+   column (--gutter-w is set inline by the body) — so the two layers agree
+   glyph for glyph, and the only things this layer paints are the caret and
+   the selection. Its own text stays transparent: what the eye reads is the
+   coloured underlay. No focus ring: the caret and the active-line wash are
+   what say the editor has focus, exactly as they do in a native editor. */
+.editorInput {
+  background: transparent;
+  border: none;
+  box-sizing: border-box;
+  caret-color: var(--editor-caret);
+  color: transparent;
+  font: inherit;
+  inset: 0;
+  letter-spacing: inherit;
+  outline: none;
+  overflow: hidden;
+  padding: var(--space-5) var(--space-6) var(--space-5)
+    calc(var(--space-5) + var(--gutter-w, 1ch) + var(--space-5));
+  position: absolute;
+  resize: none;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.editorInput::selection {
+  background: var(--editor-selection);
 }
 
 /* Criterion 29. */

@@ -24,6 +24,14 @@ export type FlowActions = {
   /** Appends one step block — no leading or trailing newline of its own; the
    * store owns the joining and the trailing newline. */
   appendStep: (step: string) => void;
+  /** Opens a new file on the seed. Every test file starts on the clear-state
+   * init so a run always begins from zero — nothing of the last file, its
+   * dirty mark or its revision survives into this one. */
+  startNew: () => void;
+  /** Replaces the text wholesale — the editor's keystrokes land here. The
+   * revision stays put: the reveal-scroll is for blocks that arrive from
+   * outside the editor, never for the line under the user's own caret. */
+  edit: (yaml: string) => void;
 };
 
 export type FlowState = FlowData & FlowActions;
@@ -45,6 +53,14 @@ export const useFlowStore = create<FlowState>((set, get) => ({
       dirty: true,
       revision: revision + 1,
     });
+  },
+
+  startNew: () => {
+    set(createFlowData());
+  },
+
+  edit: (yaml) => {
+    set({ yaml, dirty: true });
   },
 }));
 

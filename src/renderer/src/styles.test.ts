@@ -152,17 +152,18 @@ describe('motion', () => {
     expect(css).not.toMatch(/transform:\s*scale\(\s*[\d.]/);
   });
 
-  // The caret's 1s blink has no token to come from; everything else that
-  // animates is a DS entrance on token clocks (the inspect spec's floating
-  // layers). `utilities/animation.css` neutralises all of it under reduced
-  // motion (`animation-duration: .01ms !important`), which is what criterion 9
-  // is protecting; nothing may animate on any other hardcoded clock.
-  it.each(MODULES)('$name animates only the caret or a DS entrance, on tokens', ({ css }) => {
+  // Everything that animates is a DS entrance on token clocks (the inspect
+  // spec's floating layers) — the fake caret's hardcoded 1s blink left with
+  // the editable body, whose caret is the platform's own.
+  // `utilities/animation.css` neutralises the entrances under reduced motion
+  // (`animation-duration: .01ms !important`), which is what criterion 9 is
+  // protecting; nothing may animate on any hardcoded clock.
+  it.each(MODULES)('$name animates only a DS entrance, on token clocks', ({ css }) => {
     const animations = css.match(/animation:[^;]*/g) ?? [];
 
     for (const declaration of animations) {
       expect(declaration).toMatch(
-        /^animation: (cd-caret 1s steps\(1\) infinite|cd-(fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\))$/,
+        /^animation: cd-(fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)$/,
       );
     }
   });
@@ -392,12 +393,15 @@ describe('what the criteria name', () => {
     expect(declarations).toContain(`box-shadow: inset 2px 0 0 0 var(${bar})`);
   });
 
-  /** Criterion 28. */
-  it('blinks the caret on the design system’s own keyframes', () => {
-    const caret = rule(editor, '.caret');
+  /** Criterion 28, amended by editability: the caret is the textarea's native
+   * one, painted with the editor's token — and the typed text itself stays
+   * transparent, so what the eye reads is always the coloured underlay. */
+  it('paints the native caret with the editor token over invisible input text', () => {
+    const input = rule(editor, '.editorInput');
 
-    expect(caret).toContain('animation: cd-caret');
-    expect(caret).toContain('background: var(--editor-caret)');
+    expect(input).toContain('caret-color: var(--editor-caret)');
+    expect(input).toContain('color: transparent');
+    expect(input).toContain('font: inherit');
   });
 
   /** Criterion 29 — a raised puck on a recessed track. */
@@ -409,6 +413,17 @@ describe('what the criteria name', () => {
     expect(selected).toContain('background: var(--glass-3)');
     expect(selected).toContain('box-shadow: var(--shadow-1)');
     expect(selected).toContain('border-color: var(--a-hair)');
+  });
+
+  /**
+   * Amended by hand: the menu floats over the mirror's screenshot, and the
+   * dark theme's 17%-alpha frost cannot carry text over that — so this one
+   * layer fills with the opaque content material instead of --glass-3.
+   */
+  it('fills the context menu with the content material, not the thin frost', () => {
+    expect(rule(cssOf('components/ContextMenu/ContextMenu.module.css'), '.menu')).toContain(
+      'background: var(--material-content)',
+    );
   });
 
   /** Criterion 31. */

@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useRef } from 'react';
+import { type JSX, useEffect, useRef, useState } from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
 import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
@@ -49,11 +49,10 @@ type YamlLineProps = {
   readonly gutterWidth: string;
   /** `error` · `ai` · `active`, in that order of precedence (criterion 27). */
   readonly wash: 'error' | 'ai' | 'active' | undefined;
-  readonly caret: boolean;
 };
 
 /** One numbered, syntax-coloured line. */
-function YamlLine({ text, number, gutterWidth, wash, caret }: YamlLineProps): JSX.Element {
+function YamlLine({ text, number, gutterWidth, wash }: YamlLineProps): JSX.Element {
   // Spans are keyed by where they start in the line rather than by their
   // position in the array: a character offset survives re-tokenizing.
   let offset = 0;
@@ -78,17 +77,23 @@ function YamlLine({ text, number, gutterWidth, wash, caret }: YamlLineProps): JS
             {token.text}
           </span>
         ))}
-        {caret ? <span aria-hidden="true" className={styles.caret} data-testid="caret" /> : null}
       </span>
     </div>
   );
 }
 
 /**
- * The YAML body (criteria 26–28). Read-only and syntax-coloured: CodeMirror
- * belongs to the FlowEditor spec, not to the shell. The text is the flow
- * store's — the fixture constant is no longer read here (inspect criterion
- * 36), so a step the command menu appends is on screen the moment it lands.
+ * The YAML body (criteria 26–28), editable: the numbered, syntax-coloured
+ * lines are an underlay, and a transparent textarea laid exactly over them
+ * holds the real text — typing, deleting, selection, IME and undo are the
+ * platform's own, and every keystroke lands in the flow store (inspect
+ * criterion 36: the store's text is the one truth). The two layers agree
+ * glyph for glyph because the textarea inherits the underlay's metrics and
+ * clears the gutter column with its own left padding.
+ *
+ * The caret is the native one, painted by `--editor-caret`; the active-line
+ * wash follows it while the editor is focused and leaves with it, which is
+ * also what marks focus (criterion 28, amended by editability).
  *
  * One trailing empty line is rendered past the end of the flow, which is where
  * the next command would go.
@@ -98,10 +103,15 @@ function YamlBody(): JSX.Element {
   const errorLines = useUiStore((state) => state.errorLines);
   const yaml = useFlowStore(selectYaml);
   const revision = useFlowStore(selectRevision);
+  const edit = useFlowStore((state) => state.edit);
   const end = useRef<HTMLDivElement>(null);
+  // 1-based line under the real caret, or null while the editor is blurred.
+  const [caretLine, setCaretLine] = useState<number | null>(null);
 
   // Inspect criterion 39 — reveal what was just written. Guarded on the
-  // revision, not the text: only an append scrolls, never a mount.
+  // revision, not the text: only a block arriving from outside the editor
+  // scrolls — never a mount, never the user's own keystroke (`edit` leaves
+  // the revision alone).
   useEffect(() => {
     if (revision > 0) {
       end.current?.scrollIntoView?.({ block: 'nearest' });
@@ -110,26 +120,28 @@ function YamlBody(): JSX.Element {
 
   const lines = yaml.replace(/\n$/, '').split('\n');
   const total = lines.length + 1;
-  const activeLine = lines.length;
   const gutterWidth = `${String(total).length}ch`;
 
+  const syncCaret = (box: HTMLTextAreaElement): void => {
+    setCaretLine(box.value.slice(0, box.selectionStart).split('\n').length);
+  };
+
   return (
-    <div className={styles.yaml}>
+    <div className={styles.yaml} style={{ '--gutter-w': gutterWidth }}>
       {Array.from({ length: total }, (_unused, index) => {
         const number = index + 1;
         // Criterion 27: an error line wins over an AI line, and both win over
-        // the active line.
+        // the line under the caret.
         const wash = errorLines.includes(number)
           ? 'error'
           : aiLines.includes(number)
             ? 'ai'
-            : number === activeLine
+            : number === caretLine
               ? 'active'
               : undefined;
 
         return (
           <YamlLine
-            caret={number === activeLine}
             gutterWidth={gutterWidth}
             key={number}
             number={number}
@@ -138,6 +150,27 @@ function YamlBody(): JSX.Element {
           />
         );
       })}
+      <textarea
+        aria-label="Flow YAML"
+        autoCapitalize="off"
+        autoCorrect="off"
+        className={styles.editorInput}
+        onBlur={() => {
+          setCaretLine(null);
+        }}
+        onChange={(event) => {
+          edit(event.currentTarget.value);
+          syncCaret(event.currentTarget);
+        }}
+        onFocus={(event) => {
+          syncCaret(event.currentTarget);
+        }}
+        onSelect={(event) => {
+          syncCaret(event.currentTarget);
+        }}
+        spellCheck={false}
+        value={yaml}
+      />
       <div aria-hidden="true" ref={end} />
     </div>
   );
