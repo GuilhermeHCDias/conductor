@@ -575,6 +575,19 @@ describe('renaming a folder', () => {
 
     expect(code(await service.renameFolder('', 'x'))).toBe('flow/invalid-name');
   });
+
+  /** R7 — a flow's path pointed at `renameFolder` must not be renamed past
+   * its extension and dropped from the index; only a real directory may. */
+  it('refuses a flow file as the source instead of renaming it', async () => {
+    const { service, root } = harness();
+    seed(root, 'pix.yaml');
+
+    const result = await service.renameFolder('pix.yaml', 'ideas');
+
+    expect(result.ok).toBe(false);
+    expect(existsSync(join(root, 'pix.yaml'))).toBe(true);
+    expect(existsSync(join(root, 'ideas'))).toBe(false);
+  });
 });
 
 describe('duplicating', () => {
@@ -731,5 +744,53 @@ describe('the watcher', () => {
     await new Promise((resolve) => setTimeout(resolve, 400));
 
     expect(events).toEqual([]);
+  });
+
+  /**
+   * R2 — criterion 36's retry promises that asking `list` again revives a
+   * dead watcher. Firing a real 'error' event on the live watcher exercises
+   * the service's own handler, which must both drop the reference (so
+   * `ensureWatcher` can recreate it) and actually close the broken instance
+   * — leaving it genuinely inert, the way a real failure would, so only a
+   * freshly-created watcher can observe what's seeded after recovery.
+   */
+  it('revives the watcher after it errors, once list is asked again', {
+    timeout: 15_000,
+  }, async () => {
+    const { service, root, events } = await started();
+
+    const broken = (
+      service as unknown as {
+        watcher: { close: () => Promise<void>; emit: (event: string, error: Error) => void };
+      }
+    ).watcher;
+    // Emit while the listener is still attached (closing first strips it,
+    // and Node throws on an unheard 'error'), then close it for real — a
+    // production failure leaves the instance just as dead, independent of
+    // whatever cleanup the service's own handler does.
+    broken.emit('error', new Error('simulated watcher failure'));
+    await broken.close();
+
+    await until(
+      () => events.some((event) => !event.ok),
+      () => JSON.stringify(events),
+    );
+
+    await service.list();
+    // `list` starts the new watcher but does not await its readiness (unlike
+    // `start`); with `ignoreInitial: true`, seeding before the poller's own
+    // initial scan settles would land in the same blind spot `started()`
+    // steps past above — so give the fresh watcher a beat to get there.
+    await new Promise((resolve) => setTimeout(resolve, 200));
+    seed(root, 'after-recovery.yaml');
+
+    await until(
+      () =>
+        events.some(
+          (event) =>
+            event.ok && event.data.flows.some((flow) => flow.path === 'after-recovery.yaml'),
+        ),
+      () => JSON.stringify(events),
+    );
   });
 });

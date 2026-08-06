@@ -178,6 +178,38 @@ describe('saving', () => {
 
     expect(selectUnsaved(store())).toBe(true);
   });
+
+  /** R1 — a timer-fired save and a `flushSave` racing the same write must
+   * never call `flowSave` concurrently (two writers of one temp file corrupt
+   * or ENOENT each other); the flush waits on the in-flight save, then
+   * drains whatever changed meanwhile in its own follow-up call. */
+  it('coalesces an overlapping flush into the save already in flight, then drains the newer edit', async () => {
+    vi.useFakeTimers();
+    await openSeeded('pix.yaml');
+    const calls: string[] = [];
+    // The Promise executor runs synchronously, so this is definitely
+    // assigned before `new Promise` returns — no null union to narrow.
+    let resolveFirst!: (value: Result<{ path: string }>) => void;
+    const firstSave = new Promise<Result<{ path: string }>>((resolve) => {
+      resolveFirst = resolve;
+    });
+    window.conductor.flowSave = vi.fn((_path: string, yaml: string) => {
+      calls.push(yaml);
+      return calls.length === 1 ? firstSave : Promise.resolve(ok({ path: 'pix.yaml' }));
+    });
+
+    store().edit('appId: v1\n---\n');
+    await vi.advanceTimersByTimeAsync(500);
+    expect(calls).toEqual(['appId: v1\n---\n']);
+
+    store().edit('appId: v2\n---\n');
+    const flush = store().flushSave();
+    resolveFirst(ok({ path: 'pix.yaml' }));
+    await flush;
+
+    expect(calls).toEqual(['appId: v1\n---\n', 'appId: v2\n---\n']);
+    expect(selectUnsaved(store())).toBe(false);
+  });
 });
 
 describe('what the watcher reports', () => {
@@ -222,10 +254,14 @@ describe('what the watcher reports', () => {
     expect(store().yaml).toBe('appId: mine\n---\n');
   });
 
-  /** Criterion 24 — the open flow went away: the first remaining one opens. */
+  /** Criterion 24 — the open flow went away: the first remaining one opens.
+   * `flowRead` refusing the doomed path is what makes this an actual delete
+   * (S1 — see the sibling test below for the "still on disk" case). */
   it('opens the first remaining flow when the open one is deleted', async () => {
     await openSeeded('b.yaml');
-    window.conductor.flowRead = vi.fn(() => Promise.resolve(ok({ yaml: FLOW })));
+    window.conductor.flowRead = vi.fn((path: string) =>
+      Promise.resolve(path === 'b.yaml' ? refusal('flow/not-found', 'gone') : ok({ yaml: FLOW })),
+    );
 
     store().applyIndex(ok(index([meta('a.yaml')])));
 
@@ -237,10 +273,13 @@ describe('what the watcher reports', () => {
 
   it('shows the empty editor when none remain', async () => {
     await openSeeded('b.yaml');
+    window.conductor.flowRead = vi.fn(() => Promise.resolve(refusal('flow/not-found', 'gone')));
 
     store().applyIndex(ok(index([])));
 
-    expect(store().openPath).toBeNull();
+    await vi.waitFor(() => {
+      expect(store().openPath).toBeNull();
+    });
     expect(store().yaml).toBe('');
   });
 
@@ -251,12 +290,33 @@ describe('what the watcher reports', () => {
     await openSeeded('b.yaml');
     const save = vi.fn((path: string) => Promise.resolve(ok({ path })));
     window.conductor.flowSave = save;
+    window.conductor.flowRead = vi.fn(() => Promise.resolve(refusal('flow/not-found', 'gone')));
 
     store().edit('appId: typed\n---\n');
     store().applyIndex(ok(index([])));
     await vi.advanceTimersByTimeAsync(1000);
 
     expect(save).not.toHaveBeenCalled();
+  });
+
+  /** S1 — dropping from the index is not always a delete: the file can lose
+   * its header mid-edit (criterion 3) while the user keeps typing. Criterion
+   * 6 promises no keystroke is ever lost, so this must leave the edit alone
+   * rather than discarding it and jumping to another flow. */
+  it('keeps an unsaved edit open when the flow drops from the index but is still on disk', async () => {
+    vi.useFakeTimers();
+    await openSeeded('b.yaml');
+    const save = vi.fn((path: string) => Promise.resolve(ok({ path })));
+    window.conductor.flowSave = save;
+    window.conductor.flowRead = vi.fn(() => Promise.resolve(ok({ yaml: 'still here' })));
+
+    store().edit('appId: typed\n---\n');
+    store().applyIndex(ok(index([])));
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(store().openPath).toBe('b.yaml');
+    expect(save).toHaveBeenCalledExactlyOnceWith('b.yaml', 'appId: typed\n---\n');
+    expect(store().dirty).toBe(false);
   });
 });
 
@@ -440,7 +500,9 @@ describe('deleting', () => {
     window.conductor.flowSave = save;
     window.conductor.flowDelete = vi.fn(() => Promise.resolve(ok({ path: 'b.yaml' })));
     window.conductor.flowList = vi.fn(() => Promise.resolve(ok(index([meta('a.yaml')]))));
-    window.conductor.flowRead = vi.fn(() => Promise.resolve(ok({ yaml: FLOW })));
+    window.conductor.flowRead = vi.fn((path: string) =>
+      Promise.resolve(path === 'b.yaml' ? refusal('flow/not-found', 'gone') : ok({ yaml: FLOW })),
+    );
 
     store().edit('appId: typed\n---\n');
     store().askDelete('flow', 'b.yaml');
@@ -449,7 +511,9 @@ describe('deleting', () => {
 
     expect(window.conductor.flowDelete).toHaveBeenCalledExactlyOnceWith('b.yaml');
     expect(save).not.toHaveBeenCalled();
-    expect(store().openPath).toBe('a.yaml');
+    await vi.waitFor(() => {
+      expect(store().openPath).toBe('a.yaml');
+    });
   });
 
   it('deletes a folder recursively through main', async () => {
@@ -461,6 +525,30 @@ describe('deleting', () => {
 
     expect(window.conductor.flowDeleteFolder).toHaveBeenCalledExactlyOnceWith('checkout');
     expect(store().confirm).toBeNull();
+  });
+
+  /** R3 — a failed delete must not read as a saved, empty document: the
+   * pending edit's dirty flag survives, and nothing is silently discarded. */
+  it('keeps the edit dirty and does not refresh when the delete fails', async () => {
+    vi.useFakeTimers();
+    await openSeeded('b.yaml');
+    const save = vi.fn((path: string) => Promise.resolve(ok({ path })));
+    window.conductor.flowSave = save;
+    window.conductor.flowDelete = vi.fn(() =>
+      Promise.resolve(refusal('flow/workspace-unavailable', 'disk gone')),
+    );
+    const list = vi.fn(() => Promise.resolve(ok(index([meta('b.yaml')]))));
+    window.conductor.flowList = list;
+
+    store().edit('appId: typed\n---\n');
+    store().askDelete('flow', 'b.yaml');
+    await store().confirmDelete();
+    await vi.advanceTimersByTimeAsync(1000);
+
+    expect(window.conductor.flowDelete).toHaveBeenCalledExactlyOnceWith('b.yaml');
+    expect(save).not.toHaveBeenCalled();
+    expect(list).not.toHaveBeenCalled();
+    expect(store().dirty).toBe(true);
   });
 });
 
@@ -486,6 +574,20 @@ describe('duplicating', () => {
 
     expect(window.conductor.flowDuplicate).toHaveBeenCalledExactlyOnceWith('pix.yaml');
     expect(store().index?.flows).toHaveLength(2);
+  });
+
+  /** R3 — a failed duplicate must not be reported as done by refreshing. */
+  it('does not refresh when the duplicate fails', async () => {
+    window.conductor.flowDuplicate = vi.fn(() =>
+      Promise.resolve(refusal('flow/workspace-unavailable', 'disk gone')),
+    );
+    const list = vi.fn(() => Promise.resolve(ok(index())));
+    window.conductor.flowList = list;
+
+    await store().duplicateFlow('pix.yaml');
+
+    expect(window.conductor.flowDuplicate).toHaveBeenCalledExactlyOnceWith('pix.yaml');
+    expect(list).not.toHaveBeenCalled();
   });
 });
 

@@ -290,7 +290,7 @@ function DeleteConfirm(): JSX.Element | null {
           flow.folder === confirm.identity || flow.folder.startsWith(`${confirm.identity}/`),
       )
     : [];
-  const title = folder ? nameOf(confirm.identity) : nameOf(confirm.identity);
+  const title = nameOf(confirm.identity);
   const subtitle = folder
     ? inside.length > 0
       ? `The folder and the ${inside.length} flow${inside.length === 1 ? '' : 's'} in it are removed from conductor/. This cannot be undone here.`

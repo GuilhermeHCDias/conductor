@@ -242,6 +242,10 @@ export class FlowService {
     }
     const parent = dirname(source);
     try {
+      // The honest "this is actually a folder" probe (`deleteFolder` reuses
+      // the same one): without it, this rename would happily rename a flow
+      // past the extension rules and drop it from the index (§7.1).
+      await readdir(source);
       if (await this.takenIn(parent, valid, basename(source))) {
         return refuse(ERROR_CODES.flowNameTaken, `A folder called “${valid}” already exists.`);
       }
@@ -369,8 +373,16 @@ export class FlowService {
       this.scheduleReindex();
     });
     // Without a listener, an emitted 'error' throws in main. The UI hears it
-    // as the workspace state it already has a screen for (criterion 36).
+    // as the workspace state it already has a screen for (criterion 36) —
+    // and the reference is dropped so `list`'s retry (`ensureWatcher` seeing
+    // `null`) actually revives it instead of finding this dead one still
+    // sitting in the slot.
     watcher.on('error', (error) => {
+      if (this.watcher === watcher) {
+        this.watcher = null;
+        this.watcherReady = null;
+      }
+      void watcher.close().catch(() => {});
       if (!this.disposed) {
         this.deps.emit(unavailable('The flows folder could not be watched.', error));
       }

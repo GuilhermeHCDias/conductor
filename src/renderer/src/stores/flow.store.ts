@@ -108,6 +108,7 @@ const SAVE_DEBOUNCE_MS = 500;
 // keeps its timers: nothing re-renders because a timer was armed.
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let commitInFlight = false;
+let saveInFlight: Promise<void> | null = null;
 
 function createFlowData(): FlowData {
   return {
@@ -143,11 +144,33 @@ function cancelPendingSave(): void {
 }
 
 /**
- * The one writer. What it captures is what it writes; if the text moved on
- * while the write was in flight, `dirty` stays and the newer keystrokes get
- * their own save.
+ * The one writer, coalesced. A timer-fired save and a `flushSave` racing the
+ * same write can otherwise both call `flowSave` concurrently — two writers
+ * of the same temp file corrupt or ENOENT each other (§8.2's atomic write
+ * assumes a single writer). A save already in flight is awaited instead of
+ * raced; if a newer edit landed while it was in flight, that edit gets its
+ * own follow-up save once the first settles, so a flush never returns before
+ * the latest text is actually on its way to disk.
  */
 async function saveNow(): Promise<void> {
+  if (saveInFlight !== null) {
+    await saveInFlight;
+    if (useFlowStore.getState().dirty) {
+      await saveNow();
+    }
+    return;
+  }
+  saveInFlight = performSave();
+  try {
+    await saveInFlight;
+  } finally {
+    saveInFlight = null;
+  }
+}
+
+/** What it captures is what it writes; if the text moved on while the write
+ * was in flight, `dirty` stays and `saveNow`'s drain gives it its own save. */
+async function performSave(): Promise<void> {
   const { openPath, yaml, dirty } = useFlowStore.getState();
   if (openPath === null || !dirty) {
     return;
@@ -171,6 +194,28 @@ async function reloadOpen(path: string): Promise<void> {
     return;
   }
   useFlowStore.setState({ yaml: result.data.yaml });
+}
+
+/** Criterion 24 fires on an actual delete only. A flow also drops out of the
+ * index when its header stops classifying (criterion 3) while the user is
+ * mid-edit — reading the disk before discarding anything is what tells the
+ * two apart, so a live edit is never thrown away by criterion 6's mistake. */
+async function reconcileMissing(path: string): Promise<void> {
+  const stillOnDisk = await window.conductor.flowRead(path);
+  if (stillOnDisk.ok) {
+    return;
+  }
+  if (useFlowStore.getState().openPath !== path) {
+    return;
+  }
+  cancelPendingSave();
+  const next = useFlowStore.getState().index?.flows[0];
+  if (next === undefined) {
+    useFlowStore.setState({ openPath: null, yaml: '', dirty: false, revision: 0 });
+  } else {
+    useFlowStore.setState({ dirty: false });
+    void useFlowStore.getState().openFlow(next.path);
+  }
 }
 
 function nameOf(identity: string): string {
@@ -209,17 +254,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
     }
     const open = index.flows.find((flow) => flow.path === openPath);
     if (open === undefined) {
-      // Criterion 24 — the open flow is gone. Its pending save dies with it
-      // (a late write would resurrect the file), and the first remaining
-      // flow takes its place, or the editor empties.
-      cancelPendingSave();
-      const next = index.flows[0];
-      if (next === undefined) {
-        set({ openPath: null, yaml: '', dirty: false, revision: 0 });
-      } else {
-        set({ dirty: false });
-        void get().openFlow(next.path);
-      }
+      void reconcileMissing(openPath);
       return;
     }
     if (open.hash === hashText(yaml)) {
@@ -425,9 +460,11 @@ export const useFlowStore = create<FlowState>((set, get) => ({
   duplicateFlow: async (path) => {
     set({ menu: null });
     const result = await window.conductor.flowDuplicate(path);
-    if (result.ok) {
-      await get().refresh();
+    if (!result.ok) {
+      console.error('The flow could not be duplicated:', result.error);
+      return;
     }
+    await get().refresh();
   },
 
   openMenu: (menu) => {
@@ -458,14 +495,21 @@ export const useFlowStore = create<FlowState>((set, get) => ({
         ? open === confirm.identity
         : (open?.startsWith(`${confirm.identity}/`) ?? false);
     if (doomed) {
-      // Criterion 6 — nothing lands on a path that is about to be gone.
+      // Criterion 6 — nothing lands on a path that is about to be gone. The
+      // dirty flag itself stays until the delete actually lands, so a failed
+      // delete does not read as a saved document.
       cancelPendingSave();
-      set({ dirty: false });
     }
-    if (confirm.kind === 'flow') {
-      await window.conductor.flowDelete(confirm.identity);
-    } else {
-      await window.conductor.flowDeleteFolder(confirm.identity);
+    const result =
+      confirm.kind === 'flow'
+        ? await window.conductor.flowDelete(confirm.identity)
+        : await window.conductor.flowDeleteFolder(confirm.identity);
+    if (!result.ok) {
+      console.error('The delete could not complete:', result.error);
+      return;
+    }
+    if (doomed) {
+      set({ dirty: false });
     }
     // Criterion 24 rides on the reconciliation this triggers.
     await get().refresh();
@@ -476,6 +520,7 @@ export const useFlowStore = create<FlowState>((set, get) => ({
 export function resetFlowStore(): void {
   cancelPendingSave();
   commitInFlight = false;
+  saveInFlight = null;
   useFlowStore.setState(createFlowData());
 }
 
