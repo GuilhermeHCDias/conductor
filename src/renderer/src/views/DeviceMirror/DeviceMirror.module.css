@@ -77,11 +77,9 @@
   place-items: center;
 }
 
-/* Criterion 40: reserves the scaled footprint, so the phone never overflows the
-   column even though `transform` takes it out of flow. Criterion 42: the phone
-   is the one physical object in the window, and keeps its own shadow. */
+/* Criterion 40: reserves the scaled footprint, so the phone never overflows
+   the column even though `transform` takes it out of flow. */
 .footprint {
-  filter: drop-shadow(var(--device-drop));
   position: relative;
 }
 

@@ -573,8 +573,11 @@ describe('what the criteria name', () => {
     expect(mirror).not.toContain('.footer');
   });
 
-  it('gives the phone its own drop shadow', () => {
-    expect(rule(mirror, '.footprint')).toContain('filter: drop-shadow(var(--device-drop))');
+  // Criterion 42 (aurora-layout-shell) originally gave the phone its own drop
+  // shadow; the engineer asked for it removed — the footprint keeps its
+  // reserved layout box but no longer casts one.
+  it('gives the phone no drop shadow', () => {
+    expect(rule(mirror, '.footprint')).not.toContain('drop-shadow');
   });
 
   /** Criterion 43. */
