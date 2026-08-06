@@ -1,6 +1,6 @@
 # Aurora rehue completion and the Toolbar Send control
 
-status: todo
+status: done
 created: 2026-08-05
 
 ## Goal
@@ -304,3 +304,40 @@ for CSS-shape criteria (jsdom applies no stylesheet, so `toHaveStyle` can't see 
   since no source pins it beyond `CReview.jsx`'s own placeholders (`window.REVIEWER.name`,
   "sent 2 min ago"). Using a small, plausible mix (e.g. one new, one edited) is enough to
   exercise every criterion above.
+
+### Resolved during implementation (2026-08-05)
+
+- **Fixture marks follow the kit's own `data.jsx`**: `f-teste` is `edited`, `f-busca` is `new`,
+  reviewer `Marina`, sent-at `2 min ago`. A `deleted` change is proven by seeding the store in
+  tests — a deleted flow sitting in the sidebar list would be nonsense the kit also avoids.
+- **`Flow` also gained the kit's `folder` field** (beyond the spec's fixture bullet): without
+  it, criterion 12's `conductor/<folder>/` column would render the same string on every row.
+  Values come from `data.jsx` (`pedidos` / `compra`, root omitted); `FlowList` ignores it.
+- **Escape lives in `useWindowShortcuts`** — one file beyond the spec's list. The hook is the
+  window's one keydown owner, so sheet-first-then-search priority is decided in one place
+  instead of racing two listeners; criteria 16–17's Escape half is tested there.
+- **The scrim's ink is the reference literal re-derived at hue 240** —
+  `oklch(16% 0.02 240 / 0.46)` — because criterion 1 bans hue-265 ink renderer-wide and the
+  reference file predates the rehue on that one value (the kit's own Doctor scrim still says
+  265).
+- **Two `styles.test.ts` guards were amended, not weakened**: the single-blur set is now
+  exactly `[App.module.css, PublishSheet.module.css]` (the modal plane is the design system's
+  one modal treatment and carries the scrim's 3px knock-back plus the dialog's glass), and the
+  animation allowlist admits the sheet's two token-clock entrances (`cd-fade-in`,
+  `cd-dialog-in`), which reduced motion zeroes via the duration tokens.
+- **Biome's a11y rules shaped the backdrop**: the scrim is an `aria-hidden` *sibling* behind
+  the dialog (never its ancestor, which would hide the dialog from AT), so dialog clicks stop
+  by stacking rather than `stopPropagation`, and no suppression comment exists anywhere.
+- **Badge counts ride in the accessible names** (`Send changes 2`, `Waiting for review +2`) —
+  content, not `aria-label` overrides, so the count reaches the screen reader; tests match by
+  prefix.
+- **The `Sending` button draws no spinner**, unlike the design-system `Button`'s `loading`
+  prop (`loader-circle` on a hardcoded 700ms spin): the spinner glyph is outside criterion
+  19's exhaustive list and its clock outside the motion guard, and criterion 14 asks only for
+  a disabled loading button reading `Sending`.
+- **Two working-tree diffs predate this spec and are baseline, not this change**: the
+  focus-ring guard's wrapper-glow escape in `styles.test.ts` (with the `.input:focus-visible`
+  rules in `Composer` / `FlowList` it pairs with), and `FlowList`'s header now reading
+  `conductor/ · <n> failing`. Both were carried into the worktree with the engineer's
+  uncommitted rehue pass, per the "existing uncommitted edits are this spec's baseline"
+  decision above; this spec's sessions did not touch `Composer` or `FlowList`.

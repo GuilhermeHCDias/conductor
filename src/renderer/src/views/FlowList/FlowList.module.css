@@ -85,6 +85,10 @@
   outline: none;
 }
 
+.searchInput:focus-visible {
+  box-shadow: none;
+}
+
 /* Safari draws its own clear button on a search input; the row has one glyph. */
 .searchInput::-webkit-search-decoration,
 .searchInput::-webkit-search-cancel-button {

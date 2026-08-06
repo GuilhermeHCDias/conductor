@@ -156,11 +156,36 @@ describe('App', () => {
       'Toggle sidebar',
       'staging',
       'Run',
+      'Send changes2',
       'Dark appearance',
-      'Save flow',
       'New flow',
     ]);
     expect(reached[6]).toBe('Search flows');
+  });
+
+  /**
+   * aurora-rehue-toolbar-publish criterion 9 — the sheet mounts on the WINDOW,
+   * so its scrim covers the toolbar too, and Escape reaches it through the
+   * window's own shortcut hook.
+   */
+  describe('the send sheet', () => {
+    it('opens over the window from the toolbar Send control', async () => {
+      render(<App />);
+
+      await userEvent.click(screen.getByRole('button', { name: /^Send changes/ }));
+
+      expect(screen.getByRole('dialog', { name: 'Send 2 changes' })).toBeInTheDocument();
+    });
+
+    it('closes on Escape without touching the phase', async () => {
+      render(<App />);
+      await userEvent.click(screen.getByRole('button', { name: /^Send changes/ }));
+
+      await userEvent.keyboard('{Escape}');
+
+      expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+      expect(ui().sendPhase).toBe('idle');
+    });
   });
 
   /** Criterion 12 — the run's progress reads as a line under the toolbar. */

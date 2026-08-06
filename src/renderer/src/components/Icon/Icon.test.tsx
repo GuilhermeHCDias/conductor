@@ -29,4 +29,15 @@ describe('Icon', () => {
 
     expect(container.querySelector('svg')).toHaveAttribute('aria-hidden', 'true');
   });
+
+  // The five glyphs the Send control and its sheet draw, ported for the
+  // aurora-rehue-toolbar-publish spec (its criterion 19).
+  it.each(['check', 'clock', 'pencil', 'trash-2', 'folder'] as const)(
+    'carries the %s glyph',
+    (name) => {
+      const { container } = render(<Icon name={name} />);
+
+      expect(container.querySelector('svg path, svg circle')).toBeInTheDocument();
+    },
+  );
 });

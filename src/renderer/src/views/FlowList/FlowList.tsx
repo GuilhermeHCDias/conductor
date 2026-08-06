@@ -84,9 +84,7 @@ export function FlowList(): JSX.Element {
     <section aria-label="Flows" className={styles.panel}>
       <header className={styles.header}>
         <span className={styles.caps}>Flows</span>
-        <span className={styles.count}>
-          {FLOWS.length} · {failing} failing
-        </span>
+        <span className={styles.count}>conductor/ · {failing} failing</span>
         <span className={styles.spacer} />
         {/* Criterion 25: the one control that starts a document. */}
         <IconButton icon="plus" label="New flow" onClick={newFlow} size="sm" />

@@ -8,7 +8,7 @@ import styles from './Icon.module.css';
  * fetch (the CSP forbids one) and no icon font.
  *
  * Only the glyphs this layout renders are inlined. The design system carries 78;
- * copying all of them would ship 55 that nothing draws.
+ * copying all of them would ship 51 that nothing draws.
  */
 
 const ICONS = {
@@ -24,6 +24,11 @@ const ICONS = {
     <>
       <path d="M13.997 4a2 2 0 0 1 1.76 1.05l.486.9A2 2 0 0 0 18.003 7H20a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V9a2 2 0 0 1 2-2h1.997a2 2 0 0 0 1.759-1.048l.489-.904A2 2 0 0 1 10.004 4z" />
       <circle cx="12" cy="13" r="3" />
+    </>
+  ),
+  check: (
+    <>
+      <path d="M20 6 9 17l-5-5" />
     </>
   ),
   'chevron-down': (
@@ -42,6 +47,12 @@ const ICONS = {
       <rect x="9" y="9" width="6" height="6" rx="1" />
     </>
   ),
+  clock: (
+    <>
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 6v6l4 2" />
+    </>
+  ),
   copy: (
     <>
       <rect width="14" height="14" x="8" y="8" rx="2" ry="2" />
@@ -55,13 +66,6 @@ const ICONS = {
       <line x1="6" x2="2" y1="12" y2="12" />
       <line x1="12" x2="12" y1="6" y2="2" />
       <line x1="12" x2="12" y1="22" y2="18" />
-    </>
-  ),
-  download: (
-    <>
-      <path d="M12 15V3" />
-      <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
-      <path d="m7 10 5 5 5-5" />
     </>
   ),
   ellipsis: (
@@ -79,6 +83,11 @@ const ICONS = {
       <path d="m14 12.5 2 2.5-2 2.5" />
     </>
   ),
+  folder: (
+    <>
+      <path d="M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z" />
+    </>
+  ),
   moon: (
     <>
       <path d="M20.985 12.486a9 9 0 1 1-9.473-9.472c.405-.022.617.46.402.803a6 6 0 0 0 8.268 8.268c.344-.215.825-.004.803.401" />
@@ -88,6 +97,12 @@ const ICONS = {
     <>
       <rect width="18" height="18" x="3" y="3" rx="2" />
       <path d="M9 3v18" />
+    </>
+  ),
+  pencil: (
+    <>
+      <path d="M21.174 6.812a1 1 0 0 0-3.986-3.987L3.842 16.174a2 2 0 0 0-.5.83l-1.321 4.352a.5.5 0 0 0 .623.622l4.353-1.32a2 2 0 0 0 .83-.497z" />
+      <path d="m15 5 4 4" />
     </>
   ),
   play: (
@@ -146,6 +161,15 @@ const ICONS = {
       <path d="M20 12h2" />
       <path d="m6.34 17.66-1.41 1.41" />
       <path d="m19.07 4.93-1.41 1.41" />
+    </>
+  ),
+  'trash-2': (
+    <>
+      <path d="M10 11v6" />
+      <path d="M14 11v6" />
+      <path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6" />
+      <path d="M3 6h18" />
+      <path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2" />
     </>
   ),
   variable: (

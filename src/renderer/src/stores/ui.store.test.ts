@@ -7,6 +7,7 @@ import {
   resetUiStore,
   selectMirrorWidth,
   selectSidebarVisible,
+  selectUnsentChanges,
   useUiStore,
 } from './ui.store';
 
@@ -208,6 +209,85 @@ describe('lower panel', () => {
 
     ui().setLowerPanel('run');
     expect(ui().lowerPanel).toBe('run');
+  });
+});
+
+/**
+ * Sending — §8.5's deliberate act, on fixture state
+ * (aurora-rehue-toolbar-publish criteria 15 and 20).
+ */
+describe('sending', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  it('seeds the unsent list from the fixture’s changed flows', () => {
+    expect(selectUnsentChanges(ui()).map((change) => change.id)).toEqual(['f-teste', 'f-busca']);
+    expect(ui().sendPhase).toBe('idle');
+    expect(ui().sendOpen).toBe(false);
+    expect(ui().sentChanges).toEqual([]);
+  });
+
+  it('opens and closes the sheet without touching the phase', () => {
+    ui().openSend();
+    expect(ui().sendOpen).toBe(true);
+
+    ui().closeSend();
+    expect(ui().sendOpen).toBe(false);
+    expect(ui().sendPhase).toBe('idle');
+  });
+
+  /** Criterion 15 — the transition, on the reference's own 1500ms clock. */
+  it('freezes the batch, clears its markers and lands in review', () => {
+    vi.useFakeTimers();
+    const batch = selectUnsentChanges(ui());
+
+    ui().send();
+    expect(ui().sendPhase).toBe('sending');
+    expect(selectUnsentChanges(ui())).toEqual(batch);
+
+    vi.advanceTimersByTime(1500);
+    expect(ui().sendPhase).toBe('review');
+    expect(ui().sentChanges).toEqual(batch);
+    expect(selectUnsentChanges(ui())).toEqual([]);
+  });
+
+  it('ignores a second send while one is in flight', () => {
+    vi.useFakeTimers();
+
+    ui().send();
+    ui().send();
+    vi.advanceTimersByTime(1500);
+
+    expect(ui().sendPhase).toBe('review');
+    expect(selectUnsentChanges(ui())).toEqual([]);
+  });
+
+  // Criterion 7's badge: work that piles up after a send joins the next one,
+  // so a marker seeded mid-flight survives the freeze as the new unsent list.
+  it('keeps a change that arrived while sending out of the frozen batch', () => {
+    vi.useFakeTimers();
+    const batch = selectUnsentChanges(ui());
+    const late = { id: 'f-login', name: 'login.yaml', change: 'edited' } as const;
+
+    ui().send();
+    useUiStore.setState({ changes: [...ui().changes, late] });
+    vi.advanceTimersByTime(1500);
+
+    expect(ui().sentChanges).toEqual(batch);
+    expect(selectUnsentChanges(ui())).toEqual([late]);
+  });
+
+  it('cancels an in-flight send when the store resets', () => {
+    vi.useFakeTimers();
+
+    ui().send();
+    resetUiStore();
+    vi.advanceTimersByTime(1500);
+
+    expect(ui().sendPhase).toBe('idle');
+    expect(ui().sentChanges).toEqual([]);
+    expect(selectUnsentChanges(ui()).map((change) => change.id)).toEqual(['f-teste', 'f-busca']);
   });
 });
 

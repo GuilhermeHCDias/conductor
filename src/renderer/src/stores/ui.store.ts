@@ -4,6 +4,7 @@ import {
   type ChatTurn,
   ERROR_LINES,
   FLOWS,
+  type FlowChange,
   type FlowDocument,
   OPEN_DOCUMENT,
   RUN_STEPS,
@@ -55,6 +56,17 @@ export function initialAppearance(): boolean {
 export type SidebarPreference = 'auto' | 'shown' | 'hidden';
 export type LowerPanel = 'run' | 'assistant';
 
+/** Where §8.5's one deliberate act stands: nothing sent, in flight, or under review. */
+export type SendPhase = 'idle' | 'sending' | 'review';
+
+/** One row of the Send sheet — a flow that changed locally since the last send. */
+export type ChangedFlow = {
+  readonly id: string;
+  readonly name: string;
+  readonly folder?: string;
+  readonly change: FlowChange;
+};
+
 /** What the window is showing. Everything here is seeded by `createUiData`. */
 export type UiData = {
   /** True while the Aurora dark theme is selected. */
@@ -76,6 +88,16 @@ export type UiData = {
   readonly thread: readonly ChatTurn[];
   /** Monotonic, so a second new document never lands on the first one's id. */
   readonly nextDocumentNumber: number;
+  readonly sendPhase: SendPhase;
+  /** Whether the Send sheet is showing. Opening never touches the phase. */
+  readonly sendOpen: boolean;
+  /**
+   * A mutable copy of the fixture's changed flows, so sending can clear the
+   * markers without touching the `FLOWS` constant itself.
+   */
+  readonly changes: readonly ChangedFlow[];
+  /** The batch the open review carries — frozen at send, never the live list. */
+  readonly sentChanges: readonly ChangedFlow[];
 };
 
 /** What can change it. None of these crosses IPC; this spec has none to cross. */
@@ -89,9 +111,30 @@ export type UiActions = {
   toggleLowerPanel: () => void;
   setQuery: (query: string) => void;
   clearQuery: () => void;
+  openSend: () => void;
+  closeSend: () => void;
+  send: () => void;
 };
 
 export type UiState = UiData & UiActions;
+
+/**
+ * The reference's own 1500ms — a fixture stand-in for the `gh pr create` that
+ * `PublishService` will run one day. Nothing awaits a network call because
+ * there isn't one.
+ */
+const SEND_DELAY = 1500;
+
+/** The one in-flight send. Module-level so `resetUiStore` can cancel it. */
+let sendTimer: ReturnType<typeof setTimeout> | undefined;
+
+function seededChanges(): readonly ChangedFlow[] {
+  return FLOWS.flatMap((flow) =>
+    flow.change === undefined
+      ? []
+      : [{ id: flow.id, name: flow.name, folder: flow.folder, change: flow.change }],
+  );
+}
 
 /** The fixture state, fresh. `resetUiStore` puts the store back to exactly this. */
 function createUiData(): UiData {
@@ -109,6 +152,10 @@ function createUiData(): UiData {
     errorLines: ERROR_LINES,
     thread: THREAD,
     nextDocumentNumber: 1,
+    sendPhase: 'idle',
+    sendOpen: false,
+    changes: seededChanges(),
+    sentChanges: [],
   };
 }
 
@@ -164,10 +211,38 @@ export const useUiStore = create<UiState>((set, get) => ({
   clearQuery: () => {
     set({ query: '' });
   },
+
+  openSend: () => {
+    set({ sendOpen: true });
+  },
+
+  closeSend: () => {
+    set({ sendOpen: false });
+  },
+
+  // Criterion 15 of aurora-rehue-toolbar-publish. The batch is captured at the
+  // click: a change that lands mid-flight stays unsent — it joins the *next*
+  // send, and until then it is the review pill's `+n`.
+  send: () => {
+    if (get().sendPhase === 'sending') {
+      return;
+    }
+    const batch = get().changes;
+    set({ sendPhase: 'sending' });
+    sendTimer = setTimeout(() => {
+      const sent = new Set(batch.map((change) => change.id));
+      set({
+        sendPhase: 'review',
+        sentChanges: batch,
+        changes: get().changes.filter((change) => !sent.has(change.id)),
+      });
+    }, SEND_DELAY);
+  },
 }));
 
 /** Restores the fixture state. Used by tests, which share one module instance. */
 export function resetUiStore(): void {
+  clearTimeout(sendTimer);
   useUiStore.setState(createUiData());
 }
 
@@ -182,4 +257,9 @@ export function selectSidebarVisible(state: UiState): boolean {
 /** Criterion 44: the mirror is sized by the window, never by the override. */
 export function selectMirrorWidth(state: UiState): number {
   return layoutForWidth(state.windowWidth).mirror;
+}
+
+/** What the team has not seen yet — the Send control's count and the sheet's list. */
+export function selectUnsentChanges(state: UiState): readonly ChangedFlow[] {
+  return state.changes;
 }

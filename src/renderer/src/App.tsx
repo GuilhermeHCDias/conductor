@@ -8,6 +8,7 @@ import { selectSidebarVisible, useUiStore } from './stores/ui.store';
 import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
 import { FlowEditor } from './views/FlowEditor/FlowEditor';
 import { FlowList } from './views/FlowList/FlowList';
+import { PublishSheet } from './views/PublishSheet/PublishSheet';
 import { Toolbar } from './views/Toolbar/Toolbar';
 
 /** The window opens at this width; the frame corrects it on first measure. */
@@ -77,6 +78,11 @@ export function App(): JSX.Element {
           <span aria-hidden="true" className={styles.hairline} data-testid="pane-hairline" />
           <DeviceMirror />
         </div>
+
+        {/* Sheets mount on the WINDOW, not on the panes: the scrim has to
+            cover the toolbar too, or the controls it blocks stay clickable
+            and the panel centres off-window. */}
+        <PublishSheet />
       </div>
     </div>
   );

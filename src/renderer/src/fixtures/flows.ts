@@ -13,14 +13,23 @@
 
 export type FlowResult = 'pass' | 'fail' | 'never';
 
+/**
+ * A local edit the team has not seen yet. Not "unsaved" — everything is on
+ * disk the moment it is typed (§8.2); this is "the review does not have it".
+ */
+export type FlowChange = 'new' | 'edited' | 'deleted';
+
 export type Flow = {
   readonly id: string;
   readonly name: string;
+  /** Subfolder of `conductor/` the file sits in; the root when absent (§7.2). */
+  readonly folder?: string;
   readonly steps: number;
   readonly lastResult: FlowResult;
   readonly lastRun?: string;
   readonly duration?: string;
   readonly aiAuthored?: boolean;
+  readonly change?: FlowChange;
 };
 
 /**
@@ -64,10 +73,12 @@ export const FLOWS: readonly Flow[] = [
     lastResult: 'fail',
     lastRun: 'Jul 28, 12:29 pm',
     duration: '0:04',
+    change: 'edited',
   },
   {
     id: 'f-pedidos',
     name: 'pedidos-pendentes.yaml',
+    folder: 'pedidos',
     steps: 11,
     lastResult: 'pass',
     lastRun: 'Jul 28, 11:02 am',
@@ -76,6 +87,7 @@ export const FLOWS: readonly Flow[] = [
   {
     id: 'f-checkout',
     name: 'checkout.yaml',
+    folder: 'compra',
     steps: 17,
     lastResult: 'pass',
     lastRun: 'Jul 27, 6:41 pm',
@@ -84,6 +96,7 @@ export const FLOWS: readonly Flow[] = [
   {
     id: 'f-separacao',
     name: 'separacao.yaml',
+    folder: 'pedidos',
     steps: 9,
     lastResult: 'fail',
     lastRun: 'Jul 27, 6:38 pm',
@@ -100,6 +113,7 @@ export const FLOWS: readonly Flow[] = [
   {
     id: 'f-retirada',
     name: 'retirada-loja.yaml',
+    folder: 'compra',
     steps: 8,
     lastResult: 'pass',
     lastRun: 'Jul 25, 4:02 pm',
@@ -109,11 +123,22 @@ export const FLOWS: readonly Flow[] = [
   {
     id: 'f-busca',
     name: 'busca-produto.yaml',
+    folder: 'compra',
     steps: 5,
     lastResult: 'never',
     aiAuthored: true,
+    change: 'new',
   },
 ];
+
+/**
+ * Who reviews what lands in the shared project. A name, never a GitHub handle
+ * — the people using Conductor know Marina, not @mrsantos.
+ */
+export const REVIEWER = 'Marina';
+
+/** When the open review batch went out, on the fixture's frozen clock. */
+export const SENT_AT = '2 min ago';
 
 /** The document the window opens on, with unsaved changes — the screenshots' starting state. */
 export const OPEN_DOCUMENT: FlowDocument = { id: 'f-teste', label: 'teste.yaml', dirty: true };

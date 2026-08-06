@@ -22,12 +22,15 @@ describe('FlowList', () => {
     expect(screen.getByRole('region', { name: 'Flows' })).toBeInTheDocument();
   });
 
-  it('heads the panel with the suite and how much of it is failing', () => {
+  it('heads the panel with the folder and how much of it is failing', () => {
     render(<FlowList />);
 
     expect(screen.getByText('Flows')).toBeInTheDocument();
-    // Two of the seven fixture flows last came back failing.
-    expect(screen.getByText('7 · 2 failing')).toBeInTheDocument();
+    // Two of the seven fixture flows last came back failing. The count the
+    // header carries is the folder Conductor writes to, not the flow total:
+    // once the tree has subfolders, a total says nothing about what is on
+    // screen, and `conductor/` says where every one of these files lives.
+    expect(screen.getByText('conductor/ · 2 failing')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'New flow' })).toBeInTheDocument();
   });
 

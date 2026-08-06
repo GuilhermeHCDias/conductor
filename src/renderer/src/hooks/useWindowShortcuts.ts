@@ -12,7 +12,8 @@ import { useUiStore } from '../stores/ui.store';
 export function useWindowShortcuts(): void {
   useEffect(() => {
     const onKeyDown = (event: KeyboardEvent): void => {
-      const { toggleSidebar, toggleLowerPanel, clearQuery, query } = useUiStore.getState();
+      const { toggleSidebar, toggleLowerPanel, clearQuery, closeSend, query, sendOpen, sendPhase } =
+        useUiStore.getState();
 
       if (event.metaKey) {
         const key = event.key.toLowerCase();
@@ -23,6 +24,17 @@ export function useWindowShortcuts(): void {
         if (key === 'j') {
           event.preventDefault();
           toggleLowerPanel();
+        }
+        return;
+      }
+
+      // The Send sheet owns Escape while it is open — it sits over everything,
+      // so nothing under it may react. Mid-send it swallows the key outright:
+      // the batch is already on its way (criteria 16–17 of the publish spec).
+      if (event.key === 'Escape' && sendOpen) {
+        if (sendPhase !== 'sending') {
+          event.preventDefault();
+          closeSend();
         }
         return;
       }

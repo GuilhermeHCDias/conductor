@@ -96,6 +96,51 @@ describe('useWindowShortcuts', () => {
     expect(press('Escape')).toBe(false);
   });
 
+  /**
+   * Criteria 16–17 of aurora-rehue-toolbar-publish — while the Send sheet is
+   * open it owns Escape: it closes ahead of the search clearing, and nothing
+   * closes it mid-send.
+   */
+  describe('with the Send sheet open', () => {
+    it('closes the sheet without touching the phase', () => {
+      renderHook(() => {
+        useWindowShortcuts();
+      });
+      ui().openSend();
+
+      expect(press('Escape')).toBe(true);
+
+      expect(ui().sendOpen).toBe(false);
+      expect(ui().sendPhase).toBe('idle');
+    });
+
+    it('closes the sheet before it clears the search', () => {
+      renderHook(() => {
+        useWindowShortcuts();
+      });
+      ui().setQuery('check');
+      ui().openSend();
+
+      press('Escape');
+
+      expect(ui().sendOpen).toBe(false);
+      expect(ui().query).toBe('check');
+    });
+
+    it('ignores Escape while the send is in flight', () => {
+      renderHook(() => {
+        useWindowShortcuts();
+      });
+      ui().openSend();
+      useUiStore.setState({ sendPhase: 'sending' });
+
+      press('Escape');
+
+      expect(ui().sendOpen).toBe(true);
+      expect(ui().sendPhase).toBe('sending');
+    });
+  });
+
   it('stops listening once unmounted', () => {
     const { unmount } = renderHook(() => {
       useWindowShortcuts();
