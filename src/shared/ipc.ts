@@ -11,7 +11,13 @@ import type { FlowIndex, FlowMeta, RunEvent, SnapshotView, TreeNode } from './ty
 /** `<domain>:<action>`, kebab-case. Declared here and nowhere else. */
 export const CHANNELS = {
   appInfo: 'app:info',
+  appReadClipboard: 'app:read-clipboard',
+  appWriteClipboard: 'app:write-clipboard',
   configGet: 'config:get',
+  repoList: 'repo:list',
+  repoResolve: 'repo:resolve',
+  repoConnect: 'repo:connect',
+  repoSwitch: 'repo:switch',
   deviceList: 'device:list',
   deviceAppInfo: 'device:app-info',
   mirrorStart: 'mirror:start',
@@ -41,6 +47,8 @@ export const PUSH_CHANNELS = {
   mirrorEvent: 'mirror:event',
   runEvent: 'run:event',
   flowChanged: 'flow:changed',
+  repoChanged: 'repo:changed',
+  repoResolveEvent: 'repo:resolve-event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -55,14 +63,76 @@ const appInfoResponse = z.object({
 });
 
 /** The shape of `CONFIG` as it crosses to the sandboxed renderer, which has
- * no `process.env` of its own (.context.md §2). */
+ * no `process.env` of its own (.context.md §2) — only true constants: the app
+ * under test is runtime state derived from the active repo, never here
+ * (§12.6). */
 const configGetResponse = z.object({
-  APP_ID: z.string(),
-  REPO_URL: z.string(),
   REPO_BASE_BRANCH: z.string(),
   FLOWS_DIR: z.string(),
   FLOW_EXTENSIONS: z.array(z.string()).readonly(),
 });
+
+/**
+ * §2.1 — the app under test, as derived from the active repo's `app.json`.
+ * The two ids may legitimately diverge, so the model carries both sides from
+ * the start; a side the config does not declare is `null`, never absent.
+ */
+const repoAppId = z.object({
+  android: z.string().nullable(),
+  ios: z.string().nullable(),
+});
+
+/**
+ * What resolution derived from the clone — everything the found card shows
+ * (§2.1). `branch` is the clone's checked-out branch, `null` when it could
+ * not be read; `flowCount` counts real flows under `conductor/` by the same
+ * §7.1 classification the index uses, and zero is "empty for now", never a
+ * failure.
+ */
+const resolvedRepo = z.object({
+  url: z.string(),
+  org: z.string(),
+  name: z.string(),
+  appName: z.string(),
+  appId: repoAppId,
+  branch: z.string().nullable(),
+  flowCount: z.number().int().nonnegative(),
+});
+
+/** A connected repo: the resolved facts plus the slug main derived from
+ * sanitized `org/name` (§7) and the moment it joined the list. */
+const connectedRepo = resolvedRepo.extend({
+  slug: z.string(),
+  connectedAt: z.string(),
+});
+
+/** The whole projection the renderer holds. Main owns the truth — the list
+ * and the active repo live in `userData`, never renderer-side (§2.1). */
+const repoState = z.object({
+  repos: z.array(connectedRepo).readonly(),
+  /** The active repo's slug, or `null` before the first connect. */
+  active: z.string().nullable(),
+});
+
+const resolveId = z.number().int().nonnegative();
+
+/** Names the resolution an answer or an event is about. What `repo:resolve`
+ * gives back is deliberately only this — progress is pushed, never awaited. */
+const repoResolveRef = z.object({ resolveId });
+
+/**
+ * Resolution progress, as pushes. The three steps are real stages — clone,
+ * read `app.json`, scan `conductor/` — and `step` is how many completed, so
+ * it advances 0→3 as work actually finishes, never on a timer. A failure is
+ * an event rather than an `ok: false` for `mirror:event`'s reason: the
+ * subscription did not fail, the named resolution did — and the renderer
+ * needs to know which one.
+ */
+const repoResolveEvent = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('step'), resolveId, step: z.number().int().min(0).max(3) }),
+  z.object({ kind: z.literal('found'), resolveId, repo: resolvedRepo }),
+  z.object({ kind: z.literal('failed'), resolveId, code: z.string(), message: z.string() }),
+]);
 
 /**
  * What `adb devices -l` reports about a device. `unauthorized` is its own
@@ -98,7 +168,8 @@ const deviceSnapshot = z.object({
   properties: deviceProperties.nullable(),
 });
 
-/** The app under test, identified by `CONFIG.APP_ID` and nothing else. */
+/** The app under test, identified by the active repo's appId (§2.1) and
+ * nothing else. */
 const appIdentity = z.object({
   appId: z.string(),
   installed: z.boolean(),
@@ -393,7 +464,28 @@ const flowFolderRef = z.object({ folder: z.string() });
 
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
+  // Clipboard crosses through main because the sandboxed renderer's permission
+  // handler denies `navigator.clipboard` (§9.3) — and it should: the read
+  // happens on the Paste click, never behind the person's back.
+  [CHANNELS.appReadClipboard]: {
+    request: noArguments,
+    response: z.object({ text: z.string() }),
+  },
+  [CHANNELS.appWriteClipboard]: {
+    request: z.tuple([z.string()]),
+    response: z.object({ text: z.string() }),
+  },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
+  [CHANNELS.repoList]: { request: noArguments, response: repoState },
+  // The raw pasted URL and nothing else (§9.3): main parses, sanitizes and
+  // derives slug and paths itself. The answer is the id, immediately —
+  // progress arrives as `repo:resolve-event` pushes, and a clone against a
+  // remote hangs often enough that awaiting it here would freeze the window.
+  [CHANNELS.repoResolve]: { request: z.tuple([z.string()]), response: repoResolveRef },
+  // Confirming names the resolution main already holds; the derived facts
+  // never make a renderer round-trip.
+  [CHANNELS.repoConnect]: { request: z.tuple([resolveId]), response: repoState },
+  [CHANNELS.repoSwitch]: { request: z.tuple([z.string()]), response: repoState },
   [CHANNELS.deviceList]: { request: noArguments, response: deviceSnapshot },
   [CHANNELS.deviceAppInfo]: { request: z.tuple([z.string()]), response: appIdentity },
   [CHANNELS.mirrorStart]: { request: z.tuple([z.string()]), response: mirrorStream },
@@ -463,6 +555,8 @@ export const PUSH = {
   [PUSH_CHANNELS.mirrorEvent]: mirrorEvent,
   [PUSH_CHANNELS.runEvent]: runEvent,
   [PUSH_CHANNELS.flowChanged]: flowIndex,
+  [PUSH_CHANNELS.repoChanged]: repoState,
+  [PUSH_CHANNELS.repoResolveEvent]: repoResolveEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -486,6 +580,11 @@ export type MirrorTouch = z.infer<typeof mirrorTouch>;
 export type MirrorInput = z.infer<typeof mirrorInput>;
 export type SelectorLevel = z.infer<typeof selectorLevel>;
 export type SynthesizedSelector = z.infer<typeof synthesizedSelector>;
+export type RepoAppId = z.infer<typeof repoAppId>;
+export type ResolvedRepo = z.infer<typeof resolvedRepo>;
+export type ConnectedRepo = z.infer<typeof connectedRepo>;
+export type RepoState = z.infer<typeof repoState>;
+export type RepoResolveEvent = z.infer<typeof repoResolveEvent>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -599,6 +698,34 @@ export const ERROR_CODES = {
   /** Criterion 5 — empty once trimmed, carrying a separator, or resolving
    * outside the root (§9.3, checked by resolution, never by pattern). */
   flowInvalidName: 'flow/invalid-name',
+  /** The pasted text does not parse as a repository address at all. */
+  repoInvalidUrl: 'repo/invalid-url',
+  /** It parsed, but the host is not github.com — GitHub only, for now. */
+  repoUnsupportedHost: 'repo/unsupported-host',
+  /** Case-insensitive `org/name` is already in the connected list. */
+  repoAlreadyConnected: 'repo/already-connected',
+  /**
+   * `gh` could not be found at all. Distinct from being logged out because
+   * the fixes differ — install vs `gh auth login` — and §8.1 wants the
+   * message specific, never generic.
+   */
+  repoGhMissing: 'repo/gh-missing',
+  /** `gh` is installed but `gh auth status` refused. The most likely failure
+   * in practice (§8.1), and the one `gh auth login` fixes. */
+  repoGhUnauthenticated: 'repo/gh-unauthenticated',
+  /** The clone itself failed — unreachable, nonexistent, or refused. */
+  repoCloneFailed: 'repo/clone-failed',
+  /**
+   * §2.1 MVP — `app.json` missing or unparsable, or neither `android.package`
+   * nor `ios.bundleIdentifier` present. The message names exactly what was
+   * missing; a dynamic `app.config.js` lands here too, by design, rather
+   * than being evaluated.
+   */
+  repoAppConfigUnreadable: 'repo/app-config-unreadable',
+  /** A connect naming a resolution that is not pending any more. */
+  repoResolveNotFound: 'repo/resolve-not-found',
+  /** A switch naming a slug the connected list does not have. */
+  repoNotFound: 'repo/not-found',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -606,7 +733,27 @@ export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
 /** One named function per channel — the whole surface of `window.conductor`. */
 export interface ConductorApi {
   appInfo: (...args: Request<'app:info'>) => Promise<Result<Response<'app:info'>>>;
+  /** The Paste affordance and the error surface's Copy button — the sandboxed
+   * renderer's permission handler denies `navigator.clipboard`, so both cross
+   * through main (§9.3). */
+  appReadClipboard: (
+    ...args: Request<'app:read-clipboard'>
+  ) => Promise<Result<Response<'app:read-clipboard'>>>;
+  appWriteClipboard: (
+    ...args: Request<'app:write-clipboard'>
+  ) => Promise<Result<Response<'app:write-clipboard'>>>;
   configGet: (...args: Request<'config:get'>) => Promise<Result<Response<'config:get'>>>;
+  /** The repo state on demand — the boot query behind the connect-or-workspace
+   * decision. The steady state arrives on `onRepoChanged` instead. */
+  repoList: (...args: Request<'repo:list'>) => Promise<Result<Response<'repo:list'>>>;
+  /** Starts resolving the pasted URL and answers with the resolve id the
+   * moment the work is accepted — progress arrives on `onRepoResolveEvent`,
+   * never here. The renderer sends the raw URL and nothing else (§9.3). */
+  repoResolve: (...args: Request<'repo:resolve'>) => Promise<Result<Response<'repo:resolve'>>>;
+  /** Persists the named resolution as a connected repo and makes it active —
+   * main is the only writer of that state (§2.1). */
+  repoConnect: (...args: Request<'repo:connect'>) => Promise<Result<Response<'repo:connect'>>>;
+  repoSwitch: (...args: Request<'repo:switch'>) => Promise<Result<Response<'repo:switch'>>>;
   deviceList: (...args: Request<'device:list'>) => Promise<Result<Response<'device:list'>>>;
   deviceAppInfo: (
     ...args: Request<'device:app-info'>
@@ -641,8 +788,8 @@ export interface ConductorApi {
   /** §8.2 — writes the file, atomically, and nothing else: no commit, no
    * push. Editing is saving; there is no Save button anywhere. */
   flowSave: (...args: Request<'flow:save'>) => Promise<Result<Response<'flow:save'>>>;
-  /** Criterion 19 — the file lands on disk with the `CONFIG.APP_ID` header the
-   * moment the draft commits; the appId never exists renderer-side. */
+  /** Criterion 19 — the file lands on disk with the active repo's appId header
+   * the moment the draft commits; the appId never exists renderer-side. */
   flowCreate: (...args: Request<'flow:create'>) => Promise<Result<Response<'flow:create'>>>;
   flowCreateFolder: (
     ...args: Request<'flow:create-folder'>
@@ -670,4 +817,12 @@ export interface ConductorApi {
   /** Criterion 4 — one event for every kind of change, Conductor's own or an
    * external editor's (§12.21). Carries the fresh index, never file bodies. */
   onFlowChanged: (listener: (payload: PushPayload<'flow:changed'>) => void) => () => void;
+  /** One event for every kind of repo-state change — first connect, a switch
+   * — carrying the same projection `repo:list` answers. */
+  onRepoChanged: (listener: (payload: PushPayload<'repo:changed'>) => void) => () => void;
+  /** Resolution progress: the real stages as they complete, the found card's
+   * facts, or the failure with its stable code — each naming its resolution. */
+  onRepoResolveEvent: (
+    listener: (payload: PushPayload<'repo:resolve-event'>) => void,
+  ) => () => void;
 }

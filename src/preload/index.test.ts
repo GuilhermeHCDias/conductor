@@ -55,6 +55,8 @@ describe('the bridge', () => {
   it('exposes exactly one function per channel, and no primitive', () => {
     expect(Object.keys(api).sort()).toEqual([
       'appInfo',
+      'appReadClipboard',
+      'appWriteClipboard',
       'configGet',
       'deviceAppInfo',
       'deviceList',
@@ -76,7 +78,13 @@ describe('the bridge', () => {
       'onDeviceChanged',
       'onFlowChanged',
       'onMirrorEvent',
+      'onRepoChanged',
+      'onRepoResolveEvent',
       'onRunEvent',
+      'repoConnect',
+      'repoList',
+      'repoResolve',
+      'repoSwitch',
       'runCancel',
       'runStart',
     ]);
@@ -117,6 +125,12 @@ describe('the bridge', () => {
     await api.flowDuplicate('checkout/pix.yml');
     await api.flowDelete('checkout/pix.yml');
     await api.flowDeleteFolder('drafts');
+    await api.repoList();
+    await api.repoResolve('github.com/loja-verde/pnp-fast-mode');
+    await api.repoConnect(3);
+    await api.repoSwitch('loja-verde-pnp-fast-mode-1a2b3c4d');
+    await api.appReadClipboard();
+    await api.appWriteClipboard('gh auth login');
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
@@ -137,6 +151,12 @@ describe('the bridge', () => {
       { channel: CHANNELS.flowDuplicate, args: ['checkout/pix.yml'] },
       { channel: CHANNELS.flowDelete, args: ['checkout/pix.yml'] },
       { channel: CHANNELS.flowDeleteFolder, args: ['drafts'] },
+      { channel: CHANNELS.repoList, args: [] },
+      { channel: CHANNELS.repoResolve, args: ['github.com/loja-verde/pnp-fast-mode'] },
+      { channel: CHANNELS.repoConnect, args: [3] },
+      { channel: CHANNELS.repoSwitch, args: ['loja-verde-pnp-fast-mode-1a2b3c4d'] },
+      { channel: CHANNELS.appReadClipboard, args: [] },
+      { channel: CHANNELS.appWriteClipboard, args: ['gh auth login'] },
     ]);
   });
 
@@ -161,22 +181,28 @@ describe('a subscription', () => {
     ['onMirrorEvent', PUSH_CHANNELS.mirrorEvent],
     ['onRunEvent', PUSH_CHANNELS.runEvent],
     ['onFlowChanged', PUSH_CHANNELS.flowChanged],
+    ['onRepoChanged', PUSH_CHANNELS.repoChanged],
+    ['onRepoResolveEvent', PUSH_CHANNELS.repoResolveEvent],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
     expect(listeners.map((entry) => entry.channel)).toEqual([channel]);
   });
 
-  it.each(['onDeviceChanged', 'onMirrorEvent', 'onRunEvent', 'onFlowChanged'] as const)(
-    '%s returns the unsubscribe that removes exactly its own listener',
-    (name) => {
-      const unsubscribe = api[name](() => {});
+  it.each([
+    'onDeviceChanged',
+    'onMirrorEvent',
+    'onRunEvent',
+    'onFlowChanged',
+    'onRepoChanged',
+    'onRepoResolveEvent',
+  ] as const)('%s returns the unsubscribe that removes exactly its own listener', (name) => {
+    const unsubscribe = api[name](() => {});
 
-      unsubscribe();
+    unsubscribe();
 
-      expect(removed).toEqual([listeners[0]]);
-    },
-  );
+    expect(removed).toEqual([listeners[0]]);
+  });
 
   /** The event object carries `sender` — a live `WebContents` handle. Handing
    * that to the renderer would undo the bridge. */
