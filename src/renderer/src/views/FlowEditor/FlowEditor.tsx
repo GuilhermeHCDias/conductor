@@ -4,6 +4,7 @@ import { SegmentedControl } from '../../components/SegmentedControl/SegmentedCon
 import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
 import { tokenizeYamlLine } from '../../lib/yaml-tokens';
 import { selectDirty, selectRevision, selectYaml, useFlowStore } from '../../stores/flow.store';
+import { selectRunning, useRunStore } from '../../stores/run.store';
 import { useUiStore } from '../../stores/ui.store';
 import { AIPanel } from '../AIPanel/AIPanel';
 import { Composer } from '../Composer/Composer';
@@ -150,7 +151,7 @@ function YamlBody(): JSX.Element {
 export function FlowEditor(): JSX.Element {
   const lowerPanel = useUiStore((state) => state.lowerPanel);
   const setLowerPanel = useUiStore((state) => state.setLowerPanel);
-  const running = useUiStore((state) => state.running);
+  const running = useRunStore(selectRunning);
 
   return (
     <section aria-label="Editor" className={styles.column}>

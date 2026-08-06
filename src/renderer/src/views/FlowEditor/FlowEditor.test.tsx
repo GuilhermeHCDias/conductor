@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
+import { resetRunStore, useRunStore } from '../../stores/run.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
 import { FlowEditor } from './FlowEditor';
 
@@ -14,6 +15,7 @@ const lineOf = (n: number) => screen.getByTestId(`yaml-line-${n}`);
 beforeEach(() => {
   resetUiStore();
   resetFlowStore();
+  resetRunStore();
 });
 
 afterEach(() => {
@@ -219,7 +221,7 @@ describe('FlowEditor', () => {
     });
 
     it('badges the Run segment while a run is in flight', () => {
-      useUiStore.setState({ running: true });
+      useRunStore.setState({ running: true });
       render(<FlowEditor />);
 
       expect(screen.getByRole('tab', { name: 'Run' })).toHaveAttribute('data-badge', 'true');

@@ -1,5 +1,6 @@
 import type { AppIdentity, Device, DeviceProperties, ErrorCode, MirrorInput } from '@shared/ipc';
 import type { TreeNode } from '@shared/types';
+import type { ExitReason } from '../process/run';
 
 /**
  * One encoded frame, as it came off whatever wire the Gateway is speaking. The
@@ -56,14 +57,40 @@ export type MirrorSession = {
 };
 
 /**
+ * One piece of run progress, typed — never a raw chunk, so a `RemoteGateway`
+ * can serve the same events off a different wire. The step events are
+ * best-effort decoration parsed from the CLI's output (criterion 8); the log
+ * lines are that output verbatim, batched per chunk; the run's *outcome* is
+ * neither — it derives from the exit reason alone (criterion 7).
+ */
+export type RunProgress =
+  | { readonly type: 'step-started'; readonly label: string }
+  | { readonly type: 'step-passed'; readonly label: string }
+  | { readonly type: 'step-failed'; readonly label: string }
+  | { readonly type: 'log'; readonly lines: readonly string[] };
+
+export type RunFlowHandlers = {
+  readonly onProgress: (progress: RunProgress) => void;
+  /** Fires exactly once, after every piece of progress — the streams are
+   * flushed first, so nothing arrives after the run is declared over. */
+  readonly onExit: (reason: ExitReason) => void;
+};
+
+/** A started run, from above the Gateway: something to kill, and nothing
+ * else. What the kill means to the process tree is `spawnStreaming`'s. */
+export type FlowRun = {
+  readonly kill: () => void;
+};
+
+/**
  * The one door to everything Conductor knows about a device (.context.md
  * §4.3.7). Services depend on this interface, never on the implementation, so
  * the day execution moves to a remote runner there is one seam to replace
  * (§10.1).
  *
- * Reading the device, for now. `runFlow`, `checkSyntax` and `startDevice` are
- * named in §4.3.7 and arrive with the specs that need them; declaring them here
- * before anything can implement them would be a contract nobody honours.
+ * Reading the device — and now running on it. `checkSyntax` and `startDevice`
+ * are named in §4.3.7 and arrive with the specs that need them; declaring them
+ * here before anything can implement them would be a contract nobody honours.
  *
  * The lone exception on the other side of this door is the AI layer's `maestro
  * mcp`, which is not a Gateway concern: that child belongs to Claude Code
@@ -106,4 +133,16 @@ export interface MaestroGateway {
    * and a standalone service calling adb would be leak #1 in §10.1's table.
    */
   startMirror(deviceId: string, handlers: MirrorHandlers): Promise<MirrorSession>;
+  /**
+   * Executes one flow file on the device and streams what happens. Returns the
+   * moment the child is spawned — progress arrives on the handlers, because a
+   * call that awaited a run would hold its caller for the length of the JVM
+   * (§4.3.7, AGENTS.md "long work is streamed").
+   *
+   * ⚠️ §4.3.2: a run and the `maestro mcp` session contend for the on-device
+   * driver, and the failure is silently incomplete data. The Gateway does not
+   * police that — it cannot see the snapshot path from here — so the caller
+   * holds the exclusion: `RunService` suspends captures before calling this.
+   */
+  runFlow(deviceId: string, flowPath: string, handlers: RunFlowHandlers): FlowRun;
 }

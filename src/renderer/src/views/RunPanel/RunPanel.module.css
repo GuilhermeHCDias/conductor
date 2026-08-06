@@ -83,3 +83,64 @@
   color: var(--text-disabled);
   font: var(--type-mono-label);
 }
+
+/* Run criteria 19–21: steps over outcome over log, one quiet column. */
+.report {
+  align-content: start;
+  display: grid;
+}
+
+/* Criterion 21. The colour comes from the state tokens the dots already use —
+   the outcome is the same vocabulary, said once in words. */
+.outcome {
+  align-items: baseline;
+  border-top: 1px solid var(--a-hair);
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+  padding: var(--space-4) var(--space-6);
+}
+
+.outcomeLabel {
+  font: var(--type-body-strong);
+}
+
+.outcome[data-outcome="passed"] .outcomeLabel {
+  color: var(--state-pass);
+}
+
+.outcome[data-outcome="failed"] .outcomeLabel,
+.outcome[data-outcome="error"] .outcomeLabel {
+  color: var(--state-fail);
+}
+
+.outcome[data-outcome="canceled"] .outcomeLabel {
+  color: var(--text-tertiary);
+}
+
+.outcomeMessage {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+/* Criterion 20: the raw Maestro log in the DS mono treatment — its own
+   scrolling region, pinned to the tail until the person scrolls up. */
+.log {
+  border-top: 1px solid var(--a-hair);
+  max-height: 16rem;
+  overflow-y: auto;
+  padding: var(--space-4) var(--space-6) var(--space-6);
+}
+
+.logText {
+  color: var(--text-tertiary);
+  font: var(--type-code-sm);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+.droppedNote {
+  color: var(--text-disabled);
+  font: var(--type-caption);
+  padding-bottom: var(--space-2);
+}

@@ -104,6 +104,14 @@
   transform: scale(var(--press-scale));
 }
 
+/* Run criterion 17: no device, or nothing to run. Still visibly the accent
+   control — just quiet about it — so the window keeps its one anchor. */
+.run:disabled {
+  cursor: default;
+  opacity: 0.45;
+  transform: none;
+}
+
 /* Criterion 12: stopping a run is a destructive action, so it is quiet-red
    rather than a second filled accent button. */
 .run[data-running="true"] {

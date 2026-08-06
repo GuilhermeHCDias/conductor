@@ -115,6 +115,11 @@ export const useInspectStore = create<InspectState>((set, get) => {
       // The hovered path belonged to the old tree; a wrong highlight for even
       // a frame is worse than none — the next mousemove re-aims it.
       set({ snapshot: result.data, capturing: false, captureError: null, hoveredPath: null });
+    } else if (result.error.code === ERROR_CODES.runActive) {
+      // Run criterion 11: a capture the run's exclusion refused is a state,
+      // not a failure — the overlay stays quietly stale until the end-of-run
+      // recapture brings it back.
+      set({ capturing: false });
     } else {
       // Criteria 16–17: the failure surfaces, the previous snapshot stays.
       set({ capturing: false, captureError: result.error });

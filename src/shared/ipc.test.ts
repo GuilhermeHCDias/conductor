@@ -25,6 +25,8 @@ describe('the channels', () => {
       'mirror:input',
       'maestro:snapshot',
       'maestro:synthesize-selector',
+      'run:start',
+      'run:cancel',
     ]);
   });
 
@@ -41,7 +43,7 @@ describe('the channels', () => {
   });
 
   it('are exactly the pushes this app declares', () => {
-    expect(Object.values(PUSH_CHANNELS)).toEqual(['device:changed', 'mirror:event']);
+    expect(Object.values(PUSH_CHANNELS)).toEqual(['device:changed', 'mirror:event', 'run:event']);
   });
 
   it('read as <domain>:<action> in kebab-case', () => {
@@ -387,6 +389,110 @@ describe('maestro:synthesize-selector', () => {
   });
 });
 
+describe('run:start', () => {
+  const schema = IPC[CHANNELS.runStart];
+
+  /** Criterion 1 — the device and the flow's own YAML text: the run executes a
+   * temp snapshot of memory, so the text itself is what crosses. */
+  it('takes the opaque device id and the flow text', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL', 'appId: x\n---\n- launchApp\n']).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['R9QYC01EMXL']).success).toBe(false);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  /** Criterion 17 keeps the button disabled on an empty flow; the boundary
+   * refuses one outright rather than handing Maestro an empty file. */
+  it('refuses an empty flow', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL', '']).success).toBe(false);
+  });
+
+  /** Same rule, same measure as the button's disable: a flow of nothing but
+   * whitespace is an empty flow, not a runnable file. */
+  it('refuses a whitespace-only flow', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL', ' \n\t\n']).success).toBe(false);
+  });
+
+  /** Criterion 1 — the fresh run id, immediately, and nothing else: progress
+   * arrives as `run:event` pushes, never in this answer. */
+  it('answers with the run id and nothing else', () => {
+    expect(schema.response.safeParse({ runId: 'run-1' }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('run:cancel', () => {
+  it('takes the run id, not the device id', () => {
+    expect(IPC[CHANNELS.runCancel].request.safeParse(['run-1']).success).toBe(true);
+    expect(IPC[CHANNELS.runCancel].request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers with the run it canceled', () => {
+    expect(IPC[CHANNELS.runCancel].response.safeParse({ runId: 'run-1' }).success).toBe(true);
+  });
+});
+
+describe('run:event', () => {
+  const schema = PUSH[PUSH_CHANNELS.runEvent];
+
+  /** Criterion 6 — every event is tagged with the run it belongs to, so a late
+   * event from a canceled run cannot decorate the one that replaced it. */
+  it.each([
+    ['started', { type: 'started', runId: 'run-1' }],
+    ['step-started', { type: 'step-started', runId: 'run-1', label: 'Launch app "x"' }],
+    ['step-passed', { type: 'step-passed', runId: 'run-1', label: 'Launch app "x"' }],
+    ['step-failed', { type: 'step-failed', runId: 'run-1', label: 'Assert that "y" is visible' }],
+    ['log', { type: 'log', runId: 'run-1', lines: ['Running on R9QYC01EMXL', ' > Flow happy'] }],
+    ['finished', { type: 'finished', runId: 'run-1', outcome: 'passed', message: null }],
+  ] as const)('carries the %s event', (_label, event) => {
+    expect(schema.safeParse(event).success).toBe(true);
+  });
+
+  it('refuses an event that carries no run id', () => {
+    expect(schema.safeParse({ type: 'started' }).success).toBe(false);
+    expect(schema.safeParse({ type: 'log', lines: [] }).success).toBe(false);
+  });
+
+  /** Constraint — log lines are batched per chunk, so the payload is a list. */
+  it('carries log lines as a list, never as one blob', () => {
+    expect(schema.safeParse({ type: 'log', runId: 'run-1', lines: 'a\nb' }).success).toBe(false);
+  });
+
+  /** Criterion 6 — the four ways a run ends, and only those. */
+  it('refuses an outcome the vocabulary does not have', () => {
+    for (const outcome of ['passed', 'failed', 'canceled', 'error'] as const) {
+      expect(
+        schema.safeParse({ type: 'finished', runId: 'run-1', outcome, message: null }).success,
+      ).toBe(true);
+    }
+    expect(
+      schema.safeParse({ type: 'finished', runId: 'run-1', outcome: 'crashed', message: null })
+        .success,
+    ).toBe(false);
+  });
+
+  /** Criterion 21 — an error travels with its message; a clean pass has none,
+   * and `null` says so rather than an empty string pretending to. */
+  it('carries the terminal message as text or as null, never absent', () => {
+    expect(
+      schema.safeParse({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'error',
+        message: 'The Maestro CLI is not installed.',
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ type: 'finished', runId: 'run-1', outcome: 'passed' }).success).toBe(
+      false,
+    );
+  });
+
+  it('refuses an event of no declared kind', () => {
+    expect(schema.safeParse({ type: 'progress', runId: 'run-1' }).success).toBe(false);
+  });
+});
+
 describe('mirror:event', () => {
   const schema = PUSH[PUSH_CHANNELS.mirrorEvent];
 
@@ -515,6 +621,22 @@ describe('the failure codes', () => {
       ERROR_CODES.captureFailed,
       ERROR_CODES.adbNotFound,
     ]).toEqual(['hierarchy/parse-failed', 'capture/failed', 'device/adb-not-found']);
+  });
+
+  /**
+   * The run spec's four. `run/maestro-not-found` is distinct from the mcp
+   * child's `mcp/maestro-not-found` on purpose: same missing binary, but the
+   * refusal reaches a different surface, and criterion 3 wants it distinct
+   * from every mid-run failure. `run/active` is both criterion 4's "one run at
+   * a time" and criterion 11's "the screen is stale until the run ends".
+   */
+  it('tell the run refusals apart', () => {
+    expect([
+      ERROR_CODES.runActive,
+      ERROR_CODES.runMaestroNotFound,
+      ERROR_CODES.runNotFound,
+      ERROR_CODES.runStartFailed,
+    ]).toEqual(['run/active', 'run/maestro-not-found', 'run/not-found', 'run/start-failed']);
   });
 
   /** The inspect spec's four: a stale snapshot re-captures and retries, a

@@ -37,9 +37,35 @@ export class SnapshotService {
   private readonly held = new Map<string, HeldSnapshot>();
   /** Monotonic, so an id is never reused within a run (criterion 5). */
   private nextSnapshot = 1;
+  /** §4.3.2 (run criteria 11–12): true while a flow runs on the device. */
+  private suspended = false;
+  /** Captures currently talking to the device, and who is waiting them out. */
+  private inFlight = 0;
+  private idleWaiters: Array<() => void> = [];
 
   constructor(deps: SnapshotServiceDeps) {
     this.deps = deps;
+  }
+
+  /**
+   * Run criterion 12: holds new captures off and waits the in-flight one out.
+   * `RunService` awaits this before spawning the CLI — a raw `maestro test`
+   * racing a live `inspect_screen` silently loses hierarchy nodes and calls
+   * it success, which is worse than either failing (§4.3.2's amendment).
+   */
+  suspend(): Promise<void> {
+    this.suspended = true;
+    if (this.inFlight === 0) {
+      return Promise.resolve();
+    }
+    return new Promise((resolve) => {
+      this.idleWaiters.push(resolve);
+    });
+  }
+
+  /** The run settled — whatever the outcome, the device is ours again. */
+  resume(): void {
+    this.suspended = false;
   }
 
   /**
@@ -52,6 +78,32 @@ export class SnapshotService {
    * rejection as a bug.
    */
   async capture(deviceId: string): Promise<Result<SnapshotView>> {
+    // Run criterion 11: while a flow runs, the mcp child is not called at all.
+    // The renderer reads this code as "stale until the run ends" and recovers
+    // through the end-of-run recapture, never by retrying into the run.
+    if (this.suspended) {
+      return refuse(
+        ERROR_CODES.runActive,
+        'A flow is running on the device. The screen inspector resumes when it ends.',
+      );
+    }
+
+    this.inFlight += 1;
+    try {
+      return await this.captureNow(deviceId);
+    } finally {
+      this.inFlight -= 1;
+      if (this.inFlight === 0) {
+        const waiters = this.idleWaiters;
+        this.idleWaiters = [];
+        for (const waiter of waiters) {
+          waiter();
+        }
+      }
+    }
+  }
+
+  private async captureNow(deviceId: string): Promise<Result<SnapshotView>> {
     const [tree, shot] = await Promise.allSettled([
       this.deps.gateway.hierarchy(deviceId),
       this.deps.gateway.screenshot(deviceId),

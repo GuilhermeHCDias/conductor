@@ -158,6 +158,23 @@ describe('capturing', () => {
     expect(store().capturing).toBe(false);
   });
 
+  /** Run criterion 11 — a capture the run's exclusion refused is a state, not
+   * a broken inspector: the overlay stays quietly stale until the end-of-run
+   * recapture, with no error banner collected along the way. */
+  it('stays quietly stale when a capture is refused because a run is active', async () => {
+    await store().capture('R9QYC01EMXL');
+    conductor.maestroSnapshot.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'run/active', message: 'A flow is running.' },
+    });
+
+    await store().capture('R9QYC01EMXL');
+
+    expect(store().snapshot?.snapshotId).toBe('snapshot-1');
+    expect(store().captureError).toBeNull();
+    expect(store().capturing).toBe(false);
+  });
+
   /** A hovered path from the old tree may not exist in the new one; a wrong
    * highlight for even a frame is worse than none. */
   it('clears the hover when a new snapshot lands', async () => {

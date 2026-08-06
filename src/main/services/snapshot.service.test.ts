@@ -74,6 +74,9 @@ function fakeGateway(tree: TreeNode = parseHierarchy(CAPTURE)): Gateway {
       Promise.reject(new Error('SnapshotService does not read device properties.')),
     appIdentity: () => Promise.reject(new Error('SnapshotService does not read app identity.')),
     startMirror: () => Promise.reject(new Error('SnapshotService does not open mirrors.')),
+    runFlow: () => {
+      throw new Error('SnapshotService does not run flows.');
+    },
     hierarchy: (deviceId) => {
       gateway.hierarchyCalls.push(deviceId);
       return gateway.hierarchyFailure === null
@@ -317,5 +320,81 @@ describe('synthesising against the held snapshot', () => {
     expect(code(service.synthesize(snapshot.snapshotId, [0]))).toBe(ERROR_CODES.selectorNoMatch);
     expect(logged).toHaveBeenCalled();
     logged.mockRestore();
+  });
+});
+
+/**
+ * §4.3.2's exclusion, snapshot side (run criteria 11–12): while a run is
+ * active the mcp child is left alive but *unused* — measured while scoping,
+ * a raw CLI call racing a live mcp session silently loses hierarchy nodes and
+ * reports success. `RunService` holds the other half: it suspends before
+ * spawning and resumes when the run settles.
+ */
+describe('suspension during a run', () => {
+  it('refuses a capture while suspended, without touching the mcp child', async () => {
+    const gateway = fakeGateway();
+    const service = new SnapshotService({ gateway });
+
+    await service.suspend();
+    const result = await service.capture('device');
+
+    expect(code(result)).toBe(ERROR_CODES.runActive);
+    expect(gateway.hierarchyCalls).toEqual([]);
+    expect(gateway.screenshotCalls).toEqual([]);
+  });
+
+  /** Criterion 12 — the two processes never overlap in either direction: a
+   * run arriving mid-capture waits that capture out before the CLI spawns. */
+  it('resolves suspend only once the in-flight capture settles', async () => {
+    const gateway = fakeGateway();
+    let releaseHierarchy: (tree: TreeNode) => void = () => {};
+    gateway.hierarchy = () =>
+      new Promise((resolvePromise) => {
+        releaseHierarchy = resolvePromise;
+      });
+    const service = new SnapshotService({ gateway });
+
+    const capture = service.capture('device');
+    let suspended = false;
+    const suspend = service.suspend().then(() => {
+      suspended = true;
+    });
+    await Promise.resolve();
+    expect(suspended).toBe(false);
+
+    releaseHierarchy(parseHierarchy(CAPTURE));
+    await capture;
+    await suspend;
+    expect(suspended).toBe(true);
+  });
+
+  it('suspend resolves immediately when nothing is in flight', async () => {
+    const service = new SnapshotService({ gateway: fakeGateway() });
+
+    await expect(service.suspend()).resolves.toBeUndefined();
+  });
+
+  /** Criterion 13's door: the end-of-run recapture only works if resume
+   * actually lifts the refusal. */
+  it('captures again after resume', async () => {
+    const gateway = fakeGateway();
+    const service = new SnapshotService({ gateway });
+    await service.suspend();
+
+    service.resume();
+
+    expect((await service.capture('device')).ok).toBe(true);
+    expect(gateway.hierarchyCalls).toEqual(['device']);
+  });
+
+  /** Synthesis reads memory, not the device — the pre-run right-click that
+   * raced the Run button still completes, against the tree it hit-tested. */
+  it('still synthesizes from the held snapshot while suspended', async () => {
+    const service = new SnapshotService({ gateway: fakeGateway() });
+    const snapshot = view(await service.capture('device'));
+
+    await service.suspend();
+
+    expect(service.synthesize(snapshot.snapshotId, [0]).ok).toBe(true);
   });
 });

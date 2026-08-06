@@ -85,6 +85,9 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
       gateway.identityCalls.push({ deviceId, appId });
       return Promise.resolve({ ...IDENTITY, appId });
     },
+    runFlow: () => {
+      throw new Error('DeviceService does not run flows.');
+    },
     startMirror: (deviceId, handlers) => {
       gateway.mirrorCalls.push(deviceId);
       if (gateway.mirrorFailure !== null) {

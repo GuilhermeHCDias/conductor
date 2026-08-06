@@ -2,6 +2,9 @@ import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from './App';
+import { resetDeviceStore, useDeviceStore } from './stores/device.store';
+import { resetFlowStore, useFlowStore } from './stores/flow.store';
+import { resetRunStore, useRunStore } from './stores/run.store';
 import { resetUiStore, useUiStore } from './stores/ui.store';
 import { resizeElement } from './test-setup';
 
@@ -17,6 +20,9 @@ function sizeWindow(width: number): void {
 beforeEach(() => {
   localStorage.clear();
   resetUiStore();
+  resetDeviceStore();
+  resetFlowStore();
+  resetRunStore();
   delete document.documentElement.dataset.theme;
 });
 
@@ -139,8 +145,18 @@ describe('App', () => {
     });
   });
 
-  /** Criterion 54 — Tab reaches every control, in the order they are drawn. */
+  /** Criterion 54 — Tab reaches every control, in the order they are drawn.
+   * With a device connected — answered by the channel, because mounting the
+   * window refreshes the list: the Run button is rightly disabled without one
+   * (run criterion 17), and a disabled control is not a Tab stop. */
   it('walks the window in visual order', async () => {
+    const snapshot = {
+      devices: [{ id: 'R9QYC01EMXL', model: 'SM-A075M', state: 'device' as const }],
+      selectedId: 'R9QYC01EMXL',
+      properties: null,
+    };
+    window.conductor.deviceList = () => Promise.resolve({ ok: true, data: snapshot });
+    useDeviceStore.getState().applySnapshot({ ok: true, data: snapshot });
     render(<App />);
     sizeWindow(1440);
 
@@ -163,7 +179,8 @@ describe('App', () => {
     expect(reached[6]).toBe('Search flows');
   });
 
-  /** Criterion 12 — the run's progress reads as a line under the toolbar. */
+  /** Criterion 12 of the shell spec, fed by the real run now (run criterion
+   * 24): settled parsed steps over the open flow's own command count. */
   describe('progress line', () => {
     it('is absent while nothing is running', () => {
       render(<App />);
@@ -172,14 +189,14 @@ describe('App', () => {
     });
 
     it('starts empty when a run has reported nothing yet', () => {
-      useUiStore.setState({ running: true, steps: [] });
+      useRunStore.setState({ running: true });
       render(<App />);
 
       expect(screen.getByTestId('run-progress')).toHaveStyle({ width: '0%' });
     });
 
-    it('spans the top of the pane row while running', () => {
-      useUiStore.setState({
+    it('spans the pane row as steps settle against the flow’s command count', () => {
+      useRunStore.setState({
         running: true,
         steps: [
           { id: 'a', label: 'Launch app', status: 'pass', duration: '0:01' },
@@ -188,8 +205,34 @@ describe('App', () => {
       });
       render(<App />);
 
-      // Two of the fixture flow's one command have reported, so the line is full.
+      // One settled step of the open flow's one command: the line is full. The
+      // still-running step is progress-in-flight, not progress made.
       expect(screen.getByTestId('run-progress')).toHaveStyle({ width: '100%' });
+    });
+
+    /** The denominator is the open flow's, live — a step the menu appended
+     * mid-edit widens the run it starts, not the fixture it replaced. */
+    it('measures against the flow store’s current text', () => {
+      useFlowStore.getState().appendStep('- tapOn: "Entrar"');
+      useRunStore.setState({
+        running: true,
+        steps: [{ id: 'a', label: 'Launch app', status: 'pass', duration: '0:01' }],
+      });
+      render(<App />);
+
+      expect(screen.getByTestId('run-progress')).toHaveStyle({ width: '50%' });
+    });
+
+    /** Run criterion 24 — cleared when the run ends, not left full. */
+    it('clears when the run ends', () => {
+      useRunStore.setState({
+        running: false,
+        outcome: 'failed',
+        steps: [{ id: 'a', label: 'Launch app', status: 'pass', duration: '0:01' }],
+      });
+      render(<App />);
+
+      expect(screen.queryByTestId('run-progress')).not.toBeInTheDocument();
     });
   });
 });
