@@ -14,8 +14,9 @@ const COMMAND_COUNT = countCommands(FLOW_YAML);
  * own — `titleBarStyle: 'hiddenInset'` — so this reserves the space they land
  * in rather than drawing them.
  *
- * Run and Save render but do nothing: this spec has no Maestro to start and no
- * file to write.
+ * Run renders but does nothing: this spec has no Maestro to start. There is no
+ * Save beside it — saving is not an act the person performs (§8.2), so the
+ * subtitle reports the file's state instead of offering a button for it.
  */
 export function Toolbar(): JSX.Element {
   const dark = useUiStore((state) => state.dark);
@@ -42,7 +43,10 @@ export function Toolbar(): JSX.Element {
       {/* macOS document title: the name plus a quiet subtitle, left of centre. */}
       <span className={styles.document}>
         <span className={styles.title}>{title}</span>
-        <span className={styles.subtitle}>{COMMAND_COUNT} commands · saved to suite</span>
+        <span className={styles.subtitle}>
+          {COMMAND_COUNT} {COMMAND_COUNT === 1 ? 'command' : 'commands'} ·{' '}
+          {running ? 'running' : 'saved on this Mac'}
+        </span>
       </span>
 
       <span className={styles.spacer} />
@@ -66,10 +70,6 @@ export function Toolbar(): JSX.Element {
           label={dark ? 'Light appearance' : 'Dark appearance'}
           onClick={toggleAppearance}
         />
-      </Tooltip>
-
-      <Tooltip content="Save flow" shortcut="⌘S">
-        <IconButton icon="download" label="Save flow" />
       </Tooltip>
     </div>
   );

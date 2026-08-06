@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from "react";
 
 export interface RunEntry {
   id: string;
@@ -6,7 +6,7 @@ export interface RunEntry {
   startedAt: string;
   /** Flow name without the .yaml extension. */
   flow: string;
-  status: 'pass' | 'fail' | 'running' | 'skipped';
+  status: "pass" | "fail" | "running" | "skipped";
   /** m:ss, e.g. "0:04". */
   duration: string;
 }
@@ -15,7 +15,7 @@ export interface RunStep {
   id?: string;
   /** Plain-language description of the command, e.g. 'Launch app "com.example.app" with clear state'. */
   label: string;
-  status: 'pass' | 'fail' | 'running' | 'skipped' | 'info';
+  status: "pass" | "fail" | "running" | "skipped" | "info";
   duration?: string;
   /** Raw CLI output for failures — shown expanded by default on failed steps. */
   detail?: string;

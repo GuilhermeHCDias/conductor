@@ -8,7 +8,7 @@ function useInspector() {
   React.useEffect(() => {
     const box = contentRef.current;
     if (!box) return;
-    const tally = () => setCount(box.querySelectorAll('[data-a11y-id]').length);
+    const tally = () => setCount(box.querySelectorAll("[data-a11y-id]").length);
     tally();
     const mo = new MutationObserver(tally);
     mo.observe(box, { childList: true, subtree: true });
@@ -16,7 +16,7 @@ function useInspector() {
   }, []);
 
   const read = (target) => {
-    const el = target && target.closest ? target.closest('[data-a11y-id]') : null;
+    const el = target && target.closest ? target.closest("[data-a11y-id]") : null;
     const box = contentRef.current;
     if (!el || !box) return null;
     const b = box.getBoundingClientRect();
@@ -25,16 +25,11 @@ function useInspector() {
        is positioned in the content box's own coordinates. Divide the scale back out. */
     const k = box.offsetWidth ? b.width / box.offsetWidth : 1;
     return {
-      id: el.getAttribute('data-a11y-id'),
-      kind: el.getAttribute('data-a11y-kind'),
-      text: el.getAttribute('data-a11y-text'),
-      selector: el.getAttribute('data-a11y-selector'),
-      rect: {
-        x: (r.left - b.left) / k,
-        y: (r.top - b.top) / k,
-        width: r.width / k,
-        height: r.height / k,
-      },
+      id: el.getAttribute("data-a11y-id"),
+      kind: el.getAttribute("data-a11y-kind"),
+      text: el.getAttribute("data-a11y-text"),
+      selector: el.getAttribute("data-a11y-selector"),
+      rect: { x: (r.left - b.left) / k, y: (r.top - b.top) / k, width: r.width / k, height: r.height / k },
     };
   };
 
@@ -46,9 +41,7 @@ function useInspector() {
     setPinned,
     node: pinned || hover,
     onMouseOver: (e) => setHover(read(e.target)),
-    onMouseOut: (e) => {
-      if (!e.currentTarget.contains(e.relatedTarget)) setHover(null);
-    },
+    onMouseOut: (e) => { if (!e.currentTarget.contains(e.relatedTarget)) setHover(null); },
     onPick: (e) => {
       const n = read(e.target);
       setPinned((p) => (n && p && p.id === n.id ? null : n));
@@ -95,7 +88,7 @@ function useMirrorFit({ maxWidth = DEVICE.width } = {}) {
     outerWidth: Math.floor((DEVICE.width + 2 * DEVICE.bezel) * scale),
     outerHeight: Math.floor((DEVICE.height + 2 * DEVICE.bezel) * scale),
     /* Spread onto DeviceMirror's style. */
-    transform: { transform: 'scale(' + scale + ')', transformOrigin: 'top left' },
+    transform: { transform: "scale(" + scale + ")", transformOrigin: "top left" },
   };
 }
 

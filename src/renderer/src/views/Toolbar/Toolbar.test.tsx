@@ -26,14 +26,32 @@ describe('Toolbar', () => {
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label') ?? button.textContent);
 
-    expect(names).toEqual(['Toggle sidebar', ENVIRONMENT, 'Run', 'Dark appearance', 'Save flow']);
+    expect(names).toEqual(['Toggle sidebar', ENVIRONMENT, 'Run', 'Dark appearance']);
+  });
+
+  /**
+   * There is no Save control. An edit is on disk the instant it happens
+   * (`.context.md` §8.2), so a button that saves would be a button that does
+   * what already happened — and the subtitle says so instead.
+   */
+  it('offers nothing to save', () => {
+    render(<Toolbar />);
+
+    expect(screen.queryByRole('button', { name: 'Save flow' })).not.toBeInTheDocument();
   });
 
   it('names the active document and counts its commands', () => {
     render(<Toolbar />);
 
     expect(screen.getByText('teste.yaml')).toBeInTheDocument();
-    expect(screen.getByText('1 commands · saved to suite')).toBeInTheDocument();
+    expect(screen.getByText('1 command · saved on this Mac')).toBeInTheDocument();
+  });
+
+  it('says the flow is running rather than saved while a run is in flight', () => {
+    useUiStore.setState({ running: true });
+    render(<Toolbar />);
+
+    expect(screen.getByText('1 command · running')).toBeInTheDocument();
   });
 
   it('follows the active document when the tab changes', () => {

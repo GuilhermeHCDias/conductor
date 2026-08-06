@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEventHandler, ReactNode } from 'react';
+import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 
 export interface HighlightRect {
   x: number;
@@ -34,7 +34,7 @@ export interface DeviceMirrorProps {
    * Conductor's theme on purpose — a real phone does not repaint when the tool switches to light.
    * Set it from the device's OS theme, not from data-theme.
    */
-  deviceTheme?: 'dark' | 'light';
+  deviceTheme?: "dark" | "light";
   style?: CSSProperties;
 }
 

@@ -31,20 +31,15 @@
   --ls-mono: 0; /* @kind other */
 
   /* Named roles — CSS `font` shorthands. Assign with `font: var(--type-body)`. */
-  --type-display:
-    var(--w-extrabold) var(--size-34) / var(--lh-tight) var(--font-display); /* @kind font */
-  --type-title-1:
-    var(--w-bold) var(--size-23) / var(--lh-snug) var(--font-display); /* @kind font */
+  --type-display: var(--w-extrabold) var(--size-34) / var(--lh-tight) var(--font-display); /* @kind font */
+  --type-title-1: var(--w-bold) var(--size-23) / var(--lh-snug) var(--font-display); /* @kind font */
   --type-title-2: var(--w-semibold) var(--size-19) / var(--lh-snug) var(--font-ui); /* @kind font */
   --type-title-3: var(--w-semibold) var(--size-16) / var(--lh-snug) var(--font-ui); /* @kind font */
   --type-body: var(--w-regular) var(--size-13) / var(--lh-normal) var(--font-ui); /* @kind font */
-  --type-body-strong:
-    var(--w-semibold) var(--size-13) / var(--lh-normal) var(--font-ui); /* @kind font */
+  --type-body-strong: var(--w-semibold) var(--size-13) / var(--lh-normal) var(--font-ui); /* @kind font */
   --type-caption: var(--w-medium) var(--size-12) / var(--lh-normal) var(--font-ui); /* @kind font */
   --type-label: var(--w-semibold) var(--size-11) / var(--lh-normal) var(--font-ui); /* @kind font */
   --type-code: var(--w-regular) var(--size-13) / var(--lh-code) var(--font-mono); /* @kind font */
-  --type-code-sm:
-    var(--w-regular) var(--size-12) / var(--lh-code) var(--font-mono); /* @kind font */
-  --type-mono-label:
-    var(--w-medium) var(--size-11) / var(--lh-normal) var(--font-mono); /* @kind font */
+  --type-code-sm: var(--w-regular) var(--size-12) / var(--lh-code) var(--font-mono); /* @kind font */
+  --type-mono-label: var(--w-medium) var(--size-11) / var(--lh-normal) var(--font-mono); /* @kind font */
 }

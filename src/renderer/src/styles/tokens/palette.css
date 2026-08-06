@@ -1,57 +1,71 @@
-/* Conductor raw palette — AURORA.
+/* Conductor raw palette — AURORA, drawn from the logo.
    Never referenced directly by components; components use the semantic aliases in
    theme-aurora.css / theme-aurora-dark.css. This file exists so the ramps have one home and
    the guideline cards have something to render.
 
-   The system is built on a wash of coloured light, so every ramp is slightly blue:
+   The mark is a hexagon whose stroke runs mint at the top-left to cyan at the bottom-right,
+   a white play triangle inside it, three cyan speed lines leaving it, all on a near-black
+   ground lit blue in one corner and teal in the other. Every ramp here comes off that:
 
-     Ink      hue 265, chroma 0.006 -> 0.030   neutrals, blue-tinted, never grey
-     Indigo   hue 272                          brand and action
-     Peri     hue 288                          the assistant, and nothing else
-     Teal     hue 168                          pass
-     Red      hue 22                           fail
-     Amber    hue 65                           running
+     Ink      hue 240, chroma 0.004 -> 0.022    the ground: cool blue-slate, never grey
+     Cyan     hue 196..200                      accent — the lower half of the mark
+     Mint     hue 158..165                      the upper half — brand surfaces only
+     Blue     hue 255..259                      the assistant, from the ground's blue light
+     Green    hue 146                           pass
+     Red      hue 22                            fail
+     Amber    hue 62                            running
 
-   Indigo acts, periwinkle speaks for the AI. Pass, fail and running sit at least 30 degrees
-   apart in hue so they stay separable at 7px. */
+   Cyan acts, blue speaks for the AI, mint is paint and never a signal. Pass, fail and running
+   sit at least 30 degrees from each other and from cyan, so they stay separable at 7px.
+
+   Sampled from assets/logo.png: #91f0bc and #8ceeb7 (mint), #57d9b5 (the turn), #06d2cf and
+   #1cc8d6 (cyan), #2c7099 (blue light), #027275 (teal light), #171f26 and #0c0f13 (ground). */
 :root {
-  /* Ink — blue-tinted, so text belongs to the wash rather than sitting on it. */
+  /* Ink — the logo's ground. Cool and faintly blue, so text belongs to the wash. */
   --ink-0: oklch(100% 0 0);
-  --ink-25: oklch(98% 0.004 265);
-  --ink-50: oklch(96% 0.006 265);
-  --ink-100: oklch(92% 0.008 265);
-  --ink-200: oklch(85% 0.010 265);
-  --ink-300: oklch(74% 0.012 265);
-  --ink-400: oklch(62% 0.014 265);
-  --ink-500: oklch(52% 0.016 265);
-  --ink-600: oklch(44% 0.020 265);
-  --ink-700: oklch(35% 0.024 266);
-  --ink-800: oklch(28% 0.026 267);
-  --ink-850: oklch(24% 0.028 268);
-  --ink-900: oklch(21% 0.028 268);
-  --ink-950: oklch(17% 0.026 268);
-  --ink-1000: oklch(13% 0.024 268);
+  --ink-25: oklch(98% 0.004 240);
+  --ink-50: oklch(96% 0.006 240);
+  --ink-100: oklch(92% 0.008 240);
+  --ink-200: oklch(85% 0.010 240);
+  --ink-300: oklch(74% 0.012 240);
+  --ink-400: oklch(62% 0.014 240);
+  --ink-500: oklch(52% 0.016 240);
+  --ink-600: oklch(44% 0.018 240);
+  --ink-700: oklch(35% 0.020 240);
+  --ink-800: oklch(28% 0.022 240);
+  --ink-850: oklch(24% 0.022 241);
+  --ink-900: oklch(21% 0.020 242);
+  --ink-950: oklch(17% 0.018 243);
+  --ink-1000: oklch(13% 0.016 244);
 
-  /* Indigo — brand and action, one and the same. 500 is the light accent; dark moves up to
-     300, because the same value disappears into the night wash. */
-  --indigo-100: oklch(94% 0.030 272);
-  --indigo-200: oklch(88% 0.060 272);
-  --indigo-300: oklch(74% 0.140 272);
-  --indigo-400: oklch(62% 0.170 272);
-  --indigo-500: oklch(48% 0.180 272);
-  --indigo-600: oklch(40% 0.175 272);
-  --indigo-700: oklch(32% 0.150 272);
+  /* Cyan — brand and action, one and the same. 500 is the light accent, dark as it needs to be
+     to carry white text; dark moves up to 300, the mark's own cyan. */
+  --cyan-100: oklch(96% 0.024 196);
+  --cyan-200: oklch(90% 0.058 196);
+  --cyan-300: oklch(80% 0.112 196);
+  --cyan-400: oklch(66% 0.108 198);
+  --cyan-500: oklch(47% 0.096 200);
+  --cyan-600: oklch(40% 0.086 201);
+  --cyan-700: oklch(32% 0.072 203);
 
-  /* Periwinkle — the assistant's voice. Family to indigo, deliberately never a button. */
-  --peri-200: oklch(90% 0.045 288);
-  --peri-300: oklch(78% 0.115 290);
-  --peri-400: oklch(66% 0.135 288);
-  --peri-500: oklch(50% 0.150 285);
+  /* Mint — the top of the mark. Brand surfaces only: it is paint, never a state. */
+  --mint-200: oklch(93% 0.070 158);
+  --mint-300: oklch(88% 0.115 158);
+  --mint-400: oklch(80% 0.120 163);
+  --mint-500: oklch(62% 0.110 165);
 
-  /* Run states. */
-  --teal-300: oklch(88% 0.090 168);
-  --teal-400: oklch(78% 0.135 168);
-  --teal-500: oklch(56% 0.130 168);
+  /* Blue — the assistant's voice, taken from the light in the mark's background. Family to
+     cyan, deliberately never a button that performs work. */
+  --blue-200: oklch(91% 0.045 255);
+  --blue-300: oklch(78% 0.105 255);
+  --blue-400: oklch(64% 0.140 257);
+  --blue-500: oklch(50% 0.150 259);
+
+  /* Run states. Green is a true green, well clear of the brand's mint and cyan — pass must
+     never be mistaken for "this does something". */
+  --green-300: oklch(88% 0.100 148);
+  --green-400: oklch(76% 0.145 147);
+  --green-500: oklch(55% 0.140 146);
   --red-300: oklch(86% 0.075 22);
   --red-400: oklch(70% 0.180 22);
   --red-500: oklch(57% 0.205 22);
@@ -59,9 +73,9 @@
   --amber-400: oklch(80% 0.150 68);
   --amber-500: oklch(66% 0.165 62);
 
-  /* The wash as a fill — brand surfaces only (wordmark, app icon, splash). The one place the
-     wash hues appear together as paint rather than as light. */
-  --grad-aurora: linear-gradient(105deg, var(--peri-400) 0%, var(--indigo-400) 46%, oklch(66% 0.125 205) 100%); /* @kind color */
+  /* The mark's own gradient as a fill — brand surfaces only (wordmark, app icon, splash).
+     Mint at the top-left running to cyan at the bottom-right, exactly as the hexagon does. */
+  --grad-aurora: linear-gradient(135deg, var(--mint-300) 0%, var(--cyan-300) 52%, var(--cyan-500) 100%); /* @kind color */
 
   /* Editor syntax hues are theme-level, not raw — see theme-aurora*.css --syn-*. */
 }

@@ -21,81 +21,76 @@
   /* The desktop behind the window: a quiet wallpaper, not a light show. Static. */
   --bg-window: oklch(89% 0.012 240);
   --bg-wash:
-    radial-gradient(110% 80% at 82% -12%, oklch(94% 0.026 246 / 0.9) 0%, transparent 62%),
-    radial-gradient(90% 70% at 6% 4%, oklch(93% 0.02 256 / 0.85) 0%, transparent 64%),
-    radial-gradient(80% 62% at 97% 104%, oklch(93% 0.028 190 / 0.8) 0%, transparent 60%),
+    radial-gradient(110% 80% at 82% -12%, oklch(94% 0.026 246 / 0.90) 0%, transparent 62%),
+    radial-gradient(90% 70% at 6% 4%, oklch(93% 0.020 256 / 0.85) 0%, transparent 64%),
+    radial-gradient(80% 62% at 97% 104%, oklch(93% 0.028 190 / 0.80) 0%, transparent 60%),
     linear-gradient(180deg, oklch(92% 0.012 240) 0%, oklch(86% 0.016 242) 100%);
 
   /* a-* are the layout tokens the kit reads. One blur (at the window) and three alpha fills. */
-  --a-chrome: oklch(100% 0 0 / 0.58);
-  --a-panel: oklch(100% 0 0 / 0.42);
-  --a-content: oklch(100% 0 0 / 0.86);
-  --a-well: oklch(100% 0 0 / 0.7);
-  --a-hair: oklch(28% 0.02 240 / 0.1);
-  --a-hair-strong: oklch(28% 0.02 240 / 0.16);
+  --a-chrome: oklch(100% 0 0 / 0.52);
+  --a-panel: oklch(100% 0 0 / 0.34);
+  --a-content: oklch(100% 0 0 / 0.78);
+  --a-well: oklch(100% 0 0 / 0.60);
+  --a-hair: oklch(28% 0.020 240 / 0.10);
+  --a-hair-strong: oklch(28% 0.020 240 / 0.16);
   /* The edge of the window: a white specular line at the very top fading out by a third of the
      way down, then the faintest ink hairline. No hue shift, no dark bottom-right. */
-  --a-rim: linear-gradient(
-    180deg,
-    oklch(100% 0 0 / 0.72) 0%,
-    oklch(100% 0 0 / 0.14) 34%,
-    oklch(28% 0.02 240 / 0.06) 100%
-  ); /* @kind color */
-  --a-refract: inset 0 1px 0 0 oklch(100% 0 0 / 0.6); /* @kind other */
-  --a-blur: 42px;
-  --a-saturate: 180%; /* @kind other */
+  --a-rim: linear-gradient(180deg, oklch(100% 0 0 / 0.88) 0%, oklch(100% 0 0 / 0.20) 38%, oklch(28% 0.020 240 / 0.07) 100%); /* @kind color */
+  --a-refract: inset 0 1px 0 0 oklch(100% 0 0 / 0.78), inset 0 -1px 0 0 oklch(100% 0 0 / 0.24); /* @kind other */
+  --a-blur: 52px;
+  --a-saturate: 200%; /* @kind other */
   --a-radius-window: 14px;
   --a-radius-region: 10px;
   --a-radius-surface: 7px;
   --a-radius-field: 6px;
 
-  --glass-1: oklch(100% 0 0 / 0.44);
-  --glass-2: oklch(100% 0 0 / 0.66);
-  --glass-3: oklch(100% 0 0 / 0.86);
-  --glass-sunken: oklch(28% 0.03 240 / 0.045);
-  --material-vibrant: oklch(100% 0 0 / 0.52);
-  --material-content: oklch(100% 0 0 / 0.88);
-  --glass-hover: oklch(100% 0 0 / 0.66);
-  --glass-active: oklch(28% 0.03 240 / 0.07);
-  --glass-selected: oklch(100% 0 0 / 0.92);
+  --glass-1: oklch(100% 0 0 / 0.36);
+  --glass-2: oklch(100% 0 0 / 0.58);
+  --glass-3: oklch(100% 0 0 / 0.78);
+  --glass-sunken: oklch(28% 0.030 240 / 0.045);
+  --material-vibrant: oklch(100% 0 0 / 0.44);
+  --material-content: oklch(100% 0 0 / 0.80);
+  --glass-hover: oklch(100% 0 0 / 0.60);
+  --glass-active: oklch(28% 0.030 240 / 0.07);
+  --glass-selected: oklch(100% 0 0 / 0.86);
 
-  --edge-1: oklch(28% 0.03 240 / 0.07);
-  --edge-2: oklch(28% 0.03 240 / 0.11);
-  --edge-strong: oklch(28% 0.03 240 / 0.2);
-  --edge-sunken: oklch(28% 0.03 240 / 0.09);
-  --specular: oklch(100% 0 0 / 0.9);
+  --edge-1: oklch(28% 0.030 240 / 0.07);
+  --edge-2: oklch(28% 0.030 240 / 0.11);
+  --edge-strong: oklch(28% 0.030 240 / 0.20);
+  --edge-sunken: oklch(28% 0.030 240 / 0.09);
+  --specular: oklch(100% 0 0 / 0.96);
 
   --text-primary: oklch(24% 0.028 240);
-  --text-secondary: oklch(44% 0.02 240);
+  --text-secondary: oklch(44% 0.020 240);
   --text-tertiary: oklch(56% 0.016 240);
   --text-disabled: oklch(68% 0.012 240);
   --text-inverse: oklch(100% 0 0);
-  --text-accent: oklch(47% 0.096 200);
-  --text-ai: oklch(50% 0.15 259);
-  --text-emphasis: oklch(47% 0.096 200);
-  --text-link: oklch(47% 0.096 200);
-  --text-link-hover: oklch(39% 0.086 201);
+  --text-accent: oklch(48% 0.076 202);
+  --text-ai: oklch(50% 0.150 259);
+  --text-emphasis: oklch(48% 0.076 202);
+  --text-link: oklch(48% 0.076 202);
+  --text-link-hover: oklch(40% 0.068 203);
 
-  --accent: oklch(47% 0.096 200);
-  --accent-strong: oklch(40% 0.086 201);
-  --accent-quiet: oklch(47% 0.096 200 / 0.12);
-  --accent-quiet-hover: oklch(47% 0.096 200 / 0.18);
-  --accent-edge: oklch(47% 0.096 200 / 0.28);
+  --accent: oklch(48% 0.076 202);
+  --accent-strong: oklch(41% 0.068 203);
+  --accent-quiet: oklch(48% 0.076 202 / 0.12);
+  --accent-quiet-hover: oklch(48% 0.076 202 / 0.18);
+  --accent-edge: oklch(48% 0.076 202 / 0.28);
   --accent-on: oklch(100% 0 0);
-  --accent-ring: oklch(47% 0.096 200 / 0.4);
+  --accent-ring: oklch(48% 0.076 202 / 0.40);
 
-  --emphasis: oklch(52% 0.1 199);
-  --emphasis-quiet: oklch(52% 0.1 199 / 0.12);
+  --emphasis: oklch(52% 0.080 201);
+  --emphasis-quiet: oklch(52% 0.080 201 / 0.12);
 
-  --ai: oklch(50% 0.15 259);
-  --ai-quiet: oklch(50% 0.15 259 / 0.11);
-  --ai-quiet-hover: oklch(50% 0.15 259 / 0.17);
-  --ai-edge: oklch(50% 0.15 259 / 0.26);
+  --ai: oklch(50% 0.150 259);
+  --ai-quiet: oklch(50% 0.150 259 / 0.11);
+  --ai-quiet-hover: oklch(50% 0.150 259 / 0.17);
+  --ai-edge: oklch(50% 0.150 259 / 0.26);
   --ai-on: oklch(100% 0 0);
 
-  --state-pass: oklch(55% 0.14 146);
-  --state-pass-quiet: oklch(55% 0.14 146 / 0.16);
-  --state-pass-edge: oklch(55% 0.14 146 / 0.32);
+  --state-pass: oklch(55% 0.140 146);
+  --state-pass-quiet: oklch(55% 0.140 146 / 0.16);
+  --state-pass-edge: oklch(55% 0.140 146 / 0.32);
   --state-fail: oklch(57% 0.205 22);
   --state-fail-quiet: oklch(57% 0.205 22 / 0.12);
   --state-fail-quiet-hover: oklch(57% 0.205 22 / 0.18);
@@ -109,17 +104,17 @@
   /* The phone is the one dark object in the window — it is a real device, not a panel. */
   --device-bezel: oklch(30% 0.014 240);
   --device-screen: oklch(15% 0.012 240);
-  --device-highlight: oklch(47% 0.096 200 / 0.16);
-  --device-highlight-edge: oklch(47% 0.096 200);
-  --device-highlight-glow: oklch(47% 0.096 200 / 0.34);
+  --device-highlight: oklch(48% 0.076 202 / 0.16);
+  --device-highlight-edge: oklch(48% 0.076 202);
+  --device-highlight-glow: oklch(48% 0.076 202 / 0.34);
 
   --editor-bg: transparent;
   --editor-gutter: oklch(70% 0.012 240);
-  --editor-active-line: oklch(47% 0.096 200 / 0.05);
-  --editor-selection: oklch(47% 0.096 200 / 0.16);
-  --editor-caret: oklch(47% 0.096 200);
+  --editor-active-line: oklch(48% 0.076 202 / 0.05);
+  --editor-selection: oklch(48% 0.076 202 / 0.16);
+  --editor-caret: oklch(48% 0.076 202);
 
-  --syn-key: oklch(42% 0.095 200);
+  --syn-key: oklch(43% 0.076 202);
   --syn-anchor: oklch(46% 0.135 258);
   --syn-string: oklch(46% 0.105 146);
   --syn-number: oklch(52% 0.125 58);
@@ -127,17 +122,15 @@
   --syn-comment: oklch(70% 0.012 240);
 
   /* Glass shadows: wide, soft, low opacity, tinted with the wash rather than black. */
-  --shadow-1: 0 1px 2px oklch(28% 0.03 240 / 0.06), 0 2px 10px oklch(28% 0.03 240 / 0.06);
-  --shadow-2: 0 2px 8px oklch(28% 0.03 240 / 0.07), 0 10px 30px oklch(28% 0.03 240 / 0.09);
-  --shadow-3: 0 8px 20px oklch(28% 0.03 240 / 0.09), 0 26px 64px oklch(28% 0.03 240 / 0.13);
-  --shadow-window:
-    0 0 0 0.5px oklch(28% 0.02 240 / 0.16), 0 18px 50px oklch(28% 0.02 240 / 0.22),
-    0 2px 6px oklch(28% 0.02 240 / 0.1);
-  --shadow-inset-top: inset 0 1px 0 0 oklch(100% 0 0 / 0.75);
-  --glow-accent: 0 0 0 var(--focus-ring-w) oklch(47% 0.096 200 / 0.32);
-  --glow-ai: 0 0 0 var(--focus-ring-w) oklch(50% 0.15 259 / 0.3);
+  --shadow-1: 0 1px 2px oklch(28% 0.030 240 / 0.06), 0 2px 10px oklch(28% 0.030 240 / 0.06);
+  --shadow-2: 0 2px 8px oklch(28% 0.030 240 / 0.07), 0 10px 30px oklch(28% 0.030 240 / 0.09);
+  --shadow-3: 0 8px 22px oklch(28% 0.030 240 / 0.11), 0 30px 72px oklch(28% 0.030 240 / 0.16);
+  --shadow-window: 0 0 0 0.5px oklch(28% 0.020 240 / 0.16), 0 22px 58px oklch(28% 0.020 240 / 0.25), 0 2px 6px oklch(28% 0.020 240 / 0.10);
+  --shadow-inset-top: inset 0 1px 0 0 oklch(100% 0 0 / 0.88);
+  --glow-accent: 0 0 0 var(--focus-ring-w) oklch(66% 0.068 200 / 0.34);
+  --glow-ai: 0 0 0 var(--focus-ring-w) oklch(50% 0.150 259 / 0.30);
   /* Single-layer, for filter: drop-shadow() — which accepts one shadow, not a list. */
-  --device-drop: 0 14px 30px oklch(28% 0.02 240 / 0.24); /* @kind other */
-  --scrim-top: linear-gradient(to bottom, oklch(100% 0 0 / 0.8), transparent); /* @kind color */
-  --scrim-bottom: linear-gradient(to top, oklch(100% 0 0 / 0.8), transparent); /* @kind color */
+  --device-drop: 0 14px 30px oklch(28% 0.020 240 / 0.24); /* @kind other */
+  --scrim-top: linear-gradient(to bottom, oklch(100% 0 0 / 0.80), transparent); /* @kind color */
+  --scrim-bottom: linear-gradient(to top, oklch(100% 0 0 / 0.80), transparent); /* @kind color */
 }

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from "react";
 
 /**
  * The Electron window titlebar: macOS traffic lights left, the current project path

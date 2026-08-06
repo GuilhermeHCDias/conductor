@@ -1,132 +1,25 @@
-*,
-*::before,
-*::after {
-  box-sizing: border-box;
-}
-html {
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  text-rendering: optimizeLegibility;
-}
-body {
-  margin: 0;
-  background: var(--bg-window);
-  color: var(--text-primary);
-  font: var(--type-body);
-  letter-spacing: var(--ls-body);
-}
+*,*::before,*::after{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale;text-rendering:optimizeLegibility}
+body{margin:0;background:var(--bg-window);color:var(--text-primary);font:var(--type-body);letter-spacing:var(--ls-body)}
 /* The window wash. Apply to the app root so every glass layer has something to refract. */
-.cd-wash {
-  background-color: var(--bg-window);
-  background-image: var(--bg-wash);
-  background-repeat: no-repeat;
-  background-size: cover;
-}
-h1,
-h2,
-h3,
-h4,
-h5,
-h6 {
-  margin: 0;
-  font-family: var(--font-display);
-  letter-spacing: var(--ls-title);
-  font-weight: var(--w-semibold);
-}
-p {
-  margin: 0;
-  text-wrap: pretty;
-}
-a {
-  color: var(--text-link);
-  text-decoration: none;
-  transition: var(--t-hover);
-}
-a:hover {
-  color: var(--text-link-hover);
-  text-decoration: underline;
-  text-decoration-thickness: 1px;
-  text-underline-offset: 2px;
-}
-code,
-pre,
-kbd {
-  font-family: var(--font-mono);
-  font-size: var(--size-12);
-}
-kbd {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  min-width: 18px;
-  height: 18px;
-  padding: 0 var(--space-2);
-  border-radius: var(--radius-xs);
-  background: var(--glass-2);
-  border: var(--border-hair) solid var(--edge-2);
-  color: var(--text-secondary);
-  font-size: var(--size-11);
-  box-shadow: var(--shadow-inset-top);
-}
-button,
-input,
-select,
-textarea {
-  font: inherit;
-  letter-spacing: inherit;
-  color: inherit;
-}
-:focus-visible {
-  outline: none;
-  box-shadow: var(--glow-accent);
-}
+.cd-wash{background-color:var(--bg-window);background-image:var(--bg-wash);background-repeat:no-repeat;background-size:cover}
+h1,h2,h3,h4,h5,h6{margin:0;font-family:var(--font-display);letter-spacing:var(--ls-title);font-weight:var(--w-semibold)}
+p{margin:0;text-wrap:pretty}
+a{color:var(--text-link);text-decoration:none;transition:var(--t-hover)}
+a:hover{color:var(--text-link-hover);text-decoration:underline;text-decoration-thickness:1px;text-underline-offset:2px}
+code,pre,kbd{font-family:var(--font-mono);font-size:var(--size-12)}
+kbd{display:inline-flex;align-items:center;justify-content:center;min-width:18px;height:18px;padding:0 var(--space-2);border-radius:var(--radius-xs);background:var(--glass-2);border:var(--border-hair) solid var(--edge-2);color:var(--text-secondary);font-size:var(--size-11);box-shadow:var(--shadow-inset-top)}
+button,input,select,textarea{font:inherit;letter-spacing:inherit;color:inherit}
+:focus-visible{outline:none;box-shadow:var(--glow-accent)}
 /* Vibrant chrome (sidebars, toolbars, floating layers) vs content (near-opaque, text sits still). */
-.cd-vibrant {
-  background: var(--material-vibrant);
-  backdrop-filter: blur(var(--blur-2)) saturate(var(--saturate-vibrant));
-  -webkit-backdrop-filter: blur(var(--blur-2)) saturate(var(--saturate-vibrant));
-}
-.cd-content {
-  background: var(--material-content);
-  backdrop-filter: blur(var(--blur-1)) saturate(120%);
-  -webkit-backdrop-filter: blur(var(--blur-1)) saturate(120%);
-}
-::selection {
-  background: var(--editor-selection);
-  color: var(--text-primary);
-}
+.cd-vibrant{background:var(--material-vibrant);backdrop-filter:blur(var(--blur-2)) saturate(var(--saturate-vibrant));-webkit-backdrop-filter:blur(var(--blur-2)) saturate(var(--saturate-vibrant))}
+.cd-content{background:var(--material-content);backdrop-filter:blur(var(--blur-1)) saturate(120%);-webkit-backdrop-filter:blur(var(--blur-1)) saturate(120%)}
+::selection{background:var(--editor-selection);color:var(--text-primary)}
 /* macOS overlay scrollbars: no track, thin thumb, only visible while the area is hovered. */
-::-webkit-scrollbar {
-  width: 9px;
-  height: 9px;
-}
-::-webkit-scrollbar-track {
-  background: transparent;
-}
-::-webkit-scrollbar-thumb {
-  background: transparent;
-  border-radius: var(--radius-pill);
-  border: 2px solid transparent;
-  background-clip: content-box;
-}
-*:hover::-webkit-scrollbar-thumb {
-  background: var(--edge-strong);
-  background-clip: content-box;
-}
-::-webkit-scrollbar-thumb:hover {
-  background: var(--text-disabled);
-  background-clip: content-box;
-}
-::-webkit-scrollbar-corner {
-  background: transparent;
-}
-.cd-visually-hidden {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  margin: -1px;
-  padding: 0;
-  overflow: hidden;
-  clip-path: inset(50%);
-  white-space: nowrap;
-}
+::-webkit-scrollbar{width:9px;height:9px}
+::-webkit-scrollbar-track{background:transparent}
+::-webkit-scrollbar-thumb{background:transparent;border-radius:var(--radius-pill);border:2px solid transparent;background-clip:content-box}
+*:hover::-webkit-scrollbar-thumb{background:var(--edge-strong);background-clip:content-box}
+::-webkit-scrollbar-thumb:hover{background:var(--text-disabled);background-clip:content-box}
+::-webkit-scrollbar-corner{background:transparent}
+.cd-visually-hidden{position:absolute;width:1px;height:1px;margin:-1px;padding:0;overflow:hidden;clip-path:inset(50%);white-space:nowrap}

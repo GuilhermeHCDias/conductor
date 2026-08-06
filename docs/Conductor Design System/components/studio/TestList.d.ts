@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEvent, ReactNode } from 'react';
+import type { CSSProperties, MouseEvent, ReactNode } from "react";
 
 export interface TestSummary {
   id: string;
@@ -7,7 +7,7 @@ export interface TestSummary {
   /** Command count. */
   steps: number;
   /** Result of the most recent run. "never" renders a muted "never run". */
-  lastResult: 'pass' | 'fail' | 'running' | 'never';
+  lastResult: "pass" | "fail" | "running" | "never";
   /** Human timestamp as the CLI prints it, e.g. "Jul 28, 12:29 pm". */
   lastRun?: string;
   /** m:ss of the last run. */

@@ -1,4 +1,4 @@
-Sunken single-line field. Focus paints an accent hairline plus `--glow-accent`.
+Sunken single-line field. Focus paints an accent hairline plus a 2px `--glow-accent` ring — no inset highlight in either state.
 
 ```jsx
 <Input icon="search" placeholder="Filter elements" />

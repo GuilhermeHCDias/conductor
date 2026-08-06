@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties } from "react";
 
 export interface SegmentedOption {
   value: string;
@@ -14,7 +14,7 @@ export interface SegmentedControlProps {
   value?: string;
   options?: Array<string | SegmentedOption>;
   onChange?: (value: string) => void;
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
   fullWidth?: boolean;
   style?: CSSProperties;
 }

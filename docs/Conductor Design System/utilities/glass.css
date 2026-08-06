@@ -3,67 +3,15 @@
    L3 = a layer that floats free of the layout (menus, popovers, dialogs, toasts).
    Every glass surface gets: translucent fill + backdrop blur + saturation lift +
    a hairline + a top specular inset. Omitting the specular is what makes glass look flat. */
-.cd-glass-1 {
-  background: var(--glass-1);
-  backdrop-filter: blur(var(--blur-1)) saturate(var(--saturate-glass));
-  -webkit-backdrop-filter: blur(var(--blur-1)) saturate(var(--saturate-glass));
-  border: var(--border-hair) solid var(--edge-1);
-  box-shadow: var(--shadow-inset-top);
-}
-.cd-glass-2 {
-  background: var(--glass-2);
-  backdrop-filter: blur(var(--blur-2)) saturate(var(--saturate-glass));
-  -webkit-backdrop-filter: blur(var(--blur-2)) saturate(var(--saturate-glass));
-  border: var(--border-hair) solid var(--edge-2);
-  box-shadow: var(--shadow-inset-top), var(--shadow-1);
-}
-.cd-glass-3 {
-  background: var(--glass-3);
-  backdrop-filter: blur(var(--blur-3)) saturate(var(--saturate-glass));
-  -webkit-backdrop-filter: blur(var(--blur-3)) saturate(var(--saturate-glass));
-  border: var(--border-hair) solid var(--edge-2);
-  box-shadow: var(--shadow-inset-top), var(--shadow-3);
-}
+.cd-glass-1{background:var(--glass-1);backdrop-filter:blur(var(--blur-1)) saturate(var(--saturate-glass));-webkit-backdrop-filter:blur(var(--blur-1)) saturate(var(--saturate-glass));border:var(--border-hair) solid var(--edge-1);box-shadow:var(--shadow-inset-top)}
+.cd-glass-2{background:var(--glass-2);backdrop-filter:blur(var(--blur-2)) saturate(var(--saturate-glass));-webkit-backdrop-filter:blur(var(--blur-2)) saturate(var(--saturate-glass));border:var(--border-hair) solid var(--edge-2);box-shadow:var(--shadow-inset-top),var(--shadow-1)}
+.cd-glass-3{background:var(--glass-3);backdrop-filter:blur(var(--blur-3)) saturate(var(--saturate-glass));-webkit-backdrop-filter:blur(var(--blur-3)) saturate(var(--saturate-glass));border:var(--border-hair) solid var(--edge-2);box-shadow:var(--shadow-inset-top),var(--shadow-3)}
 /* Sunken: the inverse move. Content wells (editor, log stream, mirror bay) recede. */
-.cd-sunken {
-  background: var(--glass-sunken);
-  border: var(--border-hair) solid var(--edge-sunken);
-  box-shadow: var(--shadow-inset-sunken);
-}
+.cd-sunken{background:var(--glass-sunken);border:var(--border-hair) solid var(--edge-sunken);box-shadow:var(--shadow-inset-sunken)}
 /* Specular sheen — a 1px lit top edge drawn as a pseudo-element, for large panels
    where a plain inset shadow is too weak to read. */
-.cd-sheen {
-  position: relative;
-  isolation: isolate;
-}
-.cd-sheen::before {
-  content: "";
-  position: absolute;
-  inset: 0;
-  border-radius: inherit;
-  padding: 1px;
-  background: linear-gradient(
-    160deg,
-    var(--specular),
-    transparent 38%,
-    transparent 62%,
-    var(--edge-1)
-  );
-  -webkit-mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  -webkit-mask-composite: xor;
-  mask:
-    linear-gradient(#000 0 0) content-box,
-    linear-gradient(#000 0 0);
-  mask-composite: exclude;
-  pointer-events: none;
-  z-index: 1;
-}
+.cd-sheen{position:relative;isolation:isolate}
+.cd-sheen::before{content:"";position:absolute;inset:0;border-radius:inherit;padding:1px;background:linear-gradient(160deg,var(--specular),transparent 38%,transparent 62%,var(--edge-1));-webkit-mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);-webkit-mask-composite:xor;mask:linear-gradient(#000 0 0) content-box,linear-gradient(#000 0 0);mask-composite:exclude;pointer-events:none;z-index:1}
 /* Scrims for text over imagery/mirror. */
-.cd-scrim-top {
-  background: var(--scrim-top);
-}
-.cd-scrim-bottom {
-  background: var(--scrim-bottom);
-}
+.cd-scrim-top{background:var(--scrim-top)}
+.cd-scrim-bottom{background:var(--scrim-bottom)}

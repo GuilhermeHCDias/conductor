@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties } from "react";
 
 export interface ContextMenuItem {
   id?: string;
@@ -6,7 +6,7 @@ export interface ContextMenuItem {
   label?: string;
   icon?: string;
   shortcut?: string;
-  type?: 'item' | 'separator' | 'label';
+  type?: "item" | "separator" | "label";
   /** Monospace label — for YAML keywords and selectors. */
   mono?: boolean;
   disabled?: boolean;

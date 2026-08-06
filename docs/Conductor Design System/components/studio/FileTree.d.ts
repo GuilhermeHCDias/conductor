@@ -1,9 +1,9 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties } from "react";
 
 export interface FileNode {
   id: string;
   name: string;
-  type: 'dir' | 'file';
+  type: "dir" | "file";
   /** Icon override for files; defaults to file-code. */
   icon?: string;
   /** Right-aligned mono hint: step count, last result. */

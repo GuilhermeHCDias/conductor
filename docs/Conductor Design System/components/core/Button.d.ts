@@ -1,4 +1,4 @@
-import type { CSSProperties, MouseEventHandler, ReactNode } from 'react';
+import type { CSSProperties, MouseEventHandler, ReactNode } from "react";
 
 /**
  * Conductor's button. Glass is the default — primary is reserved for the single
@@ -7,9 +7,9 @@ import type { CSSProperties, MouseEventHandler, ReactNode } from 'react';
 export interface ButtonProps {
   children?: ReactNode;
   /** glass = default surface action · primary = the one accent action per region · ghost = toolbar/row action · ai = anything Conductor's assistant performs · danger = destructive */
-  variant?: 'glass' | 'primary' | 'ghost' | 'ai' | 'danger';
+  variant?: "glass" | "primary" | "ghost" | "ai" | "danger";
   /** sm 30px · md 36px · lg 42px */
-  size?: 'sm' | 'md' | 'lg';
+  size?: "sm" | "md" | "lg";
   /** Leading Icon name. */
   icon?: string;
   /** Trailing Icon name — chevrons, external links. */
@@ -21,7 +21,7 @@ export interface ButtonProps {
   /** Fully rounded. Used for filter/mode chips, never for form submits. */
   pill?: boolean;
   onClick?: MouseEventHandler<HTMLButtonElement>;
-  type?: 'button' | 'submit' | 'reset';
+  type?: "button" | "submit" | "reset";
   style?: CSSProperties;
 }
 

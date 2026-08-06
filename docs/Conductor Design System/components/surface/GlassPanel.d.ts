@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from "react";
 
 /**
  * The substrate of every Conductor region. Depth is expressed as blur radius first,
@@ -8,7 +8,7 @@ export interface GlassPanelProps {
   children?: ReactNode;
   /** 1 = region (mirror bay, editor, logs) · 2 = card on a region · 3 = floating layer */
   depth?: 1 | 2 | 3;
-  radius?: 'xs' | 'sm' | 'md' | 'lg' | 'xl' | '2xl' | 'window' | 'pill';
+  radius?: "xs" | "sm" | "md" | "lg" | "xl" | "2xl" | "window" | "pill";
   padding?: string | number;
   /** Inverts to a recessed well — content areas the user reads or types into. */
   sunken?: boolean;

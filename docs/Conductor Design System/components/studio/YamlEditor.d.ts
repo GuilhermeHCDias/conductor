@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react';
+import type { CSSProperties } from "react";
 
 /**
  * The generated Maestro flow, syntax-highlighted. Read-mostly: users edit by clicking

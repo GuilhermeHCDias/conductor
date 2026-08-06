@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from "react";
 
 /** Keyboard hint capsules. Conductor is keyboard-first, so shortcuts are shown, not hidden. */
 export interface KbdProps {

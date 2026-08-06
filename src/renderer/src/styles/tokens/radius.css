@@ -15,6 +15,6 @@
      softens to a light 1px elsewhere. Raising the weight is never how importance is shown. */
   --border-hair: 0.5px;
   --border-thick: 1.5px;
-  --focus-ring-w: 3px;
+  --focus-ring-w: 2px;
   --focus-ring-offset: 0px;
 }

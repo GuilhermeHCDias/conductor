@@ -1,4 +1,4 @@
-import type { ChangeEventHandler, CSSProperties } from 'react';
+import type { CSSProperties, ChangeEventHandler } from "react";
 
 /** Checkbox for command flags (clearState, stopApp) and settings lists. */
 export interface CheckboxProps {

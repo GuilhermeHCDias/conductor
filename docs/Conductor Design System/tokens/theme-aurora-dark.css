@@ -18,118 +18,111 @@
 
   --bg-window: oklch(21% 0.014 242);
   --bg-wash:
-    radial-gradient(110% 80% at 82% -12%, oklch(30% 0.03 250 / 0.9) 0%, transparent 62%),
+    radial-gradient(110% 80% at 82% -12%, oklch(30% 0.030 250 / 0.90) 0%, transparent 62%),
     radial-gradient(90% 70% at 6% 4%, oklch(27% 0.028 258 / 0.85) 0%, transparent 64%),
     radial-gradient(80% 62% at 97% 104%, oklch(30% 0.032 194 / 0.75) 0%, transparent 60%),
     linear-gradient(180deg, oklch(24% 0.014 244) 0%, oklch(17% 0.014 244) 100%);
 
-  --a-chrome: oklch(100% 0 0 / 0.07);
-  --a-panel: oklch(100% 0 0 / 0.05);
-  --a-content: oklch(28% 0.014 240 / 0.86);
-  --a-well: oklch(0% 0 0 / 0.22);
-  --a-hair: oklch(100% 0 0 / 0.1);
+  --a-chrome: oklch(100% 0 0 / 0.09);
+  --a-panel: oklch(100% 0 0 / 0.06);
+  --a-content: oklch(28% 0.014 240 / 0.74);
+  --a-well: oklch(0% 0 0 / 0.18);
+  --a-hair: oklch(100% 0 0 / 0.10);
   --a-hair-strong: oklch(100% 0 0 / 0.17);
-  --a-rim: linear-gradient(
-    180deg,
-    oklch(100% 0 0 / 0.26) 0%,
-    oklch(100% 0 0 / 0.06) 34%,
-    oklch(0% 0 0 / 0.16) 100%
-  ); /* @kind color */
-  --a-refract: inset 0 1px 0 0 oklch(100% 0 0 / 0.14); /* @kind other */
-  --a-blur: 44px;
-  --a-saturate: 180%; /* @kind other */
+  --a-rim: linear-gradient(180deg, oklch(100% 0 0 / 0.38) 0%, oklch(100% 0 0 / 0.09) 38%, oklch(0% 0 0 / 0.18) 100%); /* @kind color */
+  --a-refract: inset 0 1px 0 0 oklch(100% 0 0 / 0.22), inset 0 -1px 0 0 oklch(100% 0 0 / 0.06); /* @kind other */
+  --a-blur: 54px;
+  --a-saturate: 200%; /* @kind other */
   --a-radius-window: 14px;
   --a-radius-region: 10px;
   --a-radius-surface: 7px;
   --a-radius-field: 6px;
 
-  --glass-1: oklch(100% 0 0 / 0.07);
-  --glass-2: oklch(100% 0 0 / 0.1);
-  --glass-3: oklch(100% 0 0 / 0.15);
-  --glass-sunken: oklch(0% 0 0 / 0.2);
-  --material-vibrant: oklch(100% 0 0 / 0.08);
-  --material-content: oklch(24% 0.026 240 / 0.88);
-  --glass-hover: oklch(100% 0 0 / 0.09);
-  --glass-active: oklch(0% 0 0 / 0.2);
-  --glass-selected: oklch(100% 0 0 / 0.16);
+  --glass-1: oklch(100% 0 0 / 0.09);
+  --glass-2: oklch(100% 0 0 / 0.12);
+  --glass-3: oklch(100% 0 0 / 0.17);
+  --glass-sunken: oklch(0% 0 0 / 0.20);
+  --material-vibrant: oklch(100% 0 0 / 0.10);
+  --material-content: oklch(24% 0.026 240 / 0.76);
+  --glass-hover: oklch(100% 0 0 / 0.11);
+  --glass-active: oklch(0% 0 0 / 0.20);
+  --glass-selected: oklch(100% 0 0 / 0.18);
 
-  --edge-1: oklch(100% 0 0 / 0.1);
+  --edge-1: oklch(100% 0 0 / 0.10);
   --edge-2: oklch(100% 0 0 / 0.15);
   --edge-strong: oklch(100% 0 0 / 0.26);
-  --edge-sunken: oklch(0% 0 0 / 0.3);
-  --specular: oklch(100% 0 0 / 0.16);
+  --edge-sunken: oklch(0% 0 0 / 0.30);
+  --specular: oklch(100% 0 0 / 0.24);
 
   --text-primary: oklch(96% 0.006 240);
   --text-secondary: oklch(82% 0.012 240);
   --text-tertiary: oklch(68% 0.014 240);
   --text-disabled: oklch(56% 0.014 240);
   --text-inverse: oklch(18% 0.026 240);
-  --text-accent: oklch(82% 0.1 198);
-  --text-ai: oklch(80% 0.1 256);
-  --text-emphasis: oklch(82% 0.1 198);
-  --text-link: oklch(82% 0.1 198);
-  --text-link-hover: oklch(90% 0.075 198);
+  --text-accent: oklch(82% 0.080 199);
+  --text-ai: oklch(80% 0.100 256);
+  --text-emphasis: oklch(82% 0.080 199);
+  --text-link: oklch(82% 0.080 199);
+  --text-link-hover: oklch(90% 0.060 199);
 
-  --accent: oklch(80% 0.112 196);
-  --accent-strong: oklch(88% 0.09 197);
-  --accent-quiet: oklch(80% 0.112 196 / 0.2);
-  --accent-quiet-hover: oklch(80% 0.112 196 / 0.28);
-  --accent-edge: oklch(80% 0.112 196 / 0.42);
-  --accent-on: oklch(18% 0.03 205);
-  --accent-ring: oklch(80% 0.112 196 / 0.48);
+  --accent: oklch(80% 0.088 198);
+  --accent-strong: oklch(88% 0.072 198);
+  --accent-quiet: oklch(80% 0.088 198 / 0.20);
+  --accent-quiet-hover: oklch(80% 0.088 198 / 0.28);
+  --accent-edge: oklch(80% 0.088 198 / 0.42);
+  --accent-on: oklch(18% 0.030 205);
+  --accent-ring: oklch(80% 0.088 198 / 0.48);
 
-  --emphasis: oklch(82% 0.1 198);
-  --emphasis-quiet: oklch(82% 0.1 198 / 0.2);
+  --emphasis: oklch(82% 0.080 199);
+  --emphasis-quiet: oklch(82% 0.080 199 / 0.20);
 
   --ai: oklch(78% 0.105 255);
   --ai-quiet: oklch(78% 0.105 255 / 0.18);
   --ai-quiet-hover: oklch(78% 0.105 255 / 0.26);
   --ai-edge: oklch(78% 0.105 255 / 0.38);
-  --ai-on: oklch(18% 0.03 258);
+  --ai-on: oklch(18% 0.030 258);
 
-  --state-pass: oklch(78% 0.14 147);
-  --state-pass-quiet: oklch(78% 0.14 147 / 0.2);
-  --state-pass-edge: oklch(78% 0.14 147 / 0.4);
-  --state-fail: oklch(70% 0.18 22);
-  --state-fail-quiet: oklch(70% 0.18 22 / 0.2);
-  --state-fail-quiet-hover: oklch(70% 0.18 22 / 0.28);
-  --state-fail-edge: oklch(70% 0.18 22 / 0.4);
-  --state-running: oklch(80% 0.15 68);
-  --state-running-quiet: oklch(80% 0.15 68 / 0.2);
-  --state-running-edge: oklch(80% 0.15 68 / 0.4);
+  --state-pass: oklch(78% 0.140 147);
+  --state-pass-quiet: oklch(78% 0.140 147 / 0.20);
+  --state-pass-edge: oklch(78% 0.140 147 / 0.40);
+  --state-fail: oklch(70% 0.180 22);
+  --state-fail-quiet: oklch(70% 0.180 22 / 0.20);
+  --state-fail-quiet-hover: oklch(70% 0.180 22 / 0.28);
+  --state-fail-edge: oklch(70% 0.180 22 / 0.40);
+  --state-running: oklch(80% 0.150 68);
+  --state-running-quiet: oklch(80% 0.150 68 / 0.20);
+  --state-running-edge: oklch(80% 0.150 68 / 0.40);
   --state-idle: oklch(58% 0.014 240);
   --state-idle-quiet: oklch(70% 0.014 240 / 0.16);
 
   --device-bezel: oklch(26% 0.014 240);
   --device-screen: oklch(13% 0.012 240);
-  --device-highlight: oklch(80% 0.112 196 / 0.22);
-  --device-highlight-edge: oklch(82% 0.105 197);
-  --device-highlight-glow: oklch(80% 0.112 196 / 0.4);
+  --device-highlight: oklch(80% 0.088 198 / 0.22);
+  --device-highlight-edge: oklch(82% 0.082 198);
+  --device-highlight-glow: oklch(80% 0.088 198 / 0.40);
 
   --editor-bg: transparent;
   --editor-gutter: oklch(52% 0.014 240);
   --editor-active-line: oklch(100% 0 0 / 0.05);
-  --editor-selection: oklch(80% 0.112 196 / 0.26);
-  --editor-caret: oklch(82% 0.105 197);
+  --editor-selection: oklch(80% 0.088 198 / 0.26);
+  --editor-caret: oklch(82% 0.082 198);
 
-  --syn-key: oklch(82% 0.1 197);
+  --syn-key: oklch(82% 0.080 198);
   --syn-anchor: oklch(80% 0.105 256);
-  --syn-string: oklch(82% 0.11 147);
+  --syn-string: oklch(82% 0.110 147);
   --syn-number: oklch(82% 0.115 66);
   --syn-punct: oklch(68% 0.014 240);
   --syn-comment: oklch(54% 0.014 240);
 
   /* On dark glass the specular inset does the work; drop shadows only separate floating layers. */
-  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.3), 0 2px 10px oklch(0% 0 0 / 0.26);
+  --shadow-1: 0 1px 2px oklch(0% 0 0 / 0.30), 0 2px 10px oklch(0% 0 0 / 0.26);
   --shadow-2: 0 2px 8px oklch(0% 0 0 / 0.32), 0 12px 34px oklch(0% 0 0 / 0.34);
-  --shadow-3: 0 8px 22px oklch(0% 0 0 / 0.38), 0 28px 70px oklch(0% 0 0 / 0.46);
-  --shadow-window:
-    0 0 0 0.5px oklch(100% 0 0 / 0.1), 0 20px 56px oklch(0% 0 0 / 0.58),
-    0 2px 6px oklch(0% 0 0 / 0.4);
-  --shadow-inset-top: inset 0 1px 0 0 oklch(100% 0 0 / 0.16);
-  --glow-accent: 0 0 0 var(--focus-ring-w) oklch(80% 0.112 196 / 0.44);
-  --glow-ai: 0 0 0 var(--focus-ring-w) oklch(78% 0.105 255 / 0.4);
-  --device-drop: 0 20px 46px oklch(0% 0 0 / 0.5); /* @kind other */
+  --shadow-3: 0 8px 24px oklch(0% 0 0 / 0.42), 0 32px 78px oklch(0% 0 0 / 0.52);
+  --shadow-window: 0 0 0 0.5px oklch(100% 0 0 / 0.10), 0 20px 56px oklch(0% 0 0 / 0.58), 0 2px 6px oklch(0% 0 0 / 0.40);
+  --shadow-inset-top: inset 0 1px 0 0 oklch(100% 0 0 / 0.24);
+  --glow-accent: 0 0 0 var(--focus-ring-w) oklch(80% 0.074 198 / 0.36);
+  --glow-ai: 0 0 0 var(--focus-ring-w) oklch(78% 0.105 255 / 0.40);
+  --device-drop: 0 20px 46px oklch(0% 0 0 / 0.50); /* @kind other */
   --scrim-top: linear-gradient(to bottom, oklch(0% 0 0 / 0.62), transparent); /* @kind color */
   --scrim-bottom: linear-gradient(to top, oklch(0% 0 0 / 0.62), transparent); /* @kind color */
 }

@@ -152,15 +152,14 @@ describe('App', () => {
     }
 
     // Toolbar left to right, then the sidebar, then its first row.
-    expect(reached.slice(0, 6)).toEqual([
+    expect(reached.slice(0, 5)).toEqual([
       'Toggle sidebar',
       'staging',
       'Run',
       'Dark appearance',
-      'Save flow',
       'New flow',
     ]);
-    expect(reached[6]).toBe('Search flows');
+    expect(reached[5]).toBe('Search flows');
   });
 
   /** Criterion 12 — the run's progress reads as a line under the toolbar. */

@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from "react";
 
 /** The uppercase eyebrow bar that titles every panel. Title is always caps + wide tracking, tertiary. */
 export interface PanelHeaderProps {

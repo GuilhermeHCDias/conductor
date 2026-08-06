@@ -1,5 +1,8 @@
 {
-  "plugins": ["react", "import"],
+  "plugins": [
+    "react",
+    "import"
+  ],
   "rules": {
     "react/forbid-elements": [
       "warn",
@@ -253,7 +256,9 @@
   },
   "overrides": [
     {
-      "files": ["**/index.js"],
+      "files": [
+        "**/index.js"
+      ],
       "rules": {
         "no-restricted-imports": "off"
       }
@@ -822,6 +827,9 @@
       "--syn-comment": "color",
       "--device-drop": "other"
     },
-    "fontFamilies": ["JetBrains Mono", "Manrope"]
+    "fontFamilies": [
+      "JetBrains Mono",
+      "Manrope"
+    ]
   }
 }

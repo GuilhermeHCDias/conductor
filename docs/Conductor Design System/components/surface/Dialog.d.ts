@@ -1,4 +1,4 @@
-import type { CSSProperties, ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from "react";
 
 /** Modal on heavy glass (--blur-heavy) over a dimming scrim. For device pairing, settings, destructive confirms. */
 export interface DialogProps {

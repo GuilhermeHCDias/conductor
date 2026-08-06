@@ -26,15 +26,15 @@
   --ink-25: oklch(98% 0.004 240);
   --ink-50: oklch(96% 0.006 240);
   --ink-100: oklch(92% 0.008 240);
-  --ink-200: oklch(85% 0.01 240);
+  --ink-200: oklch(85% 0.010 240);
   --ink-300: oklch(74% 0.012 240);
   --ink-400: oklch(62% 0.014 240);
   --ink-500: oklch(52% 0.016 240);
   --ink-600: oklch(44% 0.018 240);
-  --ink-700: oklch(35% 0.02 240);
+  --ink-700: oklch(35% 0.020 240);
   --ink-800: oklch(28% 0.022 240);
   --ink-850: oklch(24% 0.022 241);
-  --ink-900: oklch(21% 0.02 242);
+  --ink-900: oklch(21% 0.020 242);
   --ink-950: oklch(17% 0.018 243);
   --ink-1000: oklch(13% 0.016 244);
 
@@ -49,38 +49,33 @@
   --cyan-700: oklch(32% 0.072 203);
 
   /* Mint — the top of the mark. Brand surfaces only: it is paint, never a state. */
-  --mint-200: oklch(93% 0.07 158);
+  --mint-200: oklch(93% 0.070 158);
   --mint-300: oklch(88% 0.115 158);
-  --mint-400: oklch(80% 0.12 163);
-  --mint-500: oklch(62% 0.11 165);
+  --mint-400: oklch(80% 0.120 163);
+  --mint-500: oklch(62% 0.110 165);
 
   /* Blue — the assistant's voice, taken from the light in the mark's background. Family to
      cyan, deliberately never a button that performs work. */
   --blue-200: oklch(91% 0.045 255);
   --blue-300: oklch(78% 0.105 255);
-  --blue-400: oklch(64% 0.14 257);
-  --blue-500: oklch(50% 0.15 259);
+  --blue-400: oklch(64% 0.140 257);
+  --blue-500: oklch(50% 0.150 259);
 
   /* Run states. Green is a true green, well clear of the brand's mint and cyan — pass must
      never be mistaken for "this does something". */
-  --green-300: oklch(88% 0.1 148);
+  --green-300: oklch(88% 0.100 148);
   --green-400: oklch(76% 0.145 147);
-  --green-500: oklch(55% 0.14 146);
+  --green-500: oklch(55% 0.140 146);
   --red-300: oklch(86% 0.075 22);
-  --red-400: oklch(70% 0.18 22);
+  --red-400: oklch(70% 0.180 22);
   --red-500: oklch(57% 0.205 22);
-  --amber-300: oklch(90% 0.09 68);
-  --amber-400: oklch(80% 0.15 68);
+  --amber-300: oklch(90% 0.090 68);
+  --amber-400: oklch(80% 0.150 68);
   --amber-500: oklch(66% 0.165 62);
 
   /* The mark's own gradient as a fill — brand surfaces only (wordmark, app icon, splash).
      Mint at the top-left running to cyan at the bottom-right, exactly as the hexagon does. */
-  --grad-aurora: linear-gradient(
-    135deg,
-    var(--mint-300) 0%,
-    var(--cyan-300) 52%,
-    var(--cyan-500) 100%
-  ); /* @kind color */
+  --grad-aurora: linear-gradient(135deg, var(--mint-300) 0%, var(--cyan-300) 52%, var(--cyan-500) 100%); /* @kind color */
 
   /* Editor syntax hues are theme-level, not raw — see theme-aurora*.css --syn-*. */
 }

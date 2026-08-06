@@ -86,9 +86,9 @@ help with it. The bar turns teal on `maestro 1.39.9 is ready`, then the window i
 
 **Continuous — `doctor.html`.** Everything else is a person's job. adb, the JDK, Xcode CLT and
 `gh` are installed by hand; a GitHub login is *always* a user action, never something a tool
-performs silently. So Conductor reports and steps back: a sheet that drops out from under the
-toolbar, square along its top edge because it is attached to the window, grouped by who owns the
-item — *Managed by Conductor* / *Android* / *Command line* / *Accounts*. Each row is a status
+performs silently. So Conductor reports and steps back: a centred glass panel over a
+dimmed, blurred window — 14px radius on all four corners, specular rim, window shadow — grouped
+by who owns the item — *Managed by Conductor* / *Android* / *Command line* / *Accounts*. Each row is a status
 glyph, the name, the exact CLI string in mono (`java -version → command not found`), and one word
 of state. Teal `Installed`, red `Not found`, amber `Signed out`.
 
@@ -106,11 +106,44 @@ band (*2 things need you*) and then puts everything in one table ordered by who 
 something is broken and a person actually has to read it, and ownership drops to one line under
 the table. A answers "what is installed"; B answers "is there anything I have to do".
 
+## Sending work to the team
+
+Conductor writes to exactly one folder in the repository: `conductor/`. Flows live there and in
+subfolders of it, so the sidebar is a source list with disclosure — folders first, then loose
+files, 14px of indent per level, folder rows collapsible.
+
+**Every edit is on disk the instant it happens.** There is no Save button any more; the toolbar
+subtitle reads `saved on this Mac` and the old download icon is gone. What needs a deliberate act
+is not saving — it is putting the work in front of the team, and that is the one control that
+replaced it.
+
+**The words are never "pull request", "branch", "commit", or "merge".** The person using Conductor
+is not a developer, and the model they hold is four steps: you change tests → you send them →
+someone looks → they go in. Underneath, sending shells out to the GitHub CLI and opens a pull
+request; the only place that shows is the `View on GitHub` link, which leads somewhere the word is
+written anyway.
+
+- **An accent dot means "changed, and the team has not seen it yet"** — the same dot the document
+  tabs use for the same idea. It rolls up to the folder row when the folder is collapsed, and the
+  sidebar footer carries the count.
+- **The toolbar control has three states in one slot.** Nothing to send: a quiet `Everything sent`
+  with a green check. Changes waiting: a filled accent `Send changes` with the count, because
+  after editing it is the thing the person came to do. Already sent: a neutral `Waiting for
+  review` pill — *not* amber. Waiting on a colleague is normal, not a warning.
+- **The sheet lists the changes in plain language** — `Changed` / `Added` / `Deleted` against the
+  file and its folder — plus one optional note field (`What changed?`). One button: **Send for
+  review**.
+- **One open review at a time.** Changes made after sending join the request that is already open
+  rather than starting a second one; the pill shows `Waiting for review +2`. Two open requests is
+  a concept this user should never have to hold.
+
+Card: `send-changes.html`. Code: `CReview.jsx` (toolbar control, sheet), tree in `CRegions.jsx`.
+
 ## Files
 
 `CRegions.jsx` (sidebar, working area, inspector) · `CShell.jsx` (state, window + toolbar,
 menus, dialog) · `CDoctor.jsx` (first-run installer, diagnostic sheet A, toolbar badge) ·
-`CDoctorB.jsx` (diagnostic sheet B) · fixtures `data.jsx`, `AppUnderTest.jsx`,
+`CDoctorB.jsx` (diagnostic sheet B) · `CReview.jsx` (send for review) · fixtures `data.jsx`, `AppUnderTest.jsx`,
 `useInspector.jsx`.
 
 `StudioC` takes `doctor` (open the sheet on mount) and `doctorVariant="a" | "b"`. Both sheets

@@ -1,4 +1,4 @@
-import type { ChangeEventHandler, CSSProperties } from 'react';
+import type { CSSProperties, ChangeEventHandler } from "react";
 
 /** Assistant input at the foot of the chat column. Focus ring is blue `--glow-ai`, not the violet accent — this is AI territory. */
 export interface ChatComposerProps {

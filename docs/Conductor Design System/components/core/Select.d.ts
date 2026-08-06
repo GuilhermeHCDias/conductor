@@ -1,4 +1,4 @@
-import type { ChangeEventHandler, CSSProperties } from 'react';
+import type { CSSProperties, ChangeEventHandler } from "react";
 
 export interface SelectOption {
   value: string;
@@ -12,7 +12,7 @@ export interface SelectProps {
   options?: Array<string | SelectOption>;
   onChange?: ChangeEventHandler<HTMLSelectElement>;
   icon?: string;
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
   disabled?: boolean;
   fullWidth?: boolean;
   style?: CSSProperties;

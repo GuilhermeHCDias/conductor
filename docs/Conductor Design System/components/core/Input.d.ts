@@ -1,4 +1,4 @@
-import type { ChangeEventHandler, CSSProperties, KeyboardEventHandler } from 'react';
+import type { CSSProperties, ChangeEventHandler, KeyboardEventHandler } from "react";
 
 /** Single-line text field. Inputs are sunken in Conductor — they recede, they never float. */
 export interface InputProps {
@@ -11,7 +11,7 @@ export interface InputProps {
   suffix?: string;
   /** Monospace value. Use for selectors, ids, file paths, env values. */
   mono?: boolean;
-  size?: 'sm' | 'md';
+  size?: "sm" | "md";
   invalid?: boolean;
   disabled?: boolean;
   fullWidth?: boolean;

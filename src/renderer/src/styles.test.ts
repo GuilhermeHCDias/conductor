@@ -189,9 +189,26 @@ describe('focus', () => {
     expect(declarations).not.toContain('--glow-accent');
   });
 
+  it.each([
+    ['the composer', 'views/Composer/Composer.module.css', '.input', '.surface'],
+    ['the sidebar search', 'views/FlowList/FlowList.module.css', '.searchInput', '.searchField'],
+  ])('draws one ring around %s, not two', (_label, file, control, field) => {
+    const css = cssOf(file);
+
+    expect(rule(css, `${control}:focus-visible`)).toContain('box-shadow: none');
+    expect(rule(css, `${field}:focus-within`)).toMatch(/box-shadow: var\(--glow-(accent|ai)\)/);
+  });
+
   it('never suppresses a focus ring without replacing it', () => {
     for (const { css } of MODULES) {
+      const wrapperGlows = /:focus-within[^{]*\{[^}]*box-shadow: var\(--glow-(accent|ai)\)/.test(
+        css,
+      );
+
       for (const declarations of css.match(/:focus-visible[^{]*\{[^}]*\}/g) ?? []) {
+        if (wrapperGlows && /box-shadow: none/.test(declarations)) {
+          continue;
+        }
         expect(declarations).toMatch(/box-shadow: var\(--glow-(accent|ai)\)/);
       }
     }
