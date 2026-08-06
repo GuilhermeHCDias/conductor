@@ -8,6 +8,7 @@ import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
 import { registerFlowIpc } from './ipc/flow';
 import { registerMaestroIpc } from './ipc/maestro';
+import { registerRepoIpc } from './ipc/repo';
 import { registerRunIpc } from './ipc/run';
 import { AdbBridge } from './maestro/AdbBridge';
 import { CliRunner } from './maestro/CliRunner';
@@ -19,9 +20,11 @@ import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
 import { FlowService } from './services/flow.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
+import { RepoService, type RepoWorkspace } from './services/repo.service';
+import { resolveGh } from './services/resolve-gh';
 import { RunService } from './services/run.service';
 import { SnapshotService } from './services/snapshot.service';
-import { createWindow, ICON_PATH } from './window';
+import { createWindow, ICON_PATH, presentWorkspace } from './window';
 
 /**
  * The composition root: it owns the service registry, registers the IPC
@@ -114,7 +117,7 @@ if (!app.requestSingleInstanceLock()) {
     });
   });
 
-  void app.whenReady().then(() => {
+  void app.whenReady().then(async () => {
     // Only `electron-builder` sets the packaged app's Dock icon; a dev run
     // launches the bare Electron binary, so the Dock would otherwise show
     // Electron's own icon instead of ours.
@@ -125,6 +128,52 @@ if (!app.requestSingleInstanceLock()) {
     // The one place any of this is constructed. Every dependency is passed in,
     // which is what lets each class above be tested with fakes.
     const home = homedir();
+    // The repo domain (§2.1): the connected list, the active repo and the
+    // resolver behind the connect screen. Constructed and loaded first,
+    // because the active repo decides the flow workspace root, the device
+    // service's app id and the window's opening size. `applyWorkspace` is a
+    // hoisted declaration on purpose — the flow service it re-points does
+    // not exist yet, and the callback only fires on a connect or switch,
+    // long after everything is wired.
+    const repoService = new RepoService({
+      reposDir: join(app.getPath('userData'), 'repos'),
+      stateFile: join(app.getPath('userData'), 'repos.json'),
+      flowsDir: CONFIG.FLOWS_DIR,
+      extensions: CONFIG.FLOW_EXTENSIONS,
+      resolveGh: () =>
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable }),
+      run,
+      emitChanged: (payload) => {
+        broadcast(PUSH_CHANNELS.repoChanged, payload);
+      },
+      emitResolveEvent: (payload) => {
+        broadcast(PUSH_CHANNELS.repoResolveEvent, payload);
+      },
+      onWorkspaceChanged: (workspace) => applyWorkspace(workspace),
+    });
+    await repoService.start();
+    const workspace = repoService.activeWorkspace();
+
+    // While no repo is active the single window is the small connect card;
+    // the first confirm grows that same window into the workspace. A switch
+    // later re-points the workspace without touching geometry.
+    let connectWindow = false;
+
+    async function applyWorkspace(next: RepoWorkspace | null): Promise<void> {
+      await flowService.setWorkspace(next);
+      if (connectWindow && next !== null) {
+        connectWindow = false;
+        for (const window of BrowserWindow.getAllWindows()) {
+          presentWorkspace(window);
+        }
+      }
+    }
+
+    const openWindow = (): BrowserWindow => {
+      connectWindow = repoService.activeWorkspace() === null;
+      return createWindow(connectWindow ? 'connect' : 'workspace');
+    };
+
     const adb = new AdbBridge({
       run,
       spawn: spawnStreaming,
@@ -171,7 +220,9 @@ if (!app.requestSingleInstanceLock()) {
     const gateway = new LocalGateway(adb, scrcpy, mcp, capture, cli);
     const device = new DeviceService({
       gateway,
-      appId: CONFIG.APP_ID,
+      // The active repo's id, live — a switch changes what this answers
+      // without reconstructing the service (§12.6).
+      appId: () => repoService.activeWorkspace()?.appId ?? null,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.deviceChanged, payload);
       },
@@ -192,33 +243,34 @@ if (!app.requestSingleInstanceLock()) {
       },
       runsDir: join(app.getPath('userData'), 'runs'),
     });
-    // The local flow workspace (§7): userData/repo is where the publish spec
-    // will later put the clone, so user files never move when it arrives. The
-    // root is computed here and nowhere else (criterion 1).
+    // The flow workspace is the active repo's `conductor/` (§2.1, §7) — or
+    // nothing at all before the first connect. Confirming or switching a
+    // repo re-points it through `applyWorkspace`, never a restart.
     const flowService = new FlowService({
-      root: join(app.getPath('userData'), 'repo', CONFIG.FLOWS_DIR),
-      appId: CONFIG.APP_ID,
+      root: workspace?.root ?? null,
+      appId: workspace?.appId ?? null,
       extensions: CONFIG.FLOW_EXTENSIONS,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.flowChanged, payload);
       },
     });
-    services.push(device, mcp, runService, flowService);
+    services.push(device, mcp, runService, flowService, repoService);
 
     registerAppIpc();
     registerDeviceIpc({ device });
     registerMaestroIpc({ snapshot });
     registerRunIpc({ run: runService });
     registerFlowIpc({ flow: flowService });
+    registerRepoIpc({ repo: repoService });
 
-    watchRenderer(createWindow(), device);
+    watchRenderer(openWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.
     device.start();
     void flowService.start();
 
     app.on('activate', () => {
       if (BrowserWindow.getAllWindows().length === 0) {
-        watchRenderer(createWindow(), device);
+        watchRenderer(openWindow(), device);
       }
     });
   });

@@ -601,6 +601,9 @@ export const ERROR_CODES = {
   adbNotFound: 'device/adb-not-found',
   adbFailed: 'device/adb-failed',
   deviceNotFound: 'device/not-found',
+  /** §12.6 as amended — the app id comes from the active repo, and before
+   * one is connected there is no app to ask about. */
+  deviceAppUnknown: 'device/app-unknown',
   /**
    * The `maestro mcp` session, which is where the view hierarchy comes from.
    * These said `viewer/` while that child existed to open the Maestro Viewer;

@@ -127,7 +127,10 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
   return gateway;
 }
 
-function makeService(gateway: Gateway): {
+function makeService(
+  gateway: Gateway,
+  appId: () => string | null = () => APP_ID,
+): {
   service: DeviceService;
   emitted: Array<Result<DeviceSnapshot>>;
   mirrored: Array<Result<MirrorEvent>>;
@@ -136,7 +139,7 @@ function makeService(gateway: Gateway): {
   const mirrored: Array<Result<MirrorEvent>> = [];
   const service = new DeviceService({
     gateway,
-    appId: APP_ID,
+    appId,
     emit: (payload) => emitted.push(payload),
     emitMirror: (payload) => mirrored.push(payload),
   });
@@ -260,6 +263,20 @@ describe('the app identity', () => {
       ok: false,
       error: { code: 'device/adb-not-found' },
     });
+  });
+
+  /** §12.6 as amended — the id comes from the active repo, and before one is
+   * connected there is no app to ask about. A stable refusal, never a crash
+   * and never a guessed package name. */
+  it('refuses while no repo provides an app id', async () => {
+    const gateway = fakeGateway();
+    const { service } = makeService(gateway, () => null);
+
+    await expect(service.appInfo(PHONE.id)).resolves.toMatchObject({
+      ok: false,
+      error: { code: 'device/app-unknown' },
+    });
+    expect(gateway.identityCalls).toEqual([]);
   });
 });
 

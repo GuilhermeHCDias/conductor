@@ -202,7 +202,7 @@ export class FlowService {
   }
 
   /** Criteria 16–19 — the draft commits: the file exists on disk immediately,
-   * carrying the `CONFIG.APP_ID` header, and nothing else. */
+   * carrying the active repo's appId header, and nothing else. */
   async createFlow(folder: string, name: string): Promise<Result<{ path: string }>> {
     if (this.root === null) {
       return noRepo();

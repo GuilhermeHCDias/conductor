@@ -6,6 +6,7 @@ const mock = vi.hoisted(() => ({
   windowOpenHandlers: [] as unknown[],
   permissionHandlers: [] as unknown[],
   listeners: [] as string[],
+  applied: [] as string[],
 }));
 
 vi.mock('electron', () => ({
@@ -27,6 +28,28 @@ vi.mock('electron', () => ({
     loadURL(): Promise<void> {
       return Promise.resolve();
     }
+
+    isDestroyed(): boolean {
+      return false;
+    }
+    setMinimumSize(width: number, height: number): void {
+      mock.applied.push(`min:${width}x${height}`);
+    }
+    setResizable(resizable: boolean): void {
+      mock.applied.push(`resizable:${resizable}`);
+    }
+    setMaximizable(maximizable: boolean): void {
+      mock.applied.push(`maximizable:${maximizable}`);
+    }
+    setFullScreenable(fullScreenable: boolean): void {
+      mock.applied.push(`fullscreenable:${fullScreenable}`);
+    }
+    setSize(width: number, height: number): void {
+      mock.applied.push(`size:${width}x${height}`);
+    }
+    center(): void {
+      mock.applied.push('center');
+    }
   },
 }));
 
@@ -37,7 +60,7 @@ vi.mock('@electron-toolkit/utils', () => ({
 
 process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
-const { createWindow, isRendererUrl, RENDERER_URL } = await import('./window');
+const { createWindow, isRendererUrl, presentWorkspace, RENDERER_URL } = await import('./window');
 
 /**
  * `isRendererUrl` is the allowlist the IPC sender guard checks against, so a
@@ -87,6 +110,7 @@ describe('createWindow', () => {
     mock.windowOpenHandlers.length = 0;
     mock.permissionHandlers.length = 0;
     mock.listeners.length = 0;
+    mock.applied.length = 0;
   });
 
   const optionsOf = (): BrowserWindowConstructorOptions => {
@@ -140,5 +164,48 @@ describe('createWindow', () => {
     expect(mock.windowOpenHandlers).toHaveLength(1);
     expect(mock.permissionHandlers).toHaveLength(1);
     expect(mock.listeners).toContain('will-navigate');
+  });
+
+  /** First run (repo-connect spec): the single window opens at the small
+   * fixed connect size — 560 wide per the design — not the workspace size. */
+  it('opens small and fixed for the connect view', () => {
+    createWindow('connect');
+
+    expect(mock.constructed[0]).toMatchObject({
+      width: 560,
+      height: 520,
+      resizable: false,
+      maximizable: false,
+      fullscreenable: false,
+    });
+  });
+
+  /** A chrome change must not quietly relax the sandbox — in either view. */
+  it('keeps the §9.3 flags in the connect window too', () => {
+    createWindow('connect');
+
+    expect(mock.constructed[0]?.webPreferences).toMatchObject({
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    });
+  });
+
+  /** Confirming the first repo grows the same window into the workspace —
+   * one BrowserWindow, resized, never a second one. */
+  it('presentWorkspace grows the window to the workspace bounds', () => {
+    const window = createWindow('connect');
+
+    presentWorkspace(window);
+
+    expect(mock.applied).toEqual([
+      'min:960x640',
+      'resizable:true',
+      'maximizable:true',
+      'fullscreenable:true',
+      'size:1280x820',
+      'center',
+    ]);
   });
 });
