@@ -6,9 +6,6 @@ import {
   FLOWS,
   type FlowDocument,
   OPEN_DOCUMENT,
-  RUN_STEPS,
-  RUNNING,
-  type RunStep,
   THREAD,
 } from '../fixtures/flows';
 import { layoutForWidth } from '../lib/breakpoints';
@@ -67,9 +64,6 @@ export type UiData = {
   readonly document: FlowDocument;
   readonly lowerPanel: LowerPanel;
   readonly query: string;
-  /** Fixture-seeded: this spec renders run state but never produces it. */
-  readonly running: boolean;
-  readonly steps: readonly RunStep[];
   /** 1-based line numbers the assistant wrote, and ones Maestro reported failing. */
   readonly aiLines: readonly number[];
   readonly errorLines: readonly number[];
@@ -103,8 +97,6 @@ function createUiData(): UiData {
     document: OPEN_DOCUMENT,
     lowerPanel: 'assistant',
     query: '',
-    running: RUNNING,
-    steps: RUN_STEPS,
     aiLines: AI_LINES,
     errorLines: ERROR_LINES,
     thread: THREAD,

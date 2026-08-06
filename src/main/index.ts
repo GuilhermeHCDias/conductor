@@ -1,11 +1,15 @@
 import { homedir } from 'node:os';
+import { join } from 'node:path';
 import { optimizer } from '@electron-toolkit/utils';
 import { CONFIG } from '@shared/config';
 import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
 import { app, BrowserWindow } from 'electron';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
+import { registerMaestroIpc } from './ipc/maestro';
+import { registerRunIpc } from './ipc/run';
 import { AdbBridge } from './maestro/AdbBridge';
+import { CliRunner } from './maestro/CliRunner';
 import { LocalGateway } from './maestro/LocalGateway';
 import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
 import { ScreenCapture } from './maestro/ScreenCapture';
@@ -13,6 +17,8 @@ import { isExecutable } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
+import { RunService } from './services/run.service';
+import { SnapshotService } from './services/snapshot.service';
 import { createWindow, ICON_PATH } from './window';
 
 /**
@@ -152,8 +158,17 @@ if (!app.requestSingleInstanceLock()) {
     // `run`, because the latter decodes stdout as UTF-8 and a PNG does not
     // survive it.
     const capture = new ScreenCapture({ adb, run: runBinary });
+    // The raw-CLI door (§9.2) — the only maestro-spawner besides the mcp child.
+    const cli = new CliRunner({
+      spawn: spawnStreaming,
+      isExecutable,
+      env: process.env,
+      home,
+      configuredPath: CONFIG.MAESTRO_PATH,
+    });
+    const gateway = new LocalGateway(adb, scrcpy, mcp, capture, cli);
     const device = new DeviceService({
-      gateway: new LocalGateway(adb, scrcpy, mcp, capture),
+      gateway,
       appId: CONFIG.APP_ID,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.deviceChanged, payload);
@@ -162,10 +177,25 @@ if (!app.requestSingleInstanceLock()) {
         broadcast(PUSH_CHANNELS.mirrorEvent, payload);
       },
     });
-    services.push(device, mcp);
+    // Holds no process and no watcher — the MCP child behind `hierarchy()`
+    // stays `MaestroMcpService`'s — so it is not in the disposal registry.
+    const snapshot = new SnapshotService({ gateway });
+    // Owns the live `maestro test` child and §4.3.2's exclusion: it suspends
+    // the snapshot path before the CLI spawns and resumes it on settle.
+    const runService = new RunService({
+      gateway,
+      snapshots: snapshot,
+      emit: (payload) => {
+        broadcast(PUSH_CHANNELS.runEvent, payload);
+      },
+      runsDir: join(app.getPath('userData'), 'runs'),
+    });
+    services.push(device, mcp, runService);
 
     registerAppIpc();
     registerDeviceIpc({ device });
+    registerMaestroIpc({ snapshot });
+    registerRunIpc({ run: runService });
 
     watchRenderer(createWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.

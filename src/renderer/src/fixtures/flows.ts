@@ -33,15 +33,6 @@ export type FlowDocument = {
   readonly dirty?: boolean;
 };
 
-export type RunStatus = 'pass' | 'fail' | 'running';
-
-export type RunStep = {
-  readonly id: string;
-  readonly label: string;
-  readonly status: RunStatus;
-  readonly duration?: string;
-};
-
 export type ChatTurn = {
   readonly id: string;
   readonly role: 'assistant' | 'user';
@@ -121,10 +112,6 @@ export const OPEN_DOCUMENT: FlowDocument = { id: 'f-teste', label: 'teste.yaml',
 /** Lines the assistant wrote, and lines Maestro reported as failing. */
 export const AI_LINES: readonly number[] = [];
 export const ERROR_LINES: readonly number[] = [];
-
-/** No run has happened, so the run report shows its empty state. */
-export const RUNNING = false;
-export const RUN_STEPS: readonly RunStep[] = [];
 
 export const THREAD: readonly ChatTurn[] = [
   {

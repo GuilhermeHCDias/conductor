@@ -54,3 +54,62 @@ export type TreeNode = {
   readonly checked: boolean | null;
   readonly children: readonly TreeNode[];
 };
+
+/**
+ * How a run ended. The outcome derives from the process exit — the exit code,
+ * a kill we requested, or a child that never started — and never from parsing
+ * alone (run criterion 7): parsed step events are best-effort decoration, and
+ * a format shift in Maestro's output must degrade the decoration, not the
+ * verdict.
+ */
+export type RunOutcome = 'passed' | 'failed' | 'canceled' | 'error';
+
+/**
+ * One thing a live run reported, pushed on `run:event`. Every event carries
+ * the `runId` it belongs to, so a late event from a canceled run cannot
+ * decorate the run that replaced it (run criterion 6).
+ *
+ * The step events carry the label exactly as Maestro printed it — its console
+ * line is the one honest name a step has before a real YAML editor exists.
+ * `log` lines are batched per output chunk rather than pushed one at a time:
+ * the volume is unbounded and each push crosses a process boundary.
+ */
+export type RunEvent =
+  | { readonly type: 'started'; readonly runId: string }
+  | { readonly type: 'step-started'; readonly runId: string; readonly label: string }
+  | { readonly type: 'step-passed'; readonly runId: string; readonly label: string }
+  | { readonly type: 'step-failed'; readonly runId: string; readonly label: string }
+  | { readonly type: 'log'; readonly runId: string; readonly lines: readonly string[] }
+  | {
+      readonly type: 'finished';
+      readonly runId: string;
+      readonly outcome: RunOutcome;
+      /** What there is to say beyond the outcome — a spawn failure's cause, an
+       * exit code worth naming. `null` when the outcome says it all. */
+      readonly message: string | null;
+    };
+
+/**
+ * The frozen snapshot as the renderer consumes it (§5.5): the tree the
+ * hit-test answers from, and the calibration that maps between its units and
+ * the screenshot's pixels. Deliberately **no screenshot bytes** — the renderer
+ * renders the live mirror, and the screenshot exists in main to calibrate.
+ *
+ * The mapping chain the numbers serve, end to end: canvas CSS px → stream px
+ * (the mirror's fit scale) → screenshot px (stream size against
+ * `screenshotWidth`/`screenshotHeight`) → hierarchy units (÷ `scale`).
+ */
+export type SnapshotView = {
+  /** Names this capture. Synthesis quotes it back, and main refuses a stale one
+   * — a selector must never be written from a tree the user is not seeing. */
+  readonly snapshotId: string;
+  readonly tree: TreeNode;
+  /** The screenshot's own pixel size — the calibrated bridge between the
+   * mirror stream's coordinates and the tree's. */
+  readonly screenshotWidth: number;
+  readonly screenshotHeight: number;
+  /** Screenshot pixels per hierarchy unit: `screenshotWidth / boundsWidth` of
+   * the widest node that carries bounds (§5.2 — never assumed, never the
+   * root's, which the reference hardware reports without bounds). */
+  readonly scale: number;
+};

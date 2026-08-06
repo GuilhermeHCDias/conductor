@@ -1,0 +1,141 @@
+/* Ported from the design system's surface/ContextMenu: a glass sheet at the
+   cursor, hairline-edged, springing in. The row highlight is AppKit's — a
+   solid accent fill with the text going to accent-on, never a tint. */
+
+.backdrop {
+  position: fixed;
+  inset: 0;
+  z-index: 70;
+  border: none;
+  background: transparent;
+  padding: 0;
+  cursor: default;
+}
+
+.menu {
+  position: fixed;
+  z-index: 80;
+  width: 232px;
+  /* Taller than the window, the menu scrolls itself — the clamp pins it to the
+     top margin, and this is what keeps the far commands reachable there. */
+  max-height: calc(100vh - 16px);
+  overflow-y: auto;
+  padding: 4px;
+  border-radius: var(--radius-md);
+  background: var(--glass-3);
+  backdrop-filter: blur(var(--blur-3)) saturate(var(--saturate-vibrant));
+  -webkit-backdrop-filter: blur(var(--blur-3)) saturate(var(--saturate-vibrant));
+  border: var(--border-hair) solid var(--edge-2);
+  box-shadow: var(--shadow-inset-top), var(--shadow-3);
+  animation: cd-menu-in var(--dur-base) var(--ease-spring);
+  transform-origin: top left;
+}
+
+.title {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 5px 8px 7px;
+  border-bottom: var(--border-hair) solid var(--edge-1);
+  margin-bottom: 4px;
+}
+
+.titleGlyph {
+  color: var(--accent);
+  flex: none;
+}
+
+.titleText {
+  font: var(--type-code-sm);
+  color: var(--text-secondary);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* Criterion 27 — §5.4's mandatory fragility warning, in the system's amber. */
+.warning {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 4px 8px 6px;
+  margin-bottom: 4px;
+  border-bottom: var(--border-hair) solid var(--edge-1);
+  font: var(--type-label);
+  color: var(--state-running);
+}
+
+.warningGlyph {
+  flex: none;
+}
+
+.label {
+  padding: 6px 10px 3px;
+  font: var(--type-label);
+  letter-spacing: var(--ls-caps);
+  text-transform: uppercase;
+  color: var(--text-disabled);
+}
+
+.separator {
+  height: 1px;
+  margin: 4px 6px;
+  background: var(--edge-1);
+}
+
+.item {
+  display: flex;
+  align-items: center;
+  gap: var(--space-4);
+  width: 100%;
+  height: var(--row-h);
+  padding: 0 8px;
+  border-radius: var(--radius-xs);
+  border: none;
+  background: transparent;
+  color: var(--text-primary);
+  font: var(--type-body);
+  text-align: left;
+  cursor: pointer;
+  transition: background-color var(--dur-instant) var(--ease-out);
+  /* The glyph reads this, so the highlighted row recolours it with no
+     descendant rule of its own. */
+  --menu-glyph: var(--text-tertiary);
+}
+
+.item:hover {
+  background: var(--accent);
+  color: var(--accent-on);
+  --menu-glyph: var(--accent-on);
+}
+
+/* Keyboard focus keeps the AppKit fill and adds the shell's focus glow — the
+   ring is replaced, never merely suppressed. */
+.item:focus-visible {
+  background: var(--accent);
+  color: var(--accent-on);
+  --menu-glyph: var(--accent-on);
+  outline: none;
+  box-shadow: var(--glow-accent);
+}
+
+.glyph {
+  color: var(--menu-glyph);
+  flex: none;
+}
+
+.glyphGap {
+  width: 14px;
+  flex: none;
+}
+
+.itemLabel {
+  flex: 1;
+  white-space: nowrap;
+}
+
+.mono {
+  flex: 1;
+  white-space: nowrap;
+  font: var(--type-code-sm);
+}

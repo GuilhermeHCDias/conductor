@@ -213,6 +213,53 @@ describe('spawnStreaming', () => {
     expect(stdout()).toBe('firstsecond');
   });
 
+  /**
+   * The run spec leans on this: the terminal `run:event` is emitted on exit,
+   * and any log still in the pipe when the process dies would arrive *after*
+   * the run was declared over. Here the writer that outlives the child is a
+   * grandchild holding the same pipe — exit must be reported only once the
+   * stream has actually drained, tail included.
+   */
+  it.skipIf(process.platform === 'win32')(
+    'reports exit only after everything written to its pipe has been delivered',
+    async () => {
+      const child = spawnStreaming('/bin/sh', ['-c', 'echo first; { sleep 0.2; echo tail; } &']);
+      const { stdout, exit } = collect(child);
+
+      await exit;
+
+      expect(stdout()).toBe('first\ntail\n');
+    },
+  );
+
+  /**
+   * Run criterion 9 — "kill the maestro child (process tree)". The launcher
+   * `exec`s into the JVM, but anything the JVM spawns must go with it: the
+   * grandchild here plays the part, and it must be dead — not reparented to
+   * launchd — once the kill lands.
+   */
+  it.skipIf(process.platform === 'win32')(
+    'kills the whole process tree when asked to',
+    async () => {
+      const child = spawnStreaming('/bin/sh', ['-c', 'sleep 30 & echo $!; wait'], {
+        killTree: true,
+      });
+      const { stdout, exit } = collect(child);
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      const grandchild = Number.parseInt(stdout(), 10);
+      expect(Number.isInteger(grandchild)).toBe(true);
+
+      child.kill();
+      await exit;
+
+      // Signal delivery is asynchronous; give the group a moment to die.
+      await new Promise((resolve) => setTimeout(resolve, 200));
+      expect(() => {
+        process.kill(grandchild, 0);
+      }).toThrow();
+    },
+  );
+
   // The whole point: a request goes down stdin, an answer comes back up stdout,
   // and the child stays alive for the next one.
   it('writes to the child’s stdin and reads what it answers', async () => {

@@ -58,11 +58,16 @@ describe('the bridge', () => {
       'configGet',
       'deviceAppInfo',
       'deviceList',
+      'maestroSnapshot',
+      'maestroSynthesizeSelector',
       'mirrorInput',
       'mirrorStart',
       'mirrorStop',
       'onDeviceChanged',
       'onMirrorEvent',
+      'onRunEvent',
+      'runCancel',
+      'runStart',
     ]);
   });
 
@@ -87,12 +92,20 @@ describe('the bridge', () => {
     await api.mirrorStop('mirror-1');
     await api.deviceAppInfo('R9QYC01EMXL');
     await api.mirrorInput('mirror-1', tap);
+    await api.maestroSnapshot('R9QYC01EMXL');
+    await api.maestroSynthesizeSelector('snapshot-1', [1, 2, 0]);
+    await api.runStart('R9QYC01EMXL', 'appId: x\n---\n- launchApp\n');
+    await api.runCancel('run-1');
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
       { channel: CHANNELS.mirrorStop, args: ['mirror-1'] },
       { channel: CHANNELS.deviceAppInfo, args: ['R9QYC01EMXL'] },
       { channel: CHANNELS.mirrorInput, args: ['mirror-1', tap] },
+      { channel: CHANNELS.maestroSnapshot, args: ['R9QYC01EMXL'] },
+      { channel: CHANNELS.maestroSynthesizeSelector, args: ['snapshot-1', [1, 2, 0]] },
+      { channel: CHANNELS.runStart, args: ['R9QYC01EMXL', 'appId: x\n---\n- launchApp\n'] },
+      { channel: CHANNELS.runCancel, args: ['run-1'] },
     ]);
   });
 
@@ -115,13 +128,14 @@ describe('a subscription', () => {
   it.each([
     ['onDeviceChanged', PUSH_CHANNELS.deviceChanged],
     ['onMirrorEvent', PUSH_CHANNELS.mirrorEvent],
+    ['onRunEvent', PUSH_CHANNELS.runEvent],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
     expect(listeners.map((entry) => entry.channel)).toEqual([channel]);
   });
 
-  it.each(['onDeviceChanged', 'onMirrorEvent'] as const)(
+  it.each(['onDeviceChanged', 'onMirrorEvent', 'onRunEvent'] as const)(
     '%s returns the unsubscribe that removes exactly its own listener',
     (name) => {
       const unsubscribe = api[name](() => {});

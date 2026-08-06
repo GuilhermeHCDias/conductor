@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { ERROR_CODES, type ErrorCode, type MirrorInput } from '@shared/ipc';
 import type { SpawnOptions, StreamingProcess } from '../process/run';
 import type { MirrorHandlers, MirrorSession } from './MaestroGateway';
-import { controlMessages, ScrcpyControlError } from './scrcpy-control-protocol';
+import { controlSteps, ScrcpyControlError } from './scrcpy-control-protocol';
 import { ScrcpyParser, ScrcpyProtocolError } from './scrcpy-protocol';
 
 /**
@@ -414,31 +414,36 @@ class Session {
    * Criteria 5 and 16. Encodes with the pure protocol module and writes the
    * result; every refusal carries the control code, because none of them mean
    * the picture stopped.
+   *
+   * A timed gesture holds between its messages, and the hold spans real time —
+   * so the session is re-checked after every pause: the release half of a long
+   * press must not be written into a socket that died mid-hold, nor swallowed
+   * as if it had landed.
    */
-  private send(input: MirrorInput): Promise<void> {
-    const socket = this.control;
-    if (this.over || socket === null) {
-      return Promise.reject(
-        new ScrcpyControlError(
-          this.over
-            ? 'The mirror session is over, so there is nothing to send input at.'
-            : 'This mirror session has no control channel.',
-        ),
-      );
-    }
-
+  private async send(input: MirrorInput): Promise<void> {
     try {
-      for (const message of controlMessages(input)) {
-        socket.write(message);
+      // Encoding failures (a touch outside the stream) surface before any
+      // byte goes out, whole-gesture or nothing.
+      const steps = controlSteps(input);
+      for (const step of steps) {
+        const socket = this.control;
+        if (this.over || socket === null) {
+          throw new ScrcpyControlError(
+            this.over
+              ? 'The mirror session is over, so there is nothing to send input at.'
+              : 'This mirror session has no control channel.',
+          );
+        }
+        socket.write(step.bytes);
+        if (step.pauseAfterMs > 0) {
+          await pause(step.pauseAfterMs);
+        }
       }
     } catch (error) {
-      return Promise.reject(
-        error instanceof ScrcpyControlError
-          ? error
-          : new ScrcpyControlError(`The device would not take the input. ${messageOf(error)}`),
-      );
+      throw error instanceof ScrcpyControlError
+        ? error
+        : new ScrcpyControlError(`The device would not take the input. ${messageOf(error)}`);
     }
-    return Promise.resolve();
   }
 
   private receive(chunk: Uint8Array): void {
@@ -626,6 +631,14 @@ function randomScid(): number {
 
 function messageOf(error: unknown): string {
   return error instanceof Error ? error.message : String(error);
+}
+
+/** A gesture's hold. Not unref'd: it is at most `LONG_PRESS_HOLD_MS` long, and
+ * an event loop that exits mid-press leaves a finger down on the device. */
+function pause(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
 }
 
 /**

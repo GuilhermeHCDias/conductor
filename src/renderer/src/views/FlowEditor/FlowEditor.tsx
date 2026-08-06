@@ -1,8 +1,10 @@
-import type { JSX } from 'react';
+import { type JSX, useEffect, useRef } from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
-import { ASSISTANT_STATUS_LINE, FLOW_YAML, RUN_STATUS_LINE } from '../../fixtures/flows';
+import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
 import { tokenizeYamlLine } from '../../lib/yaml-tokens';
+import { selectDirty, selectRevision, selectYaml, useFlowStore } from '../../stores/flow.store';
+import { selectRunning, useRunStore } from '../../stores/run.store';
 import { useUiStore } from '../../stores/ui.store';
 import { AIPanel } from '../AIPanel/AIPanel';
 import { Composer } from '../Composer/Composer';
@@ -22,16 +24,19 @@ function DocumentBar(): JSX.Element {
   // Not `document`: shadowing the DOM global inside a component is a trap for
   // whoever next reaches for `document.querySelector` in here.
   const flowDocument = useUiStore((state) => state.document);
+  // Inspect criterion 39: the mark follows the flow's own text — dirty is what
+  // the append made true, not what a fixture said.
+  const dirty = useFlowStore(selectDirty);
 
   return (
     <div
       className={styles.documentBar}
-      data-dirty={flowDocument.dirty === true ? 'true' : undefined}
+      data-dirty={dirty ? 'true' : undefined}
       data-testid="document-bar"
     >
       <Icon className={styles.documentGlyph} name="file-code" size={12} />
       <span className={styles.documentName}>{flowDocument.label}</span>
-      {flowDocument.dirty === true ? <span aria-hidden="true" className={styles.dirty} /> : null}
+      {dirty ? <span aria-hidden="true" className={styles.dirty} /> : null}
       <span className={styles.spacer} />
       <span className={styles.language}>YAML</span>
     </div>
@@ -81,7 +86,9 @@ function YamlLine({ text, number, gutterWidth, wash, caret }: YamlLineProps): JS
 
 /**
  * The YAML body (criteria 26–28). Read-only and syntax-coloured: CodeMirror
- * belongs to the FlowEditor spec, not to the shell.
+ * belongs to the FlowEditor spec, not to the shell. The text is the flow
+ * store's — the fixture constant is no longer read here (inspect criterion
+ * 36), so a step the command menu appends is on screen the moment it lands.
  *
  * One trailing empty line is rendered past the end of the flow, which is where
  * the next command would go.
@@ -89,8 +96,19 @@ function YamlLine({ text, number, gutterWidth, wash, caret }: YamlLineProps): JS
 function YamlBody(): JSX.Element {
   const aiLines = useUiStore((state) => state.aiLines);
   const errorLines = useUiStore((state) => state.errorLines);
+  const yaml = useFlowStore(selectYaml);
+  const revision = useFlowStore(selectRevision);
+  const end = useRef<HTMLDivElement>(null);
 
-  const lines = FLOW_YAML.replace(/\n$/, '').split('\n');
+  // Inspect criterion 39 — reveal what was just written. Guarded on the
+  // revision, not the text: only an append scrolls, never a mount.
+  useEffect(() => {
+    if (revision > 0) {
+      end.current?.scrollIntoView?.({ block: 'nearest' });
+    }
+  }, [revision]);
+
+  const lines = yaml.replace(/\n$/, '').split('\n');
   const total = lines.length + 1;
   const activeLine = lines.length;
   const gutterWidth = `${String(total).length}ch`;
@@ -120,6 +138,7 @@ function YamlBody(): JSX.Element {
           />
         );
       })}
+      <div aria-hidden="true" ref={end} />
     </div>
   );
 }
@@ -132,7 +151,7 @@ function YamlBody(): JSX.Element {
 export function FlowEditor(): JSX.Element {
   const lowerPanel = useUiStore((state) => state.lowerPanel);
   const setLowerPanel = useUiStore((state) => state.setLowerPanel);
-  const running = useUiStore((state) => state.running);
+  const running = useRunStore(selectRunning);
 
   return (
     <section aria-label="Editor" className={styles.column}>

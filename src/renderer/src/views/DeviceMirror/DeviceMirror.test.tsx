@@ -1,9 +1,20 @@
-import type { AppIdentity, ConductorApi, Device, DeviceSnapshot, Result } from '@shared/ipc';
-import { act, render, screen, waitFor } from '@testing-library/react';
+import type {
+  AppIdentity,
+  ConductorApi,
+  Device,
+  DeviceSnapshot,
+  Result,
+  SynthesizedSelector,
+} from '@shared/ipc';
+import type { SnapshotView, TreeNode } from '@shared/types';
+import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { FLOW_YAML } from '../../fixtures/flows';
 import { DEVICE as PHONE } from '../../lib/mirror-fit';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
+import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
+import { resetInspectStore, useInspectStore } from '../../stores/inspect.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
 import { resizeElement } from '../../test-setup';
 import { DeviceMirror } from './DeviceMirror';
@@ -12,6 +23,8 @@ import { DeviceMirror } from './DeviceMirror';
 
 const ui = () => useUiStore.getState();
 const device = () => useDeviceStore.getState();
+const inspect = () => useInspectStore.getState();
+const flow = () => useFlowStore.getState();
 
 const ANDROID: Device = { id: 'R9QYC01EMXL', model: 'SM_G991B', state: 'device' };
 const SECOND: Device = { id: 'emulator-5554', model: 'sdk_gphone64', state: 'device' };
@@ -41,9 +54,59 @@ let conductor: {
   mirrorStart: ReturnType<typeof vi.fn>;
   mirrorStop: ReturnType<typeof vi.fn>;
   mirrorInput: ReturnType<typeof vi.fn>;
+  maestroSnapshot: ReturnType<typeof vi.fn>;
+  maestroSynthesizeSelector: ReturnType<typeof vi.fn>;
   onDeviceChanged: ReturnType<typeof vi.fn>;
   onMirrorEvent: ReturnType<typeof vi.fn>;
 };
+
+/** A frame that stops short of the screen's bottom — the strip below y=1400
+ * belongs to no element — with one tappable button in its top-left quadrant. */
+const emptyNode: Omit<TreeNode, 'children'> = {
+  bounds: null,
+  className: null,
+  text: null,
+  resourceId: null,
+  contentDescription: null,
+  hintText: null,
+  scrollable: null,
+  clickable: null,
+  enabled: null,
+  focused: null,
+  selected: null,
+  checked: null,
+};
+
+const TREE: TreeNode = {
+  ...emptyNode,
+  children: [
+    {
+      ...emptyNode,
+      bounds: { x1: 0, y1: 0, x2: 720, y2: 1400 },
+      className: 'android.widget.FrameLayout',
+      children: [
+        {
+          ...emptyNode,
+          bounds: { x1: 0, y1: 0, x2: 360, y2: 800 },
+          className: 'android.widget.Button',
+          text: 'Entrar',
+          clickable: true,
+          children: [],
+        },
+      ],
+    },
+  ],
+};
+
+const VIEW: SnapshotView = {
+  snapshotId: 'snapshot-1',
+  tree: TREE,
+  screenshotWidth: 720,
+  screenshotHeight: 1600,
+  scale: 1,
+};
+
+const SELECTOR: SynthesizedSelector = { level: 'text', selector: 'text: "Entrar"', fragile: false };
 
 /** The stream the Galaxy A07 actually opened at `max_size=1024`. */
 const STREAM = {
@@ -57,6 +120,8 @@ const STREAM = {
 beforeEach(() => {
   resetUiStore();
   resetDeviceStore();
+  resetInspectStore();
+  resetFlowStore();
   conductor = {
     deviceList: vi.fn(() =>
       Promise.resolve<Result<DeviceSnapshot>>({
@@ -68,6 +133,8 @@ beforeEach(() => {
     mirrorStart: vi.fn(() => Promise.resolve({ ok: true, data: STREAM })),
     mirrorStop: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
     mirrorInput: vi.fn(() => Promise.resolve({ ok: true, data: { sessionId: 'mirror-1' } })),
+    maestroSnapshot: vi.fn(() => Promise.resolve({ ok: true, data: VIEW })),
+    maestroSynthesizeSelector: vi.fn(() => Promise.resolve({ ok: true, data: SELECTOR })),
     onDeviceChanged: vi.fn(() => () => {}),
     onMirrorEvent: vi.fn(() => () => {}),
   };
@@ -198,6 +265,18 @@ describe('the header', () => {
     sizeHeader(340);
 
     expect(screen.getByRole('button', { name: 'Inspect' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  /** The header tools read at a glance: their glyphs take the md drawing (16px)
+   * in the sm box, instead of the sm default (14px). */
+  it('draws its tool glyphs at 16px', async () => {
+    await mount();
+    sizeHeader(340);
+
+    for (const name of ['Refresh', 'Inspect']) {
+      const glyph = screen.getByRole('button', { name }).querySelector('svg');
+      expect(glyph).toHaveAttribute('width', '16');
+    }
   });
 
   it('re-reads the device state when refresh is pressed', async () => {
@@ -638,29 +717,222 @@ describe('driving the device', () => {
     });
   };
 
-  /** Criterion 6 — a click is a touch at the device pixel under it. */
-  it('sends a tap at the device pixel the click landed on', async () => {
+  /**
+   * The hand on the glass, one event at a time. The press reaches the device
+   * before the release exists — the drag is streamed while it happens, which
+   * is what lets the screen follow the finger — so there is no whole gesture
+   * to dispatch: each phase is its own event. The travel and the release are
+   * dispatched on the canvas and bubble to the window, where the view listens:
+   * a real drag routinely travels and ends past the bezel.
+   */
+  function press(
+    canvas: HTMLCanvasElement,
+    point: { clientX: number; clientY: number },
+    options: { readonly button?: number; readonly ctrlKey?: boolean } = {},
+  ): void {
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointerdown', { bubbles: true, ...options, ...point }));
+    });
+  }
+
+  function travel(canvas: HTMLCanvasElement, point: { clientX: number; clientY: number }): void {
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, ...point }));
+    });
+  }
+
+  function release(canvas: HTMLCanvasElement, point: { clientX: number; clientY: number }): void {
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, ...point }));
+    });
+  }
+
+  /** The inputs that actually crossed the seam, in the order they crossed. */
+  const sent = (): unknown[] => conductor.mirrorInput.mock.calls.map(([, input]) => input);
+
+  /** A phase, as the wire sees it. */
+  const touch = (
+    action: 'down' | 'move' | 'up',
+    x: number,
+    y: number,
+  ): Record<string, unknown> => ({
+    type: 'touch',
+    action,
+    x,
+    y,
+    screenWidth: 464,
+    screenHeight: 1024,
+  });
+
+  /**
+   * The heart of the live drag: the press is on the device the moment it
+   * happens. Nothing waits for the button to come back up — until this, the
+   * whole gesture replayed after the release, and the screen followed the
+   * finger only once the finger was done moving.
+   */
+  it('presses the device the moment the pointer goes down', async () => {
     const canvas = await streaming();
     const scale = drawAt(canvas);
 
+    press(canvas, { clientX: 40 + 232 * scale, clientY: 100 + 512 * scale });
+    await settleInput();
+
+    expect(sent()).toEqual([touch('down', 232, 512)]);
+  });
+
+  /** Criterion 6, live: a click is the finger landing and lifting at the
+   * device pixel under it. Whether that is a tap is Android's own touch slop's
+   * call now — the same call the glass would make. */
+  it('makes a click of a press that stayed put', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const point = { clientX: 40 + 232 * scale, clientY: 100 + 512 * scale };
+
+    press(canvas, point);
+    release(canvas, point);
+    await settleInput();
+
+    expect(sent()).toEqual([touch('down', 232, 512), touch('up', 232, 512)]);
+  });
+
+  /** The travel crosses while the hand makes it, so the app scrolls under the
+   * finger rather than after it — and the pacing Android reads a fling from is
+   * the hand's own arrival times. */
+  it('follows the travel while the button is down', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const x = 40 + 232 * scale;
+
+    press(canvas, { clientX: x, clientY: 100 + 800 * scale });
+    travel(canvas, { clientX: x, clientY: 100 + 600 * scale });
+    travel(canvas, { clientX: x, clientY: 100 + 200 * scale });
+    release(canvas, { clientX: x, clientY: 100 + 200 * scale });
+    await settleInput();
+
+    expect(sent()).toEqual([
+      touch('down', 232, 800),
+      touch('move', 232, 600),
+      touch('move', 232, 200),
+      touch('up', 232, 200),
+    ]);
+  });
+
+  /** The wire needs no duplicate: motion within one device pixel is not a
+   * move. The release still answers, even from the pixel the finger is on. */
+  it('repeats no move while the pointer stays on one device pixel', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const point = { clientX: 40 + 232 * scale, clientY: 100 + 512 * scale };
+
+    press(canvas, point);
+    travel(canvas, point);
+    travel(canvas, point);
+    release(canvas, point);
+    await settleInput();
+
+    expect(sent()).toEqual([touch('down', 232, 512), touch('up', 232, 512)]);
+  });
+
+  /**
+   * A hand does not stop at our bezel. The travel and the release are watched
+   * at the window precisely so a scroll that leaves the phone — or the panel —
+   * is still that scroll, pinned to the glass rather than thrown away.
+   */
+  it('pins the travel and the release to the glass when the hand leaves it', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+
+    press(canvas, { clientX: 40 + 232 * scale, clientY: 100 + 800 * scale });
+    travel(canvas, { clientX: 40 + 232 * scale, clientY: 0 });
+    release(canvas, { clientX: 40 + 600 * scale, clientY: 0 });
+    await settleInput();
+
+    expect(sent()).toEqual([touch('down', 232, 800), touch('move', 232, 0), touch('up', 463, 0)]);
+  });
+
+  /**
+   * A gesture the system took away still put a finger on the device, and that
+   * finger must come back up — a DOWN with no UP behind it leaves the app
+   * under test holding a press nobody is making. The release that follows the
+   * cancel belongs to no gesture and resolves into nothing.
+   */
+  it('releases where the finger last was when the press is cancelled', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const x = 40 + 232 * scale;
+
+    press(canvas, { clientX: x, clientY: 100 + 800 * scale });
+    travel(canvas, { clientX: x, clientY: 100 + 600 * scale });
     act(() => {
-      canvas.dispatchEvent(
-        new MouseEvent('pointerdown', {
-          bubbles: true,
-          clientX: 40 + 232 * scale,
-          clientY: 100 + 512 * scale,
-        }),
+      canvas.dispatchEvent(new MouseEvent('pointercancel', { bubbles: true }));
+    });
+    release(canvas, { clientX: x, clientY: 100 + 200 * scale });
+    await settleInput();
+
+    expect(sent()).toEqual([
+      touch('down', 232, 800),
+      touch('move', 232, 600),
+      touch('up', 232, 600),
+    ]);
+  });
+
+  /**
+   * ⚠️ The same promise on the other exit: a mirror that goes away mid-drag
+   * takes the whole gesture with it. The panel's unmount stops the session —
+   * the device-side server dies, and the finger it was pressing dies with it —
+   * so nothing further may cross: not a lift into the dead session, and not
+   * the release the hand eventually performs, which must never be resolved
+   * against whatever session comes next.
+   */
+  it('sends nothing more once the mirror is gone mid-drag', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const x = 40 + 232 * scale;
+
+    press(canvas, { clientX: x, clientY: 100 + 800 * scale });
+    travel(canvas, { clientX: x, clientY: 100 + 600 * scale });
+    await settleInput();
+
+    cleanup();
+    act(() => {
+      window.dispatchEvent(
+        new MouseEvent('pointerup', { bubbles: true, clientX: x, clientY: 100 + 200 * scale }),
       );
     });
     await settleInput();
 
-    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
-      type: 'tap',
-      x: 232,
-      y: 512,
-      screenWidth: 464,
-      screenHeight: 1024,
-    });
+    expect(sent()).toEqual([touch('down', 232, 800), touch('move', 232, 600)]);
+  });
+
+  /** A right-click belongs to the command menu alone. The `pointerdown` that
+   * precedes `contextmenu` must not also press the app under test — that would
+   * change the very screen the menu is about to describe. */
+  it('sends no touch for the pointerdown half of a right-click', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const point = { clientX: 40 + 232 * scale, clientY: 100 + 512 * scale };
+
+    // The whole gesture, release included: a right-click that started a drag
+    // would come back as a click the moment the button came up.
+    press(canvas, point, { button: 2 });
+    release(canvas, point);
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** macOS delivers Ctrl+click as a context menu, so its pointerdown is the
+   * menu's too. */
+  it('sends no touch for a Ctrl+click', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+    const point = { clientX: 40 + 232 * scale, clientY: 100 + 512 * scale };
+
+    press(canvas, point, { ctrlKey: true });
+    release(canvas, point);
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
   });
 
   /** Criterion 8 — the bezel and the bay gutter are the app, not the phone. */
@@ -668,11 +940,25 @@ describe('driving the device', () => {
     const canvas = await streaming();
     drawAt(canvas);
 
-    act(() => {
-      canvas.dispatchEvent(
-        new MouseEvent('pointerdown', { bubbles: true, clientX: 10, clientY: 10 }),
-      );
-    });
+    press(canvas, { clientX: 10, clientY: 10 });
+    release(canvas, { clientX: 10, clientY: 10 });
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The near end is what decides, and it decides the same way live: a press
+   * that began in the gutter began on the app, however far it travels onto
+   * the phone afterwards — no phase of it ever reaches the device.
+   */
+  it('sends nothing for a drag that began outside the drawn picture', async () => {
+    const canvas = await streaming();
+    const scale = drawAt(canvas);
+
+    press(canvas, { clientX: 10, clientY: 10 });
+    travel(canvas, { clientX: 40 + 232 * scale, clientY: 100 + 512 * scale });
+    release(canvas, { clientX: 40 + 232 * scale, clientY: 100 });
     await settleInput();
 
     expect(conductor.mirrorInput).not.toHaveBeenCalled();
@@ -846,5 +1132,680 @@ describe('driving the device', () => {
     expect(await screen.findByText(/control socket is gone/i)).toBeInTheDocument();
     expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
     expect(device().mirrorStatus).toBe('streaming');
+  });
+});
+
+/**
+ * §5.5's authoring surface (criteria 11–29, 36–44): hover highlights the
+ * element Maestro sees, hit-tested locally against the frozen snapshot; a
+ * right-click synthesises in main and opens the command menu; picking a
+ * command appends the step, and the tap family also drives the device.
+ *
+ * The one seam is still `window.conductor`. The geometry is the real one:
+ * 720×1600 snapshot at scale 1 over a 464×1024 stream, so hierarchy (180,400)
+ * is stream (116,256).
+ */
+describe('inspecting the screen', () => {
+  /** Mounts, streams, waits for the snapshot, sizes the bay. */
+  async function inspecting(): Promise<{ canvas: HTMLCanvasElement; scale: number }> {
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+    await waitFor(() => {
+      expect(inspect().snapshot).not.toBeNull();
+    });
+    const canvas = screen.getByTestId('mirror-canvas') as HTMLCanvasElement;
+    return { canvas, scale: stateBox(canvas) };
+  }
+
+  /** jsdom lays nothing out: the canvas box is stated at the scale the view
+   * actually drew at, read back off the phone's transform. */
+  function stateBox(canvas: HTMLCanvasElement): number {
+    const transform = screen.getByTestId('phone').style.transform;
+    const scale = Number(/scale\(([\d.]+)\)/.exec(transform)?.[1]);
+    canvas.getBoundingClientRect = () =>
+      ({
+        left: 40,
+        top: 100,
+        width: 464 * scale,
+        height: 1024 * scale,
+        right: 40 + 464 * scale,
+        bottom: 100 + 1024 * scale,
+        x: 40,
+        y: 100,
+        toJSON: () => ({}),
+      }) as DOMRect;
+    return scale;
+  }
+
+  /** Stream-space coordinates in, client-space MouseEvent out. */
+  function at(
+    scale: number,
+    streamX: number,
+    streamY: number,
+  ): { clientX: number; clientY: number } {
+    return { clientX: 40 + streamX * scale, clientY: 100 + streamY * scale };
+  }
+
+  function hoverAt(canvas: HTMLCanvasElement, point: { clientX: number; clientY: number }): void {
+    act(() => {
+      canvas.dispatchEvent(new MouseEvent('pointermove', { bubbles: true, ...point }));
+    });
+  }
+
+  async function rightClickAt(
+    canvas: HTMLCanvasElement,
+    point: { clientX: number; clientY: number },
+  ): Promise<void> {
+    await act(async () => {
+      canvas.dispatchEvent(
+        new MouseEvent('contextmenu', { bubbles: true, cancelable: true, ...point }),
+      );
+      await Promise.resolve();
+    });
+  }
+
+  const settleInput = async (): Promise<void> => {
+    await act(async () => {
+      await new Promise((resolve) => setTimeout(resolve, 32));
+    });
+  };
+
+  /** Criteria 13–14 — the DS highlight over the hovered element, labelled from
+   * the tree, positioned in the canvas's own pre-transform space. */
+  it('highlights the hovered element with its literal label', async () => {
+    const { canvas, scale } = await inspecting();
+
+    hoverAt(canvas, at(scale, 116, 256));
+
+    // 360×800 hierarchy → 232×512 stream px, floating point and all.
+    const style = screen.getByTestId('inspect-highlight').style;
+    expect(Number.parseFloat(style.left)).toBeCloseTo(0, 5);
+    expect(Number.parseFloat(style.top)).toBeCloseTo(0, 5);
+    expect(Number.parseFloat(style.width)).toBeCloseTo(232, 5);
+    expect(Number.parseFloat(style.height)).toBeCloseTo(512, 5);
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+    expect(canvas).toHaveAttribute('data-inspect', 'true');
+  });
+
+  /**
+   * A highlight chasing the pointer through a scroll describes a tree the drag
+   * is in the middle of invalidating — every box it draws mid-gesture is about
+   * an element that has already moved. So the overlay holds still until the
+   * gesture lands, and the recapture it triggers re-aims it.
+   */
+  it('holds the highlight still while a drag is under way', async () => {
+    const { canvas, scale } = await inspecting();
+    hoverAt(canvas, at(scale, 116, 256));
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, ...at(scale, 116, 256) }),
+      );
+    });
+    // Off the button and onto the frame behind it — which would retarget the
+    // highlight, were the drag not holding it.
+    hoverAt(canvas, at(scale, 322, 257));
+
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+  });
+
+  it('lets the hover follow the pointer again once the drag is over', async () => {
+    const { canvas, scale } = await inspecting();
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, ...at(scale, 116, 256) }),
+      );
+      canvas.dispatchEvent(new MouseEvent('pointerup', { bubbles: true, ...at(scale, 116, 256) }));
+    });
+    hoverAt(canvas, at(scale, 116, 256));
+
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+  });
+
+  /**
+   * A right-click mid-drag would open a menu about a screen the finger is in
+   * the middle of changing — and its commands would drive touches into the
+   * live gesture, a second finger the device never saw go down. The drag owns
+   * the pointer until it ends.
+   */
+  it('opens no menu while a drag is under way', async () => {
+    const { canvas, scale } = await inspecting();
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, ...at(scale, 116, 256) }),
+      );
+    });
+    await rightClickAt(canvas, at(scale, 116, 256));
+
+    expect(inspect().menu).toBeNull();
+    expect(conductor.maestroSynthesizeSelector).not.toHaveBeenCalled();
+  });
+
+  /** The label must stay readable at any fit: it counter-scales through
+   * `--fit-scale`, which the phone carries for the overlay's CSS. */
+  it('hands the overlay the fit scale it must counter', async () => {
+    const { scale } = await inspecting();
+
+    expect(screen.getByTestId('phone').style.getPropertyValue('--fit-scale')).toBe(String(scale));
+  });
+
+  /** An element at the very top has no room for a label above it: the label
+   * flips inside the box instead of clipping out of the screen. */
+  it('flips the label inside the box at the top of the screen', async () => {
+    const { canvas, scale } = await inspecting();
+
+    // The Button's bounds start at y=0 — no room above.
+    hoverAt(canvas, at(scale, 116, 256));
+
+    expect(screen.getByText('Button · "Entrar"')).toHaveAttribute('data-flip', 'true');
+  });
+
+  it('keeps the label above the box everywhere else', async () => {
+    conductor.maestroSnapshot.mockResolvedValue({
+      ok: true,
+      data: {
+        ...VIEW,
+        tree: {
+          ...emptyNode,
+          children: [
+            {
+              ...emptyNode,
+              bounds: { x1: 0, y1: 1000, x2: 360, y2: 1200 },
+              className: 'android.widget.Button',
+              text: 'Entrar',
+              clickable: true,
+              children: [],
+            },
+          ],
+        },
+      },
+    });
+    const { canvas, scale } = await inspecting();
+
+    // Hierarchy y=1100 → stream y=704: far from the top edge.
+    hoverAt(canvas, at(scale, 116, 704));
+
+    expect(screen.getByText('Button · "Entrar"')).not.toHaveAttribute('data-flip');
+  });
+
+  /** Criterion 46 — hover costs zero IPC and zero process work: the hit-test
+   * runs against the in-memory snapshot, and synthesis waits for right-click. */
+  it('crosses no IPC while hovering', async () => {
+    const { canvas, scale } = await inspecting();
+
+    hoverAt(canvas, at(scale, 116, 256));
+    hoverAt(canvas, at(scale, 200, 400));
+    hoverAt(canvas, at(scale, 60, 100));
+
+    // One capture opened the snapshot; the mousemoves added nothing.
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(1);
+    expect(conductor.maestroSynthesizeSelector).not.toHaveBeenCalled();
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 15 — off the canvas, off the screen. */
+  it('clears the highlight when the pointer leaves', async () => {
+    const { canvas, scale } = await inspecting();
+    hoverAt(canvas, at(scale, 116, 256));
+
+    act(() => {
+      // React synthesises onPointerLeave from the bubbling pointerout, judged
+      // by where the pointer went — here, off the canvas entirely.
+      canvas.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+
+    expect(screen.queryByTestId('inspect-highlight')).not.toBeInTheDocument();
+  });
+
+  /** Criterion 11 — Alt climbs to the container; releasing returns. */
+  it('retargets the hover to the parent while Alt is held', async () => {
+    const { canvas, scale } = await inspecting();
+    hoverAt(canvas, at(scale, 116, 256));
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keydown', { key: 'Alt' }));
+    });
+    expect(screen.getByText('FrameLayout')).toBeInTheDocument();
+
+    act(() => {
+      window.dispatchEvent(new KeyboardEvent('keyup', { key: 'Alt' }));
+    });
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+  });
+
+  /** Criterion 23 — the right-click synthesises in main and opens the menu at
+   * the cursor, titled with the element. */
+  it('opens the command menu over the hit element', async () => {
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+
+    expect(await screen.findByRole('menu')).toBeInTheDocument();
+    expect(conductor.maestroSynthesizeSelector).toHaveBeenCalledWith('snapshot-1', [0, 0]);
+    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: 'tapOn' })).toBeInTheDocument();
+  });
+
+  /** Criterion 25 — no element, no menu, and never the browser's own. */
+  it('opens nothing where no element is hit', async () => {
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 322, 960));
+
+    expect(conductor.maestroSynthesizeSelector).not.toHaveBeenCalled();
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('suppresses the native context menu anywhere on the mirror', async () => {
+    await inspecting();
+    const panel = screen.getByRole('region', { name: 'Device' });
+    const event = new MouseEvent('contextmenu', { bubbles: true, cancelable: true });
+
+    act(() => {
+      panel.dispatchEvent(event);
+    });
+
+    expect(event.defaultPrevented).toBe(true);
+  });
+
+  /** Criterion 26 — while the menu is open, the mirror takes no input. */
+  it('suppresses pointer forwarding while the menu is open', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerdown', { bubbles: true, ...at(scale, 116, 256) }),
+      );
+    });
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('suppresses keyboard forwarding while the menu is open', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    act(() => {
+      canvas.dispatchEvent(
+        new KeyboardEvent('keydown', { key: 'Backspace', bubbles: true, cancelable: true }),
+      );
+    });
+    await settleInput();
+
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  it('closes on Escape writing nothing', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.keyboard('{Escape}');
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(flow().yaml).toBe(FLOW_YAML);
+  });
+
+  /** Criteria 37, 38, 40 — the step appends additively and the tap executes at
+   * the element's centre, in stream coordinates, through the ordered queue. */
+  it('appends the tapOn step and performs the tap', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'tapOn' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(`${FLOW_YAML}- tapOn:\n    text: "Entrar"\n`);
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+      type: 'tap',
+      x: 116,
+      y: 256,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+  });
+
+  it('performs a long press for longPressOn', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'longPressOn' }));
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+      type: 'long-press',
+      x: 116,
+      y: 256,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+  });
+
+  /** Criterion 42 — assert, wait and app commands insert and never execute. */
+  it('inserts assertVisible without driving the device', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'assertVisible' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(`${FLOW_YAML}- assertVisible:\n    text: "Entrar"\n`);
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 27 — §5.4 makes the fragility warning mandatory. */
+  it('warns before the user picks when the selector is point-based', async () => {
+    conductor.maestroSynthesizeSelector.mockResolvedValue({
+      ok: true,
+      data: { level: 'point', selector: 'point: 25%,25%', fragile: true },
+    });
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    expect(screen.getByText('Position-based selector — this step is fragile.')).toBeInTheDocument();
+  });
+
+  /** Criterion 28 — synthesis failed: no menu, nothing written, said aloud. */
+  it('opens no menu and surfaces a synthesis failure', async () => {
+    conductor.maestroSynthesizeSelector.mockResolvedValue({
+      ok: false,
+      error: { code: 'selector/no-match', message: 'Synthesis matched nothing.' },
+    });
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+
+    expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+    expect(await screen.findByText('Synthesis matched nothing.')).toBeInTheDocument();
+    expect(flow().yaml).toBe(FLOW_YAML);
+  });
+
+  /** Criterion 41 — the dialog collects the text; the pair is born complete,
+   * the focusing tap goes out, and the text rides the ordered queue. */
+  it('collects inputText through the dialog and executes the pair', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'inputText' }));
+    const dialog = await screen.findByRole('dialog', { name: 'Input text' });
+    expect(dialog).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Insert' })).toBeDisabled();
+
+    await userEvent.type(screen.getByLabelText('Text to type'), 'red shoes');
+    await userEvent.click(screen.getByRole('button', { name: 'Insert' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(
+      `${FLOW_YAML}- tapOn:\n    text: "Entrar"\n- inputText: "red shoes"\n`,
+    );
+    expect(conductor.mirrorInput).toHaveBeenNthCalledWith(1, 'mirror-1', {
+      type: 'tap',
+      x: 116,
+      y: 256,
+      screenWidth: 464,
+      screenHeight: 1024,
+    });
+    expect(conductor.mirrorInput).toHaveBeenNthCalledWith(2, 'mirror-1', {
+      type: 'text',
+      text: 'red shoes',
+    });
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+  });
+
+  it('cancels the dialog writing and executing nothing', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'inputText' }));
+    await screen.findByRole('dialog');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+    await settleInput();
+
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(flow().yaml).toBe(FLOW_YAML);
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 16 — a capture in flight is visible, never hidden. */
+  it('shows the updating chip while a capture is in flight', async () => {
+    let release: (value: Result<SnapshotView>) => void = () => {};
+    conductor.maestroSnapshot.mockReturnValueOnce(
+      new Promise<Result<SnapshotView>>((resolve) => {
+        release = resolve;
+      }),
+    );
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+
+    expect(await screen.findByTestId('stale-chip')).toBeInTheDocument();
+
+    await act(async () => {
+      release({ ok: true, data: VIEW });
+      await Promise.resolve();
+    });
+    expect(screen.queryByTestId('stale-chip')).not.toBeInTheDocument();
+  });
+
+  /** Criterion 17 — the failure surfaces with a retry; the picture stays. */
+  it('surfaces a failed capture with a retry, leaving the picture alone', async () => {
+    conductor.maestroSnapshot.mockResolvedValueOnce({
+      ok: false,
+      error: { code: 'mcp/call-failed', message: 'inspect_screen refused.' },
+    });
+    await mount();
+    await push(snapshot());
+    await waitFor(() => {
+      expect(device().mirrorStatus).toBe('streaming');
+    });
+    sizeBay(400, 900);
+
+    expect(await screen.findByText(/inspect_screen refused/)).toBeInTheDocument();
+    expect(screen.getByTestId('mirror-canvas')).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Retry' }));
+
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+    await waitFor(() => {
+      expect(screen.queryByText(/inspect_screen refused/)).not.toBeInTheDocument();
+    });
+  });
+
+  /** Criterion 21 — the manual refresh, in the inspector's own header. */
+  it('recaptures on the snapshot refresh control', async () => {
+    await inspecting();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Refresh snapshot' }));
+
+    expect(conductor.maestroSnapshot).toHaveBeenCalledTimes(2);
+  });
+
+  /**
+   * The crosshair is a switch now. Off, the mirror is purely a phone: no
+   * highlight, no command menu, no crosshair cursor — while driving (taps,
+   * keys) keeps working untouched.
+   */
+  describe('the inspect switch', () => {
+    const toggle = async (): Promise<void> => {
+      await userEvent.click(screen.getByRole('button', { name: 'Inspect' }));
+    };
+
+    it('reads as pressed while on, and unpressed once toggled off', async () => {
+      await inspecting();
+
+      const button = screen.getByRole('button', { name: 'Inspect' });
+      expect(button).toHaveAttribute('aria-pressed', 'true');
+
+      await toggle();
+
+      expect(button).toHaveAttribute('aria-pressed', 'false');
+    });
+
+    it('takes the standing highlight and the crosshair cursor with it', async () => {
+      const { canvas, scale } = await inspecting();
+      hoverAt(canvas, at(scale, 116, 256));
+      expect(screen.getByTestId('inspect-highlight')).toBeInTheDocument();
+
+      await toggle();
+
+      expect(screen.queryByTestId('inspect-highlight')).not.toBeInTheDocument();
+      expect(canvas).not.toHaveAttribute('data-inspect');
+    });
+
+    it('draws no highlight for a hover while off', async () => {
+      const { canvas, scale } = await inspecting();
+      await toggle();
+
+      hoverAt(canvas, at(scale, 116, 256));
+
+      expect(screen.queryByTestId('inspect-highlight')).not.toBeInTheDocument();
+    });
+
+    it('opens no menu for a right-click while off, still suppressing the native one', async () => {
+      const { canvas, scale } = await inspecting();
+      await toggle();
+
+      const event = new MouseEvent('contextmenu', {
+        bubbles: true,
+        cancelable: true,
+        ...at(scale, 116, 256),
+      });
+      await act(async () => {
+        canvas.dispatchEvent(event);
+        await Promise.resolve();
+      });
+
+      expect(screen.queryByRole('menu')).not.toBeInTheDocument();
+      expect(conductor.maestroSynthesizeSelector).not.toHaveBeenCalled();
+      expect(event.defaultPrevented).toBe(true);
+    });
+
+    it('leaves driving alone: a left-click still lands and lifts', async () => {
+      const { canvas, scale } = await inspecting();
+      await toggle();
+
+      act(() => {
+        canvas.dispatchEvent(
+          new MouseEvent('pointerdown', { bubbles: true, ...at(scale, 116, 256) }),
+        );
+        canvas.dispatchEvent(
+          new MouseEvent('pointerup', { bubbles: true, ...at(scale, 116, 256) }),
+        );
+      });
+      await settleInput();
+
+      expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+        type: 'touch',
+        action: 'down',
+        x: 116,
+        y: 256,
+        screenWidth: 464,
+        screenHeight: 1024,
+      });
+      expect(conductor.mirrorInput).toHaveBeenCalledWith('mirror-1', {
+        type: 'touch',
+        action: 'up',
+        x: 116,
+        y: 256,
+        screenWidth: 464,
+        screenHeight: 1024,
+      });
+    });
+
+    it('puts away the snapshot refresh, which serves nothing while off', async () => {
+      await inspecting();
+      expect(screen.getByRole('button', { name: 'Refresh snapshot' })).toBeInTheDocument();
+
+      await toggle();
+
+      expect(screen.queryByRole('button', { name: 'Refresh snapshot' })).not.toBeInTheDocument();
+    });
+
+    it('hides the updating chip while off', async () => {
+      const { canvas } = await inspecting();
+      await toggle();
+      conductor.maestroSnapshot.mockReturnValueOnce(new Promise(() => {}));
+
+      act(() => {
+        inspect().refresh(ANDROID.id);
+      });
+
+      expect(canvas).toBeInTheDocument();
+      expect(screen.queryByTestId('stale-chip')).not.toBeInTheDocument();
+    });
+
+    it('highlights again as soon as it is switched back on', async () => {
+      const { canvas, scale } = await inspecting();
+      await toggle();
+      await toggle();
+
+      hoverAt(canvas, at(scale, 116, 256));
+
+      expect(screen.getByTestId('inspect-highlight')).toBeInTheDocument();
+    });
+  });
+
+  /** Criterion 44 — no control channel: the menu keeps working and the tap
+   * family inserts without executing. */
+  it('keeps the menu working without control, inserting only', async () => {
+    conductor.mirrorStart.mockResolvedValue({
+      ok: true,
+      data: { ...STREAM, control: false },
+    });
+    const { canvas, scale } = await inspecting();
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'tapOn' }));
+    await settleInput();
+
+    expect(flow().yaml).toBe(`${FLOW_YAML}- tapOn:\n    text: "Entrar"\n`);
+    expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /** Criterion 43 — control is there and the touch is refused anyway. The step
+   * is the artifact and the gesture only a convenience, so the step stays
+   * written, the refusal surfaces through the control note, and the picture is
+   * never touched. This pins the ordering: append first, drive second. */
+  it('keeps the appended step when the gesture is refused', async () => {
+    const { canvas, scale } = await inspecting();
+    conductor.mirrorInput.mockResolvedValue({
+      ok: false,
+      error: { code: 'mirror/control-failed', message: 'The device refused the touch.' },
+    });
+
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+    await userEvent.click(screen.getByRole('menuitem', { name: 'tapOn' }));
+    await settleInput();
+
+    expect(conductor.mirrorInput).toHaveBeenCalled();
+    expect(flow().yaml).toBe(`${FLOW_YAML}- tapOn:\n    text: "Entrar"\n`);
+    expect(screen.getByText('The device refused the touch.')).toBeInTheDocument();
+    expect(canvas).toBeInTheDocument();
   });
 });
