@@ -43,6 +43,11 @@ describe('the channels', () => {
       'flow:duplicate',
       'flow:delete',
       'flow:delete-folder',
+      'publish:status',
+      'publish:describe',
+      'publish:send',
+      'publish:cancel',
+      'publish:open-pr',
     ]);
   });
 
@@ -66,6 +71,8 @@ describe('the channels', () => {
       'flow:changed',
       'repo:changed',
       'repo:resolve-event',
+      'publish:changed',
+      'publish:event',
     ]);
   });
 
@@ -768,6 +775,119 @@ describe('repo:switch', () => {
   });
 });
 
+/** One unsent change, as the sheet lists it (criterion 5): the path relative
+ * to `conductor/` and what happened to it — never a diff, never file bodies. */
+const PUBLISH_CHANGE = { path: 'checkout/pix.yml', kind: 'changed' };
+
+describe('publish:status', () => {
+  const schema = IPC[CHANNELS.publishStatus];
+
+  it('takes nothing', () => {
+    expect(schema.request.safeParse([]).success).toBe(true);
+    expect(schema.request.safeParse(['slug']).success).toBe(false);
+  });
+
+  /** Criteria 1–3 — everything the control and the sheet derive their states
+   * from: the unsent changes and whether a review is open. The PR URL never
+   * crosses; View on GitHub asks main to open the stored one (criterion 27). */
+  it('answers the unsent changes and whether a review is open', () => {
+    expect(
+      schema.response.safeParse({ changes: [PUBLISH_CHANGE], reviewOpen: false }).success,
+    ).toBe(true);
+    expect(schema.response.safeParse({ changes: [], reviewOpen: true }).success).toBe(true);
+    expect(schema.response.safeParse({ changes: [] }).success).toBe(false);
+  });
+
+  /** Criterion 8's vocabulary, and only it. */
+  it('refuses a change of no declared kind', () => {
+    expect(
+      schema.response.safeParse({
+        changes: [{ path: 'pix.yml', kind: 'renamed' }],
+        reviewOpen: false,
+      }).success,
+    ).toBe(false);
+  });
+
+  it('refuses a URL riding the state', () => {
+    expect(
+      schema.response.safeParse({
+        changes: [],
+        reviewOpen: true,
+        url: 'https://github.com/org/repo/pull/7',
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('publish:describe', () => {
+  const schema = IPC[CHANNELS.publishDescribe];
+
+  /** Criterion 10 — the sheet opening is the trigger; main computes the change
+   * set itself, so nothing crosses. */
+  it('takes nothing and answers with the job id immediately', () => {
+    expect(schema.request.safeParse([]).success).toBe(true);
+    expect(schema.request.safeParse(['diff']).success).toBe(false);
+    expect(schema.response.safeParse({ describeId: 1 }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('publish:send', () => {
+  const schema = IPC[CHANNELS.publishSend];
+
+  /** Criterion 20 — the note as the person edited it, and the flow open right
+   * now (the branch slug's source at publication birth, criterion 20) or null
+   * when none is. The title never crosses: it is AI-owned and main-side. */
+  it('takes the edited note and the open flow path', () => {
+    expect(schema.request.safeParse(['Fixed the checkout test', 'checkout/pix.yml']).success).toBe(
+      true,
+    );
+    expect(schema.request.safeParse(['', null]).success).toBe(true);
+    expect(schema.request.safeParse(['note']).success).toBe(false);
+  });
+
+  /** Criterion 32 — the note crosses bounded. */
+  it('refuses a note past the bound', () => {
+    expect(schema.request.safeParse(['x'.repeat(10_000), null]).success).toBe(true);
+    expect(schema.request.safeParse(['x'.repeat(10_001), null]).success).toBe(false);
+  });
+
+  /** Criterion 18 — the id immediately; progress arrives as `publish:event`
+   * pushes, never in this answer. */
+  it('answers with the send id and nothing else', () => {
+    expect(schema.response.safeParse({ sendId: 2 }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('publish:cancel', () => {
+  const schema = IPC[CHANNELS.publishCancel];
+
+  /** One cancel for both job kinds (decision) — the sheet closing kills the
+   * describe job's `claude` child (criterion 14). */
+  it('takes the job id and answers with it', () => {
+    expect(schema.request.safeParse([1]).success).toBe(true);
+    expect(schema.request.safeParse(['describe-1']).success).toBe(false);
+    expect(schema.request.safeParse([]).success).toBe(false);
+    expect(schema.response.safeParse({ jobId: 1 }).success).toBe(true);
+  });
+});
+
+describe('publish:open-pr', () => {
+  const schema = IPC[CHANNELS.publishOpenPr];
+
+  /** Criterion 27 — the renderer never sends a URL: main validates and opens
+   * the stored one, and answers with what it opened. */
+  it('takes nothing and answers the URL it opened', () => {
+    expect(schema.request.safeParse([]).success).toBe(true);
+    expect(schema.request.safeParse(['https://github.com/org/repo/pull/7']).success).toBe(false);
+    expect(schema.response.safeParse({ url: 'https://github.com/org/repo/pull/7' }).success).toBe(
+      true,
+    );
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
 describe('app:read-clipboard', () => {
   const schema = IPC[CHANNELS.appReadClipboard];
 
@@ -991,6 +1111,68 @@ describe('mirror:event', () => {
   });
 });
 
+describe('publish:changed', () => {
+  const schema = PUSH[PUSH_CHANNELS.publishChanged];
+
+  /** Criterion 9 — the debounced recompute and the repo switch push the same
+   * projection `publish:status` answers. */
+  it('carries the same state publish:status answers', () => {
+    expect(schema.safeParse({ changes: [PUBLISH_CHANGE], reviewOpen: false }).success).toBe(true);
+    expect(schema.safeParse({ changes: [PUBLISH_CHANGE] }).success).toBe(false);
+  });
+});
+
+describe('publish:event', () => {
+  const schema = PUSH[PUSH_CHANNELS.publishEvent];
+
+  /** Criterion 13 — the note the field prefills with. The title deliberately
+   * never rides the event: it is AI-owned, main-side, invisible (§8.4). */
+  it('carries the described note, tagged with its job', () => {
+    expect(
+      schema.safeParse({ kind: 'described', describeId: 1, note: 'The checkout test now…' })
+        .success,
+    ).toBe(true);
+    expect(schema.safeParse({ kind: 'described', note: 'x' }).success).toBe(false);
+    expect(
+      schema.safeParse({ kind: 'described', describeId: 1, note: 'x', title: 'Update pix' })
+        .success,
+    ).toBe(false);
+  });
+
+  /** Criterion 18 — checking → sending → opening-review, and only those. */
+  it('carries the send steps the sheet is driven through', () => {
+    for (const step of ['checking', 'sending', 'opening-review'] as const) {
+      expect(schema.safeParse({ kind: 'send-step', sendId: 2, step }).success).toBe(true);
+    }
+    expect(schema.safeParse({ kind: 'send-step', sendId: 2, step: 'pushing' }).success).toBe(false);
+  });
+
+  /** Criteria 23, 25 — the terminal success says whether the changes joined a
+   * review that was already open or opened a fresh one. */
+  it('carries the sent terminal with its joined flag', () => {
+    expect(schema.safeParse({ kind: 'sent', sendId: 2, joined: true }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'sent', sendId: 2 }).success).toBe(false);
+  });
+
+  /** Criterion 26 — a failure travels as a typed event with the stable code
+   * the sheet's surface is built from, never raw git/gh output. */
+  it('carries a failure with its stable code', () => {
+    expect(
+      schema.safeParse({
+        kind: 'send-failed',
+        sendId: 2,
+        code: ERROR_CODES.publishSyntaxError,
+        message: 'This test has an error that prevents sending.',
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ kind: 'send-failed', sendId: 2 }).success).toBe(false);
+  });
+
+  it('refuses an event of no declared kind', () => {
+    expect(schema.safeParse({ kind: 'progress', sendId: 2 }).success).toBe(false);
+  });
+});
+
 /** Criterion 31 — the doctor and the panel tell one failure from another by the
  * code alone, so the codes are part of the contract. */
 describe('the failure codes', () => {
@@ -1134,6 +1316,36 @@ describe('the failure codes', () => {
       'repo/resolve-not-found',
       'repo/not-found',
     ]);
+  });
+
+  /**
+   * The publish spec's eight (criteria 19, 24, 26, 31). `publish/maestro-missing`
+   * is distinct from the run path's `run/maestro-not-found` because it reaches a
+   * different surface with its own message; the gh failures deliberately do NOT
+   * get publish twins — criterion 26 reuses `repo/gh-missing` and
+   * `repo/gh-unauthenticated` so each keeps its one specific fix.
+   */
+  it('tell the publish refusals apart', () => {
+    expect([
+      ERROR_CODES.publishNoRepo,
+      ERROR_CODES.publishNothingToSend,
+      ERROR_CODES.publishSendActive,
+      ERROR_CODES.publishMaestroMissing,
+      ERROR_CODES.publishSyntaxError,
+      ERROR_CODES.publishSendFailed,
+      ERROR_CODES.publishJobNotFound,
+      ERROR_CODES.publishNoReview,
+    ]).toEqual([
+      'publish/no-repo',
+      'publish/nothing-to-send',
+      'publish/send-active',
+      'publish/maestro-missing',
+      'publish/syntax-error',
+      'publish/send-failed',
+      'publish/job-not-found',
+      'publish/no-review',
+    ]);
+    expect(Object.values(ERROR_CODES)).not.toContain('publish/gh-missing');
   });
 
   /** The inspect spec's four: a stale snapshot re-captures and retries, a

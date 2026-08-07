@@ -1,5 +1,5 @@
 # Send changes — publish the conductor/ delta as a PR
-status: todo
+status: doing
 created: 2026-08-07
 
 ## Goal
