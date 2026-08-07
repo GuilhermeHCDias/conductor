@@ -17,7 +17,13 @@ describe('the channels', () => {
   it('are exactly the invokes this app declares', () => {
     expect(Object.values(CHANNELS)).toEqual([
       'app:info',
+      'app:read-clipboard',
+      'app:write-clipboard',
       'config:get',
+      'repo:list',
+      'repo:resolve',
+      'repo:connect',
+      'repo:switch',
       'device:list',
       'device:app-info',
       'mirror:start',
@@ -58,6 +64,8 @@ describe('the channels', () => {
       'mirror:event',
       'run:event',
       'flow:changed',
+      'repo:changed',
+      'repo:resolve-event',
     ]);
   });
 
@@ -624,6 +632,241 @@ describe('flow:delete-folder', () => {
   });
 });
 
+/** A repo as the resolver reports it — everything derived from the clone,
+ * nothing typed by the person but the URL (§2.1). */
+const RESOLVED_REPO = {
+  url: 'https://github.com/loja-verde/pnp-fast-mode',
+  org: 'loja-verde',
+  name: 'pnp-fast-mode',
+  appName: 'PnP Fast Mode',
+  appId: { android: 'com.lojaverde.pnp', ios: 'com.lojaverde.pnp' },
+  branch: 'main',
+  flowCount: 4,
+};
+
+/** The same repo once connected: the slug main derived, and when it arrived. */
+const CONNECTED_REPO = {
+  ...RESOLVED_REPO,
+  slug: 'loja-verde-pnp-fast-mode-1a2b3c4d',
+  connectedAt: '2026-08-06T12:00:00.000Z',
+};
+
+describe('config:get', () => {
+  const schema = IPC[CHANNELS.configGet];
+
+  /** §12.6 — the app under test is runtime state derived from the active repo,
+   * so the constants that cross carry no appId and no repo URL. */
+  it('exposes only true constants — no appId, no repo URL', () => {
+    const parsed = schema.response.safeParse({
+      APP_ID: 'com.example.app',
+      REPO_URL: 'https://github.com/x/y',
+      REPO_BASE_BRANCH: 'main',
+      FLOWS_DIR: 'conductor',
+      FLOW_EXTENSIONS: ['.yml', '.yaml'],
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(parsed.success && 'APP_ID' in parsed.data).toBe(false);
+    expect(parsed.success && 'REPO_URL' in parsed.data).toBe(false);
+  });
+});
+
+describe('repo:list', () => {
+  const schema = IPC[CHANNELS.repoList];
+
+  it('takes nothing', () => {
+    expect(schema.request.safeParse([]).success).toBe(true);
+    expect(schema.request.safeParse(['loja-verde']).success).toBe(false);
+  });
+
+  /** The whole projection the renderer holds: every connected repo, and which
+   * one is active — `null` before the first connect. */
+  it('answers the connected repos and the active slug', () => {
+    expect(
+      schema.response.safeParse({ repos: [CONNECTED_REPO], active: CONNECTED_REPO.slug }).success,
+    ).toBe(true);
+    expect(schema.response.safeParse({ repos: [], active: null }).success).toBe(true);
+  });
+
+  it('refuses a repo entry that lost its slug', () => {
+    const { slug: _slug, ...withoutSlug } = CONNECTED_REPO;
+
+    expect(schema.response.safeParse({ repos: [withoutSlug], active: null }).success).toBe(false);
+  });
+
+  /** §2.1 — the two ids may diverge, so the model carries both sides from the
+   * start; a side the app.json does not declare is `null`, never absent. */
+  it('carries both sides of the appId, each nullable', () => {
+    const oneSided = { ...CONNECTED_REPO, appId: { android: 'com.lojaverde.pnp', ios: null } };
+
+    expect(schema.response.safeParse({ repos: [oneSided], active: null }).success).toBe(true);
+    expect(
+      schema.response.safeParse({
+        repos: [{ ...CONNECTED_REPO, appId: { android: 'com.lojaverde.pnp' } }],
+        active: null,
+      }).success,
+    ).toBe(false);
+  });
+});
+
+describe('repo:resolve', () => {
+  const schema = IPC[CHANNELS.repoResolve];
+
+  /** §9.3 — the renderer sends the raw pasted URL and nothing else: no paths,
+   * no slugs. Main parses, sanitizes and derives everything itself. */
+  it('takes the raw pasted URL alone', () => {
+    expect(schema.request.safeParse(['github.com/loja-verde/pnp-fast-mode']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  /** No repository address is measured in kilobytes — a multi-megabyte
+   * paste is refused at the boundary, not round-tripped. */
+  it('refuses an address past any honest length', () => {
+    expect(schema.request.safeParse(['g'.repeat(3000)]).success).toBe(false);
+  });
+
+  /** The start invoke returns an id immediately; progress arrives as
+   * `repo:resolve-event` pushes, never in this answer. */
+  it('answers with the resolve id and nothing else', () => {
+    expect(schema.response.safeParse({ resolveId: 1 }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('repo:connect', () => {
+  const schema = IPC[CHANNELS.repoConnect];
+
+  /** Confirming persists what main already resolved — the renderer names the
+   * resolution, never re-sends derived data. */
+  it('takes the resolve id of a finished resolution', () => {
+    expect(schema.request.safeParse([1]).success).toBe(true);
+    expect(schema.request.safeParse(['one']).success).toBe(false);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers the fresh repo state', () => {
+    expect(
+      schema.response.safeParse({ repos: [CONNECTED_REPO], active: CONNECTED_REPO.slug }).success,
+    ).toBe(true);
+  });
+});
+
+describe('repo:switch', () => {
+  const schema = IPC[CHANNELS.repoSwitch];
+
+  /** The slug is one main itself published in the list; main validates it by
+   * lookup and never builds a path from it. */
+  it('takes the slug of a connected repo', () => {
+    expect(schema.request.safeParse([CONNECTED_REPO.slug]).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  it('answers the fresh repo state', () => {
+    expect(
+      schema.response.safeParse({ repos: [CONNECTED_REPO], active: CONNECTED_REPO.slug }).success,
+    ).toBe(true);
+  });
+});
+
+describe('app:read-clipboard', () => {
+  const schema = IPC[CHANNELS.appReadClipboard];
+
+  /** The Paste affordance — the sandboxed renderer's permission handler denies
+   * `navigator.clipboard`, so the read is main's. */
+  it('takes nothing and answers the clipboard text', () => {
+    expect(schema.request.safeParse([]).success).toBe(true);
+    expect(schema.request.safeParse(['text']).success).toBe(false);
+    expect(schema.response.safeParse({ text: 'github.com/org/app' }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+describe('app:write-clipboard', () => {
+  const schema = IPC[CHANNELS.appWriteClipboard];
+
+  /** The error surface's Copy button, same rule the read follows. */
+  it('takes the text and answers what it wrote', () => {
+    expect(schema.request.safeParse(['gh auth login']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+    expect(schema.response.safeParse({ text: 'gh auth login' }).success).toBe(true);
+  });
+
+  /** Only our own short commands are ever written; anything huge is a bug. */
+  it('refuses a write past any honest command length', () => {
+    expect(schema.request.safeParse(['x'.repeat(3000)]).success).toBe(false);
+  });
+});
+
+describe('repo:changed', () => {
+  const schema = PUSH[PUSH_CHANNELS.repoChanged];
+
+  /** One push for every kind of change — first connect, a switch — carrying
+   * the same projection `repo:list` answers. */
+  it('carries the same state repo:list answers', () => {
+    expect(schema.safeParse({ repos: [CONNECTED_REPO], active: CONNECTED_REPO.slug }).success).toBe(
+      true,
+    );
+    expect(schema.safeParse({ repos: [CONNECTED_REPO] }).success).toBe(false);
+  });
+});
+
+describe('repo:resolve-event', () => {
+  const schema = PUSH[PUSH_CHANNELS.repoResolveEvent];
+
+  /** The three real stages — clone, read app.json, scan conductor/ — advance
+   * as each completes; `step` is how many are done, so `3` is "all of them". */
+  it('carries the step progress, tagged with its resolution', () => {
+    expect(schema.safeParse({ kind: 'step', resolveId: 1, step: 0 }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'step', resolveId: 1, step: 3 }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'step', resolveId: 1, step: 4 }).success).toBe(false);
+    expect(schema.safeParse({ kind: 'step', step: 1 }).success).toBe(false);
+  });
+
+  it('carries everything the found card shows', () => {
+    expect(schema.safeParse({ kind: 'found', resolveId: 1, repo: RESOLVED_REPO }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({
+        kind: 'found',
+        resolveId: 1,
+        repo: { ...RESOLVED_REPO, flowCount: undefined },
+      }).success,
+    ).toBe(false);
+  });
+
+  /** A clone that has nothing checked out to name is a real state: the branch
+   * crosses as `null`, never as a guessed default. */
+  it('lets the branch be unknown', () => {
+    expect(
+      schema.safeParse({ kind: 'found', resolveId: 1, repo: { ...RESOLVED_REPO, branch: null } })
+        .success,
+    ).toBe(true);
+  });
+
+  /**
+   * A resolution failing is not the subscription failing — like
+   * `mirror:event`'s `ended`, the failure travels as a typed event that names
+   * its resolution and carries the stable code the error surface is built
+   * from.
+   */
+  it('carries a failure with its resolution and its stable code', () => {
+    const parsed = schema.safeParse({
+      kind: 'failed',
+      resolveId: 1,
+      code: ERROR_CODES.repoGhUnauthenticated,
+      message: 'gh is not logged in.',
+    });
+
+    expect(parsed.success).toBe(true);
+    expect(schema.safeParse({ kind: 'failed', resolveId: 1 }).success).toBe(false);
+  });
+
+  it('refuses an event of no declared kind', () => {
+    expect(schema.safeParse({ kind: 'progress', resolveId: 1 }).success).toBe(false);
+  });
+});
+
 describe('flow:changed', () => {
   const schema = PUSH[PUSH_CHANNELS.flowChanged];
 
@@ -860,6 +1103,36 @@ describe('the failure codes', () => {
       'flow/not-found',
       'flow/name-taken',
       'flow/invalid-name',
+    ]);
+  });
+
+  /**
+   * The resolver's vocabulary — the spec's seven, plus the two lifecycle
+   * refusals. "gh missing" and "gh not authenticated" are different failures
+   * with different fixes (§8.1: `brew install gh` vs `gh auth login`), and
+   * the error surface tells them apart by code alone.
+   */
+  it('tell the repo refusals apart', () => {
+    expect([
+      ERROR_CODES.repoInvalidUrl,
+      ERROR_CODES.repoUnsupportedHost,
+      ERROR_CODES.repoAlreadyConnected,
+      ERROR_CODES.repoGhMissing,
+      ERROR_CODES.repoGhUnauthenticated,
+      ERROR_CODES.repoCloneFailed,
+      ERROR_CODES.repoAppConfigUnreadable,
+      ERROR_CODES.repoResolveNotFound,
+      ERROR_CODES.repoNotFound,
+    ]).toEqual([
+      'repo/invalid-url',
+      'repo/unsupported-host',
+      'repo/already-connected',
+      'repo/gh-missing',
+      'repo/gh-unauthenticated',
+      'repo/clone-failed',
+      'repo/app-config-unreadable',
+      'repo/resolve-not-found',
+      'repo/not-found',
     ]);
   });
 

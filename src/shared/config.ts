@@ -1,20 +1,7 @@
-// src/shared/config.ts — fonte única de verdade
+// src/shared/config.ts — fonte única do que é de fato constante (.context.md §2).
+// `appId`, nome do app e URL do repo NÃO moram aqui: são estado em runtime,
+// derivados do repositório ativo que o usuário colou (§2.1, §12.6).
 export const CONFIG = {
-  /**
-   * Package name (Android) / bundle id (iOS) do app sob teste.
-   * Google Calendar por enquanto — um app que qualquer device Google já tem,
-   * para testar de ponta a ponta até o app real ser definido.
-   */
-  APP_ID: process.env.CONDUCTOR_APP_ID ?? 'com.kuei.ainativesampleapp',
-
-  /**
-   * Repositório canônico que contém os testes e2e.
-   * Vazio enquanto o dono do produto não define (.context.md §2): um
-   * placeholder viajaria para dentro de `git clone` como argumento
-   * plausível, e é o `DoctorService` quem checa a ausência.
-   */
-  REPO_URL: process.env.CONDUCTOR_REPO_URL ?? '',
-
   /** Branch base para novos PRs. */
   REPO_BASE_BRANCH: process.env.CONDUCTOR_BASE_BRANCH ?? 'main',
 
@@ -36,4 +23,7 @@ export const CONFIG = {
 
   /** Idem para o `maestro`. Vazio = resolver sozinho. */
   MAESTRO_PATH: process.env.CONDUCTOR_MAESTRO_PATH ?? '',
+
+  /** Idem para o `gh`. Vazio = resolver sozinho (`resolve-gh`). */
+  GH_PATH: process.env.CONDUCTOR_GH_PATH ?? '',
 } as const;

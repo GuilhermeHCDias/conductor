@@ -2,15 +2,20 @@ import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
 import { useElementWidth } from './hooks/useElementWidth';
 import { useFlowIndex } from './hooks/useFlowIndex';
+import { useRepoEvents } from './hooks/useRepoEvents';
 import { useRunEvents } from './hooks/useRunEvents';
 import { useWindowShortcuts } from './hooks/useWindowShortcuts';
 import { countCommands } from './lib/yaml-tokens';
 import { selectYaml, useFlowStore } from './stores/flow.store';
+import { useRepoStore } from './stores/repo.store';
 import { selectRunning, selectSettledStepCount, useRunStore } from './stores/run.store';
 import { selectSidebarVisible, useUiStore } from './stores/ui.store';
+import { AddRepoDialog } from './views/AddRepoDialog/AddRepoDialog';
+import { Connect } from './views/Connect/Connect';
 import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
 import { FlowEditor } from './views/FlowEditor/FlowEditor';
 import { FlowList } from './views/FlowList/FlowList';
+import { RepoBar } from './views/RepoBar/RepoBar';
 import { Toolbar } from './views/Toolbar/Toolbar';
 
 /** The window opens at this width; the frame corrects it on first measure. */
@@ -33,6 +38,12 @@ export function App(): JSX.Element {
   const yaml = useFlowStore(selectYaml);
   const setWindowWidth = useUiStore((state) => state.setWindowWidth);
   const sidebarVisible = useUiStore(selectSidebarVisible);
+  // §2.1 — the repository IS the configuration: whether this window is the
+  // connect card or the workspace hangs off main's repo truth, and nothing
+  // renders before that truth arrives so a persisted repo never flashes the
+  // connect screen.
+  const repoLoaded = useRepoStore((state) => state.loaded);
+  const activeRepo = useRepoStore((state) => state.active);
   const [frameRef, frameWidth] = useElementWidth(INITIAL_WIDTH);
 
   useWindowShortcuts();
@@ -41,6 +52,9 @@ export function App(): JSX.Element {
   // Same rule for the workspace: the index and its watcher events belong to
   // the window, and the close-time save flush rides on this one too.
   useFlowIndex();
+  // And for the repo state — the switcher and the connect screen both read
+  // what this loads and keeps fresh.
+  useRepoEvents();
 
   // A layout effect, not a plain one: the appearance has to be on the document
   // before the first paint, or the window flashes light and then goes dark
@@ -55,38 +69,53 @@ export function App(): JSX.Element {
 
   const total = Math.max(countCommands(yaml), 1);
   const progress = Math.min(100, Math.round((settled / total) * 100));
+  const view = !repoLoaded ? 'loading' : activeRepo === null ? 'connect' : 'workspace';
 
   return (
     <div className={styles.desktop} data-testid="window-frame" ref={frameRef}>
       <div aria-hidden="true" className={styles.wash} />
 
-      <div className={styles.window}>
-        <Toolbar />
+      <div className={styles.window} data-view={view === 'connect' ? 'connect' : undefined}>
+        {view === 'connect' ? <Connect /> : null}
+        {view === 'workspace' ? (
+          <>
+            <Toolbar />
 
-        <div
-          className={styles.panes}
-          data-sidebar={sidebarVisible ? 'true' : undefined}
-          data-testid="panes"
-        >
-          {running ? (
             <div
-              className={styles.progress}
-              data-testid="run-progress"
-              style={{ width: `${progress}%` }}
-            />
-          ) : null}
+              className={styles.panes}
+              data-sidebar={sidebarVisible ? 'true' : undefined}
+              data-testid="panes"
+            >
+              {running ? (
+                <div
+                  className={styles.progress}
+                  data-testid="run-progress"
+                  style={{ width: `${progress}%` }}
+                />
+              ) : null}
 
-          {sidebarVisible ? (
-            <>
-              <FlowList />
+              {sidebarVisible ? (
+                <>
+                  <div className={styles.sidebar}>
+                    <RepoBar />
+                    <FlowList />
+                  </div>
+                  <span
+                    aria-hidden="true"
+                    className={styles.hairline}
+                    data-testid="pane-hairline"
+                  />
+                </>
+              ) : null}
+
+              <FlowEditor />
               <span aria-hidden="true" className={styles.hairline} data-testid="pane-hairline" />
-            </>
-          ) : null}
+              <DeviceMirror />
+            </div>
 
-          <FlowEditor />
-          <span aria-hidden="true" className={styles.hairline} data-testid="pane-hairline" />
-          <DeviceMirror />
-        </div>
+            <AddRepoDialog />
+          </>
+        ) : null}
       </div>
     </div>
   );

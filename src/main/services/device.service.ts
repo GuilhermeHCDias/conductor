@@ -18,8 +18,10 @@ export const POLL_INTERVAL_MS = 2000;
 
 export type DeviceServiceDeps = {
   readonly gateway: MaestroGateway;
-  /** `CONFIG.APP_ID`. The one app this service will ever ask about (§12.6). */
-  readonly appId: string;
+  /** The active repo's app id (§2.1) — a getter, because the active repo
+   * changes at runtime and this service is constructed once. `null` while no
+   * repo is connected. Never a constant (§12.6). */
+  readonly appId: () => string | null;
   /** Pushes a snapshot at the renderer. Called only when something changed. */
   readonly emit: (payload: Result<DeviceSnapshot>) => void;
   /** Pushes one mirror event. Frames come through here ~60 times a second, so
@@ -67,8 +69,18 @@ export class DeviceService {
   }
 
   async appInfo(deviceId: string): Promise<Result<AppIdentity>> {
+    const appId = this.deps.appId();
+    if (appId === null) {
+      return {
+        ok: false,
+        error: {
+          code: ERROR_CODES.deviceAppUnknown,
+          message: 'No repository is connected yet.',
+        },
+      };
+    }
     try {
-      return { ok: true, data: await this.deps.gateway.appIdentity(deviceId, this.deps.appId) };
+      return { ok: true, data: await this.deps.gateway.appIdentity(deviceId, appId) };
     } catch (error) {
       return failure(error);
     }

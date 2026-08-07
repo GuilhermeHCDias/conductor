@@ -9,7 +9,13 @@ import { contextBridge, type IpcRendererEvent, ipcRenderer } from 'electron';
  */
 const api: ConductorApi = {
   appInfo: () => ipcRenderer.invoke(CHANNELS.appInfo),
+  appReadClipboard: () => ipcRenderer.invoke(CHANNELS.appReadClipboard),
+  appWriteClipboard: (text) => ipcRenderer.invoke(CHANNELS.appWriteClipboard, text),
   configGet: () => ipcRenderer.invoke(CHANNELS.configGet),
+  repoList: () => ipcRenderer.invoke(CHANNELS.repoList),
+  repoResolve: (url) => ipcRenderer.invoke(CHANNELS.repoResolve, url),
+  repoConnect: (resolveId) => ipcRenderer.invoke(CHANNELS.repoConnect, resolveId),
+  repoSwitch: (slug) => ipcRenderer.invoke(CHANNELS.repoSwitch, slug),
   deviceList: () => ipcRenderer.invoke(CHANNELS.deviceList),
   deviceAppInfo: (deviceId) => ipcRenderer.invoke(CHANNELS.deviceAppInfo, deviceId),
   mirrorStart: (deviceId) => ipcRenderer.invoke(CHANNELS.mirrorStart, deviceId),
@@ -74,6 +80,31 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.flowChanged, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.flowChanged, forward);
+    };
+  },
+
+  // Same shape — the repo list and the active repo are main's truth (§2.1).
+  onRepoChanged: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'repo:changed'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.repoChanged, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.repoChanged, forward);
+    };
+  },
+
+  // And the resolver's progress, which two surfaces mount and unmount freely.
+  onRepoResolveEvent: (listener) => {
+    const forward = (
+      _event: IpcRendererEvent,
+      payload: PushPayload<'repo:resolve-event'>,
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.repoResolveEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.repoResolveEvent, forward);
     };
   },
 };

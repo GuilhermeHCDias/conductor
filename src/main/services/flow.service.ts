@@ -13,6 +13,7 @@ import { basename, dirname, join, relative, resolve, sep } from 'node:path';
 import { hashText } from '@shared/hash';
 import { ERROR_CODES, type Result } from '@shared/ipc';
 import type { FlowIndex, FlowMeta } from '@shared/types';
+import { countCommands, flowBody, flowExtensionOf } from './flow-classify';
 import { TreeWatcher } from './TreeWatcher';
 
 /**
@@ -28,12 +29,15 @@ import { TreeWatcher } from './TreeWatcher';
  * string is exactly the wrong check.
  */
 export type FlowServiceDeps = {
-  /** The workspace root — `userData/repo/conductor`. Injected by the
-   * composition root; nothing in here computes it (criterion 1). */
-  readonly root: string;
-  /** What a new flow's header says — `CONFIG.APP_ID`, injected so the
-   * template never exists renderer-side (criterion 19, §2). */
-  readonly appId: string;
+  /** The workspace root — the active repo's `conductor/`, or `null` before
+   * the first repo connects (§2.1). Injected by the composition root and
+   * re-pointed through `setWorkspace`; nothing in here computes it. */
+  readonly root: string | null;
+  /** What a new flow's header says — the active repo's single header id,
+   * injected so the template never exists renderer-side (§12.6). `null`
+   * while no repo is connected or while §2.1's divergence ❓ leaves the
+   * header without a value. */
+  readonly appId: string | null;
   /** `CONFIG.FLOW_EXTENSIONS` — what counts as a flow file at all. */
   readonly extensions: readonly string[];
   /** Pushes one fresh index at the window. */
@@ -49,6 +53,10 @@ const DEFAULT_DEBOUNCE_MS = 150;
 
 export class FlowService {
   private readonly deps: FlowServiceDeps;
+  /** The live workspace — starts as the deps say and swaps with the active
+   * repo (§2.1). `null` means no repo is connected and nothing is watched. */
+  private root: string | null;
+  private appId: string | null;
   private watcher: TreeWatcher | null = null;
   private watcherReady: Promise<void> | null = null;
   private debounce: NodeJS.Timeout | null = null;
@@ -56,6 +64,8 @@ export class FlowService {
 
   constructor(deps: FlowServiceDeps) {
     this.deps = deps;
+    this.root = deps.root;
+    this.appId = deps.appId;
   }
 
   /**
@@ -68,6 +78,9 @@ export class FlowService {
    * window where an edit changes nothing on screen.
    */
   async start(): Promise<void> {
+    if (this.root === null) {
+      return;
+    }
     try {
       await this.ensureRoot();
       this.ensureWatcher();
@@ -76,6 +89,41 @@ export class FlowService {
       // The workspace is unavailable; `list` will answer with its stable
       // code. Logged so the failure leaves a trail in main regardless.
       console.error('The flow workspace failed to start:', error);
+    }
+  }
+
+  /**
+   * Re-points the whole workspace at the active repo's `conductor/` (§2.1):
+   * the previous watcher is disposed first, root and header appId swap
+   * together, and the fresh index is announced unasked — the sidebar
+   * re-renders from that push with no restart.
+   */
+  async setWorkspace(workspace: { root: string; appId: string | null } | null): Promise<void> {
+    if (this.disposed) {
+      return;
+    }
+    if (this.debounce !== null) {
+      clearTimeout(this.debounce);
+      this.debounce = null;
+    }
+    const watcher = this.watcher;
+    this.watcher = null;
+    this.watcherReady = null;
+    if (watcher !== null) {
+      await watcher.close();
+    }
+    this.root = workspace?.root ?? null;
+    this.appId = workspace?.appId ?? null;
+    if (this.root === null) {
+      return;
+    }
+    try {
+      await this.ensureRoot();
+      this.ensureWatcher();
+      await this.watcherReady;
+      this.deps.emit({ ok: true, data: await this.scan() });
+    } catch (error) {
+      this.deps.emit(unavailable('The flows folder could not be opened.', error));
     }
   }
 
@@ -97,6 +145,9 @@ export class FlowService {
   /** Criterion 2 — the index. Also the retry behind criterion 36: asking
    * again re-ensures the root and revives the watcher. */
   async list(): Promise<Result<FlowIndex>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     try {
       await this.ensureRoot();
       this.ensureWatcher();
@@ -107,6 +158,9 @@ export class FlowService {
   }
 
   async read(path: string): Promise<Result<{ yaml: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     const target = await this.resolveInsideRoot(path);
     if (target === null) {
       return refuseOutside(path);
@@ -123,6 +177,9 @@ export class FlowService {
    * first: a save racing an external folder delete must still land
    * (criterion 6 — no keystroke is ever lost). */
   async save(path: string, yaml: string): Promise<Result<{ path: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     if (!this.hasFlowExtension(path)) {
       return refuse(
         ERROR_CODES.flowInvalidName,
@@ -145,8 +202,20 @@ export class FlowService {
   }
 
   /** Criteria 16–19 — the draft commits: the file exists on disk immediately,
-   * carrying the `CONFIG.APP_ID` header, and nothing else. */
+   * carrying the active repo's appId header, and nothing else. */
   async createFlow(folder: string, name: string): Promise<Result<{ path: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
+    // §2.1's divergence ❓ — the repo's two ids disagree, so no single header
+    // value exists yet. Refusing with the reason beats choosing in silence
+    // (§12.22); every other operation keeps working.
+    if (this.appId === null) {
+      return refuse(
+        ERROR_CODES.flowAppIdUnknown,
+        'This repo declares different Android and iOS app ids, and Conductor does not yet know which one a new flow should launch.',
+      );
+    }
     const valid = validName(name);
     if (valid === null) {
       return refuseName(name);
@@ -174,6 +243,9 @@ export class FlowService {
   /** Criterion 20 — folders are created at the root, visible at once even
    * though Git will not see one until it holds a flow (§7.2). */
   async createFolder(name: string): Promise<Result<{ folder: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     const valid = validName(name);
     if (valid === null) {
       return refuseName(name);
@@ -194,6 +266,9 @@ export class FlowService {
    * no-op; a case-only change is a rename of the file itself, not a
    * collision with it. */
   async renameFlow(path: string, name: string): Promise<Result<{ path: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     if (!this.hasFlowExtension(path)) {
       return refuse(ERROR_CODES.flowInvalidName, 'Only flows are renamed here.');
     }
@@ -224,6 +299,9 @@ export class FlowService {
   /** The folder twin of `renameFlow` — same parent, so a nested `a/b` renames
    * its last segment and stays under `a`. */
   async renameFolder(folder: string, name: string): Promise<Result<{ folder: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     const source = await this.resolveInsideRoot(folder);
     if (source === null || source === this.rootAbsolute()) {
       return refuseOutside(folder);
@@ -254,6 +332,9 @@ export class FlowService {
   /** Criterion 22 — `<name>-copy`, then `-copy-2` and on while taken, keeping
    * the source's own extension. */
   async duplicateFlow(path: string): Promise<Result<{ path: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     if (!this.hasFlowExtension(path)) {
       return refuse(ERROR_CODES.flowInvalidName, 'Only flows are duplicated here.');
     }
@@ -280,6 +361,9 @@ export class FlowService {
   /** Criterion 3 rides in the extension check: a single delete only ever
    * removes a flow. */
   async deleteFlow(path: string): Promise<Result<{ path: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     if (!this.hasFlowExtension(path)) {
       return refuse(ERROR_CODES.flowInvalidName, 'Only flows are deleted here.');
     }
@@ -298,6 +382,9 @@ export class FlowService {
   /** Criterion 23 — recursive, non-flows included: deleting the directory is
    * the one way a non-flow goes (criterion 3). The root itself never does. */
   async deleteFolder(folder: string): Promise<Result<{ folder: string }>> {
+    if (this.root === null) {
+      return noRepo();
+    }
     const target = await this.resolveInsideRoot(folder);
     if (target === null || target === this.rootAbsolute()) {
       return refuseOutside(folder);
@@ -357,7 +444,7 @@ export class FlowService {
    * index per settle. It reports Conductor's own writes exactly like an
    * external editor's (§12.21). */
   private ensureWatcher(): void {
-    if (this.disposed || this.watcher !== null) {
+    if (this.disposed || this.watcher !== null || this.root === null) {
       return;
     }
     const watcher = new TreeWatcher({
@@ -397,7 +484,7 @@ export class FlowService {
   }
 
   private async reindex(): Promise<void> {
-    if (this.disposed) {
+    if (this.disposed || this.root === null) {
       return;
     }
     let payload: Result<FlowIndex>;
@@ -415,7 +502,12 @@ export class FlowService {
   // ── resolution and names ───────────────────────────────────────────────────
 
   private rootAbsolute(): string {
-    return resolve(this.deps.root);
+    // Every caller guards the null workspace first; reaching here without a
+    // root is a bug, and throwing is what bugs do (AGENTS.md § IPC contract).
+    if (this.root === null) {
+      throw new Error('There is no workspace root while no repo is connected.');
+    }
+    return resolve(this.root);
   }
 
   private async ensureRoot(): Promise<void> {
@@ -469,13 +561,7 @@ export class FlowService {
 
   /** The extension as the file actually wears it — case preserved. */
   private flowExtensionOf(name: string): string {
-    const lower = name.toLowerCase();
-    for (const extension of this.deps.extensions) {
-      if (lower.endsWith(extension)) {
-        return name.slice(name.length - extension.length);
-      }
-    }
-    return '';
+    return flowExtensionOf(name, this.deps.extensions);
   }
 
   /** Criterion 18 — type `checkout`, get `checkout.yaml`; a typed extension
@@ -501,9 +587,10 @@ export class FlowService {
     );
   }
 
-  /** Criterion 19's exact bytes, appId injected — never hardcoded (§2). */
+  /** Criterion 19's exact bytes, appId injected — never hardcoded (§2). The
+   * null case is refused in `createFlow` before this is ever asked. */
   private template(): string {
-    return `appId: ${this.deps.appId}\n---\n- launchApp:\n    clearState: true\n`;
+    return `appId: ${this.appId}\n---\n- launchApp:\n    clearState: true\n`;
   }
 
   private missingOrUnavailable<T>(error: unknown, path: string): Result<T> {
@@ -512,26 +599,6 @@ export class FlowService {
     }
     return unavailable('The flows folder could not be read.', error);
   }
-}
-
-/** §7.1 — a flow is classified by its header: an `appId:` line before the
- * `---` separator. What fails the test is not a flow, and is never touched. */
-function flowBody(content: string): string | null {
-  const lines = content.split('\n');
-  const separator = lines.findIndex((line) => line.trim() === '---');
-  if (separator === -1) {
-    return null;
-  }
-  if (!lines.slice(0, separator).some((line) => line.startsWith('appId:'))) {
-    return null;
-  }
-  return lines.slice(separator + 1).join('\n');
-}
-
-/** Criterion 2 — top-level `- ` lines after the separator: the commands, and
- * never a header list like `tags:`. */
-function countCommands(body: string): number {
-  return body.split('\n').filter((line) => line.startsWith('- ')).length;
 }
 
 /**
@@ -567,6 +634,12 @@ function refuseName<T>(name: string): Result<T> {
 
 function refuseOutside<T>(path: string): Result<T> {
   return refuse(ERROR_CODES.flowInvalidName, `“${path}” points outside the flows folder.`);
+}
+
+/** §2.1 — before the first connect there is no workspace at all. The same
+ * stable code as an unreachable root: the sidebar has one screen for both. */
+function noRepo<T>(): Result<T> {
+  return refuse(ERROR_CODES.flowWorkspaceUnavailable, 'No repository is connected yet.');
 }
 
 function isMissing(error: unknown): boolean {

@@ -21,7 +21,20 @@ afterEach(() => {
 function idleConductor(): ConductorApi {
   return {
     appInfo: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    // The clipboard's quiet default is emptiness too — a Paste with nothing
+    // on it, not a broken bridge.
+    appReadClipboard: () => Promise.resolve({ ok: true, data: { text: '' } }),
+    appWriteClipboard: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     configGet: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    // No repo connected yet — the first-run truth, the way `deviceList`
+    // answers no devices.
+    repoList: () => Promise.resolve({ ok: true, data: { repos: [], active: null } }),
+    repoResolve: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    repoConnect: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    repoSwitch: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     deviceList: () =>
       Promise.resolve({ ok: true, data: { devices: [], selectedId: null, properties: null } }),
     deviceAppInfo: () =>
@@ -57,6 +70,8 @@ function idleConductor(): ConductorApi {
     onMirrorEvent: () => () => {},
     onRunEvent: () => () => {},
     onFlowChanged: () => () => {},
+    onRepoChanged: () => () => {},
+    onRepoResolveEvent: () => () => {},
   };
 }
 

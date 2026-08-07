@@ -1,0 +1,51 @@
+.cancel {
+  align-items: center;
+  background: none;
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  height: 26px;
+  padding: 0 var(--space-5);
+  transition: var(--t-hover);
+}
+
+.cancel:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.cancel:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.open {
+  align-items: center;
+  background: var(--accent);
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  height: 26px;
+  padding: 0 var(--space-5);
+  transition: var(--t-hover);
+}
+
+.open:hover:enabled {
+  background: var(--accent-strong);
+}
+
+.open:disabled {
+  cursor: default;
+  opacity: 0.55;
+}
+
+.open:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

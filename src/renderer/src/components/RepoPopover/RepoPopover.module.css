@@ -1,0 +1,150 @@
+.backdrop {
+  background: none;
+  border: none;
+  inset: 0;
+  padding: 0;
+  position: fixed;
+  z-index: 70;
+}
+
+/* The switcher floats over the sidebar the way the command menu floats over
+   the mirror, and it reads its depth the same way: the content material with
+   its own blur — the third floating layer `styles.test.ts` allows. */
+.menu {
+  animation: cd-menu-in var(--dur-base) var(--ease-out);
+  backdrop-filter: blur(var(--a-blur)) saturate(var(--a-saturate));
+  background: var(--material-content);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  box-shadow: var(--a-refract), var(--shadow-window);
+  display: grid;
+  gap: 2px;
+  padding: var(--space-2);
+  position: fixed;
+  width: 282px;
+  z-index: 71;
+}
+
+.label {
+  color: var(--text-tertiary);
+  font: var(--type-label);
+  letter-spacing: var(--ls-caps);
+  padding: 6px 9px 4px;
+  text-transform: uppercase;
+}
+
+.row {
+  align-items: center;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-field);
+  cursor: pointer;
+  display: grid;
+  gap: 9px;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  padding: 7px 9px;
+  text-align: left;
+  transition: var(--t-hover);
+  width: 100%;
+}
+
+.row:hover {
+  background: var(--glass-hover);
+}
+
+.row:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.tile {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: 7px;
+  color: var(--text-tertiary);
+  display: grid;
+  font: var(--type-body-strong);
+  height: 24px;
+  place-items: center;
+  width: 24px;
+}
+
+/* The active project wears the aurora — the one brand surface in the list. */
+.row[data-active="true"] .tile {
+  background: var(--grad-aurora);
+  border-color: transparent;
+  color: var(--text-inverse);
+}
+
+.names {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.rowName {
+  color: var(--text-primary);
+  font: var(--type-caption);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.rowBundle {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.trailing {
+  align-items: center;
+  display: flex;
+  gap: 5px;
+}
+
+.check {
+  color: var(--accent);
+}
+
+.count {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+}
+
+.divider {
+  background: var(--a-hair);
+  height: 1px;
+  margin: var(--space-2) 0;
+}
+
+.add {
+  align-items: center;
+  background: none;
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: 9px;
+  padding: 7px 9px;
+  text-align: left;
+  transition: var(--t-hover);
+  width: 100%;
+}
+
+.add:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.add:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.addGlyph {
+  color: var(--text-tertiary);
+}
