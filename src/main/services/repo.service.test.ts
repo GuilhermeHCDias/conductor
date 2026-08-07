@@ -66,6 +66,9 @@ type HarnessOptions = {
   clone?: (target: string) => number;
   /** Clone hangs until aborted — for supersede and dispose tests. */
   hangClone?: boolean;
+  /** Clone hangs and ignores the abort — the worst-case child that outlives
+   * its SIGTERM — until the test settles it by hand via `heldClones`. */
+  holdClone?: boolean;
 };
 
 function harness(options: HarnessOptions = {}): {
@@ -78,6 +81,7 @@ function harness(options: HarnessOptions = {}): {
   resolveEvents: Result<RepoResolveEvent>[];
   workspaces: (RepoWorkspace | null)[];
   aborted: () => number;
+  heldClones: Array<(exitCode: number) => void>;
 } {
   const dir = mkdtempSync(join(tmpdir(), 'conductor-repo-service-'));
   scratch.push(dir);
@@ -86,6 +90,7 @@ function harness(options: HarnessOptions = {}): {
   const changed: Result<RepoState>[] = [];
   const resolveEvents: Result<RepoResolveEvent>[] = [];
   const workspaces: (RepoWorkspace | null)[] = [];
+  const heldClones: Array<(exitCode: number) => void> = [];
   let abortCount = 0;
 
   const deps: RepoServiceDeps = {
@@ -103,6 +108,16 @@ function harness(options: HarnessOptions = {}): {
         const target = args[3];
         if (target === undefined) {
           throw new Error(`The clone call carried no target: ${JSON.stringify(args)}`);
+        }
+        if (options.holdClone === true) {
+          return new Promise((resolvePromise) => {
+            heldClones.push((exitCode) => {
+              if (exitCode === 0) {
+                plantClone(target);
+              }
+              resolvePromise({ stdout: '', stderr: 'cloning...', code: exitCode });
+            });
+          });
         }
         if (options.hangClone === true) {
           // Like the real `run.ts`: a process handed an already-aborted
@@ -152,7 +167,13 @@ function harness(options: HarnessOptions = {}): {
     resolveEvents,
     workspaces,
     aborted: () => abortCount,
+    heldClones,
   };
+}
+
+/** The clone calls alone — the ones that touch the target directory. */
+function clones(calls: Call[]): Call[] {
+  return calls.filter((call) => call.args[0] === 'repo' && call.args[1] === 'clone');
 }
 
 function data<T>(result: Result<T>): T {
@@ -440,6 +461,31 @@ describe('resolution', () => {
         (event) => event.kind === 'failed' && event.resolveId === first.resolveId,
       ),
     ).toBe(false);
+  });
+
+  /** The supersede abort is a request, not a guarantee — the old `gh`
+   * child can outlive its SIGTERM. The new resolution re-clones into the
+   * very same directory, so none of its work may start until the old one
+   * has fully wound down. The fake here ignores the abort entirely. */
+  it('holds the superseding resolution until the superseded one wound down', async () => {
+    const { service, calls, resolveEvents, heldClones } = harness({ holdClone: true });
+    data(await service.resolve(URL));
+    await until(() => clones(calls).length === 1);
+
+    const second = data(await service.resolve(URL));
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(clones(calls)).toHaveLength(1);
+
+    heldClones[0]?.(1);
+    await until(() => clones(calls).length === 2);
+    heldClones[1]?.(0);
+    await until(
+      () =>
+        events(resolveEvents).some(
+          (event) => event.kind === 'found' && event.resolveId === second.resolveId,
+        ),
+      () => JSON.stringify(resolveEvents),
+    );
   });
 
   /** Hygiene criterion — dispose aborts whatever is in flight. */

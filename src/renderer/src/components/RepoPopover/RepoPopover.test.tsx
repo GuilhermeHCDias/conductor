@@ -85,4 +85,51 @@ describe('the repo popover', () => {
     await userEvent.keyboard('{Escape}');
     expect(props.onClose).toHaveBeenCalledTimes(2);
   });
+
+  /** `role="menu"` is a promise (the ARIA menu pattern): focus lands
+   * inside on open, the arrows walk the items with wrap, Home/End jump,
+   * and whoever had focus gets it back when the popover leaves. */
+  it('focuses the active row on open, the first when none is active', () => {
+    const { unmount } = render(<RepoPopover {...popover()} />);
+    expect(screen.getByRole('menuitem', { name: /pnp-fast-mode/ })).toHaveFocus();
+    unmount();
+
+    render(<RepoPopover {...popover({ activeSlug: null })} />);
+    expect(screen.getByRole('menuitem', { name: /pnp-fast-mode/ })).toHaveFocus();
+  });
+
+  it('walks the items with the arrows, wrapping at both ends', async () => {
+    render(<RepoPopover {...popover()} />);
+
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: /other-app/ })).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: 'Add repository…' })).toHaveFocus();
+    await userEvent.keyboard('{ArrowDown}');
+    expect(screen.getByRole('menuitem', { name: /pnp-fast-mode/ })).toHaveFocus();
+    await userEvent.keyboard('{ArrowUp}');
+    expect(screen.getByRole('menuitem', { name: 'Add repository…' })).toHaveFocus();
+  });
+
+  it('jumps with Home and End', async () => {
+    render(<RepoPopover {...popover()} />);
+
+    await userEvent.keyboard('{End}');
+    expect(screen.getByRole('menuitem', { name: 'Add repository…' })).toHaveFocus();
+    await userEvent.keyboard('{Home}');
+    expect(screen.getByRole('menuitem', { name: /pnp-fast-mode/ })).toHaveFocus();
+  });
+
+  it('hands focus back where it was when it unmounts', () => {
+    const trigger = document.createElement('button');
+    document.body.appendChild(trigger);
+    trigger.focus();
+
+    const { unmount } = render(<RepoPopover {...popover()} />);
+    expect(trigger).not.toHaveFocus();
+    unmount();
+
+    expect(trigger).toHaveFocus();
+    trigger.remove();
+  });
 });

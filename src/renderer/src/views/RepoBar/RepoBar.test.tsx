@@ -33,6 +33,11 @@ const REPOS = [
 beforeEach(() => {
   resetRepoStore();
   useRepoStore.setState({ repos: REPOS, active: 'pnp-slug', loaded: true });
+  // Opening the switcher re-asks main for the list; here main answers with
+  // the same truth the store was seeded with.
+  window.conductor.repoList = vi.fn(() =>
+    Promise.resolve({ ok: true as const, data: { repos: REPOS, active: 'pnp-slug' } }),
+  );
 });
 
 describe('the repo bar', () => {
@@ -58,6 +63,25 @@ describe('the repo bar', () => {
 
     expect(screen.getByText('Repositories')).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: /other/ })).toBeInTheDocument();
+  });
+
+  /** The count on each row is read off the clone per query (§7) — the
+   * moment of opening is the query, so flows created since the last repo
+   * event still show their true number. */
+  it('re-reads the repo list when the switcher opens', async () => {
+    const fresh = REPOS.map((entry) =>
+      entry.slug === 'pnp-slug' ? { ...entry, flowCount: 9 } : entry,
+    );
+    const list = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { repos: fresh, active: 'pnp-slug' } }),
+    );
+    window.conductor.repoList = list;
+    render(<RepoBar />);
+
+    await userEvent.click(screen.getByRole('button', { name: /pnp-fast-mode/ }));
+
+    expect(list).toHaveBeenCalledOnce();
+    expect(await screen.findByText('9')).toBeInTheDocument();
   });
 
   it('switches the active repo on a row click', async () => {

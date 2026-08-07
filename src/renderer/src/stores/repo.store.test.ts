@@ -77,6 +77,37 @@ describe('the projection', () => {
     expect(store().repos).toHaveLength(1);
     expect(store().active).toBe(STATE.repos[0]?.slug);
   });
+
+  /** Counts are computed per query in main (§7) — whoever asks again gets
+   * the fresh number, and a failed re-read never blanks a working list. */
+  it('refresh replaces the projection with the fresh answer', async () => {
+    store().applyState(ok({ repos: STATE.repos, active: STATE.repos[0]?.slug ?? null }));
+    window.conductor.repoList = vi.fn(() =>
+      Promise.resolve(
+        ok({
+          repos: [repo('loja-verde-pnp-fast-mode-1a2b3c4d', { flowCount: 9 })],
+          active: 'loja-verde-pnp-fast-mode-1a2b3c4d',
+        }),
+      ),
+    );
+
+    await store().refresh();
+
+    expect(store().repos[0]?.flowCount).toBe(9);
+    expect(store().active).toBe('loja-verde-pnp-fast-mode-1a2b3c4d');
+  });
+
+  it('refresh keeps the current projection when the re-read fails', async () => {
+    const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+    store().applyState(ok({ repos: STATE.repos, active: null }));
+    window.conductor.repoList = vi.fn(() => Promise.resolve(refusal('ipc/handler-failed', 'x')));
+
+    await store().refresh();
+
+    expect(store().repos).toHaveLength(1);
+    expect(store().repos[0]?.flowCount).toBe(4);
+    log.mockRestore();
+  });
 });
 
 describe('submit', () => {

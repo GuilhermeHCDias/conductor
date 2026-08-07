@@ -1,5 +1,5 @@
 import type { ConnectedRepo } from '@shared/ipc';
-import { type JSX, useEffect } from 'react';
+import { type JSX, type KeyboardEvent, useEffect, useRef } from 'react';
 import { primaryBundleId } from '../../lib/repo-labels';
 import { Icon } from '../Icon/Icon';
 import styles from './RepoPopover.module.css';
@@ -29,6 +29,8 @@ export function RepoPopover({
   onAdd,
   onClose,
 }: RepoPopoverProps): JSX.Element {
+  const menuRef = useRef<HTMLDivElement | null>(null);
+
   // Window-wide, like the dialog: Escape must work wherever focus sits.
   useEffect(() => {
     const handleKey = (event: globalThis.KeyboardEvent): void => {
@@ -43,6 +45,49 @@ export function RepoPopover({
     };
   }, [onClose]);
 
+  // `role="menu"` promises the ARIA menu pattern: focus enters on open —
+  // the active row, or the first item — and goes back where it came from
+  // when the popover leaves.
+  useEffect(() => {
+    const menu = menuRef.current;
+    const before = document.activeElement;
+    const active = menu?.querySelector<HTMLElement>('[role="menuitem"][data-active]');
+    (active ?? menu?.querySelector<HTMLElement>('[role="menuitem"]'))?.focus();
+    return () => {
+      if (before instanceof HTMLElement && before.isConnected) {
+        before.focus();
+      }
+    };
+  }, []);
+
+  const walkItems = (event: KeyboardEvent<HTMLDivElement>): void => {
+    if (!['ArrowDown', 'ArrowUp', 'Home', 'End'].includes(event.key)) {
+      return;
+    }
+    const menu = menuRef.current;
+    if (menu === null) {
+      return;
+    }
+    const items = [...menu.querySelectorAll<HTMLElement>('[role="menuitem"]')];
+    if (items.length === 0) {
+      return;
+    }
+    event.preventDefault();
+    const focused = document.activeElement;
+    const current = focused instanceof HTMLElement ? items.indexOf(focused) : -1;
+    let next: number;
+    if (event.key === 'Home') {
+      next = 0;
+    } else if (event.key === 'End') {
+      next = items.length - 1;
+    } else if (event.key === 'ArrowDown') {
+      next = current === -1 ? 0 : (current + 1) % items.length;
+    } else {
+      next = current <= 0 ? items.length - 1 : current - 1;
+    }
+    items[next]?.focus();
+  };
+
   return (
     <>
       <button
@@ -53,7 +98,13 @@ export function RepoPopover({
         tabIndex={-1}
         type="button"
       />
-      <div className={styles.menu} role="menu" style={{ left: at.x, top: at.y }}>
+      <div
+        className={styles.menu}
+        onKeyDown={walkItems}
+        ref={menuRef}
+        role="menu"
+        style={{ left: at.x, top: at.y }}
+      >
         <span className={styles.label}>Repositories</span>
         {repos.map((repo) => (
           <RepoRow

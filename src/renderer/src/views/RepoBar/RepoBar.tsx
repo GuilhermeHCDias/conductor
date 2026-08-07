@@ -17,6 +17,7 @@ export function RepoBar(): JSX.Element | null {
   const active = useRepoStore(selectActiveRepo);
   const switchRepo = useRepoStore((state) => state.switchRepo);
   const openAdd = useRepoStore((state) => state.openAdd);
+  const refresh = useRepoStore((state) => state.refresh);
   const [at, setAt] = useState<{ x: number; y: number } | null>(null);
 
   if (active === null) {
@@ -33,8 +34,14 @@ export function RepoBar(): JSX.Element | null {
         className={styles.trigger}
         data-open={at === null ? undefined : 'true'}
         onClick={(event) => {
+          if (at !== null) {
+            setAt(null);
+            return;
+          }
+          // Opening is the query moment — the rows re-read their counts.
+          void refresh();
           const rect = event.currentTarget.getBoundingClientRect();
-          setAt(at === null ? { x: Math.round(rect.left), y: Math.round(rect.bottom + 5) } : null);
+          setAt({ x: Math.round(rect.left), y: Math.round(rect.bottom + 5) });
         }}
         type="button"
       >

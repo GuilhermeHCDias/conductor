@@ -40,6 +40,9 @@ export type RepoData = {
 export type RepoActions = {
   /** The boot query; the steady state arrives on `repo:changed`. */
   init: () => Promise<void>;
+  /** Re-asks main for the list — the switcher opening is the query moment,
+   * because flow counts are computed per query (§7). */
+  refresh: () => Promise<void>;
   applyState: (payload: PushPayload<'repo:changed'>) => void;
   applyResolveEvent: (payload: PushPayload<'repo:resolve-event'>) => void;
   setUrl: (url: string) => void;
@@ -99,6 +102,16 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
       return;
     }
     set({ repos: result.data.repos, active: result.data.active, loaded: true });
+  },
+
+  refresh: async () => {
+    const result = await window.conductor.repoList();
+    if (!result.ok) {
+      // Stale beats blank: the list on screen keeps serving.
+      console.error('The repo list could not be re-read:', result.error);
+      return;
+    }
+    set({ repos: result.data.repos, active: result.data.active });
   },
 
   applyState: (payload) => {

@@ -76,6 +76,7 @@ export function deriveAppMeta(appJsonText: string, fallbackName: string): AppMet
   }
   const root = asRecord(parsed);
   // Canonical app.json wraps the config in `expo`; some carry it top-level.
+  // `@expo/config` itself reads `json.expo ?? json` — this mirrors that.
   const expo = asRecord(root?.expo) ?? root ?? {};
   const android = nonEmptyString(asRecord(expo.android)?.package);
   const ios = nonEmptyString(asRecord(expo.ios)?.bundleIdentifier);

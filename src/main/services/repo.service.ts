@@ -88,6 +88,10 @@ export class RepoService {
    * a confirm or by the next `resolve`. */
   private pendingFound: { resolveId: number; repo: ResolvedRepo } | null = null;
   private controller: AbortController | null = null;
+  /** The resolution in flight, superseded or not — the next one awaits it
+   * before touching the disk, because both use the same target directory
+   * and an aborted `gh` child can outlive its signal. Never rejects. */
+  private running: Promise<void> = Promise.resolve();
   private currentResolveId = 0;
   private nextResolveId = 1;
   private disposed = false;
@@ -168,7 +172,14 @@ export class RepoService {
     const controller = new AbortController();
     this.controller = controller;
     this.currentResolveId = resolveId;
-    void this.runResolution(resolveId, parsed.org, parsed.name, url, controller.signal);
+    this.running = this.runResolution(
+      resolveId,
+      parsed.org,
+      parsed.name,
+      url,
+      controller.signal,
+      this.running,
+    );
     return { ok: true, data: { resolveId } };
   }
 
@@ -229,10 +240,15 @@ export class RepoService {
     name: string,
     url: string,
     signal: AbortSignal,
+    prior: Promise<void>,
   ): Promise<void> {
     const target = join(this.deps.reposDir, repoSlug(org, name));
     try {
       this.emit(resolveId, { kind: 'step', resolveId, step: 0 });
+      // The abort sent to the superseded resolution is a request, not a
+      // guarantee — its `gh` child may still be writing into `reposDir`.
+      // Nothing here proceeds until that work has fully wound down.
+      await prior;
       const gh = this.deps.resolveGh();
       if (gh === null) {
         this.fail(resolveId, ERROR_CODES.repoGhMissing, 'The GitHub CLI (gh) is not installed.');
