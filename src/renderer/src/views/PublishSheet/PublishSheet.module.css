@@ -1,0 +1,193 @@
+/* The kit's CSendSheet, inside the app's Dialog: rows in a sunken well, the
+   one note field, the send footer. This module declares no blur of its own —
+   the Dialog owns the modal frost, and frost never nests. Each change kind
+   paints its own icon and verb; waiting stays neutral. */
+
+.rows {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.row {
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) auto;
+  padding: 9px 12px;
+}
+
+.row + .row {
+  border-top: 1px solid var(--a-hair);
+}
+
+.row[data-kind="added"] .rowIcon,
+.row[data-kind="added"] .verb {
+  color: var(--state-pass);
+}
+
+.row[data-kind="changed"] .rowIcon,
+.row[data-kind="changed"] .verb {
+  color: var(--accent);
+}
+
+.row[data-kind="deleted"] .rowIcon,
+.row[data-kind="deleted"] .verb {
+  color: var(--state-fail);
+}
+
+.rowIcon {
+  align-self: center;
+  display: inline-flex;
+}
+
+.file {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+
+.name {
+  color: var(--text-primary);
+  font: var(--type-code-sm);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.place {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+}
+
+.verb {
+  align-self: center;
+  font: var(--type-caption);
+}
+
+.field {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  margin-top: var(--space-5);
+}
+
+.label {
+  align-items: baseline;
+  color: var(--text-secondary);
+  display: flex;
+  flex-wrap: wrap;
+  font: var(--type-caption);
+  gap: var(--space-3);
+}
+
+.optional {
+  color: var(--text-disabled);
+}
+
+/* Criterion 13's writing state: quiet, beside the label — the field itself
+   stays free for the person to type over the AI at any moment. */
+.writing {
+  align-items: center;
+  color: var(--ai);
+  display: inline-flex;
+  gap: var(--space-2);
+  margin-left: auto;
+}
+
+.spin {
+  animation: cd-spin var(--dur-lazy) linear infinite;
+  display: inline-flex;
+}
+
+.note {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-primary);
+  font: var(--type-body);
+  outline: none;
+  padding: 8px 10px;
+  resize: none;
+  transition: var(--t-hover);
+}
+
+.note:focus-visible {
+  box-shadow: var(--glow-accent);
+}
+
+/* Criterion 26 — the product-language failure, above the footer. */
+.failure {
+  color: var(--state-fail);
+  font: var(--type-caption);
+  margin: var(--space-5) 0 0;
+}
+
+.scope {
+  align-items: center;
+  color: var(--text-disabled);
+  display: inline-flex;
+  font: var(--type-mono-label);
+  gap: var(--space-3);
+  margin-right: auto;
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font: var(--type-caption);
+  height: 28px;
+  padding: 0 12px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.ghost:hover:enabled {
+  background: var(--glass-hover);
+}
+
+.ghost:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.primary {
+  align-items: center;
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-field);
+  box-shadow: var(--a-refract);
+  color: var(--accent-on);
+  cursor: pointer;
+  display: inline-flex;
+  font: var(--type-body-strong);
+  gap: var(--space-3);
+  height: 28px;
+  padding: 0 12px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.primary:hover:enabled {
+  background: var(--accent-strong);
+}
+
+.primary:active:enabled {
+  transform: scale(var(--press-scale));
+}
+
+.primary:disabled {
+  cursor: default;
+  opacity: 0.7;
+}
+
+.ghost:focus-visible,
+.primary:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

@@ -1,0 +1,83 @@
+/* The kit's CSendControl: one 28px slot in the toolbar, three dressings. The
+   box matches the toolbar's .environment control; the unsent state is the
+   window's saturated accent, the review pill deliberately neutral — waiting
+   is calm, not amber. */
+
+.control {
+  align-items: center;
+  border-radius: var(--a-radius-field);
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 28px;
+  padding: 0 11px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.control[data-phase="sent-all"] {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-disabled);
+  cursor: default;
+}
+
+.control[data-phase="unsent"] {
+  background: var(--accent);
+  border: 1px solid transparent;
+  box-shadow: var(--a-refract);
+  color: var(--accent-on);
+  cursor: pointer;
+  font: var(--type-body-strong);
+}
+
+.control[data-phase="unsent"]:hover {
+  background: var(--accent-strong);
+}
+
+.control[data-phase="review"] {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.control[data-phase="review"]:hover {
+  background: var(--glass-hover);
+}
+
+button.control:active {
+  transform: scale(var(--press-scale));
+}
+
+button.control:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.pass {
+  color: var(--state-pass);
+  display: inline-flex;
+}
+
+.quiet {
+  color: var(--text-tertiary);
+  display: inline-flex;
+}
+
+/* The count badge on Send changes — the kit's one literal, a translucent
+   white pill over the accent. */
+.count {
+  background: oklch(100% 0 0 / 0.24);
+  border-radius: 999px;
+  display: grid;
+  font: var(--type-mono-label);
+  height: 16px;
+  min-width: 16px;
+  padding: 0 4px;
+  place-items: center;
+}
+
+.plus {
+  color: var(--accent);
+  font: var(--type-mono-label);
+}

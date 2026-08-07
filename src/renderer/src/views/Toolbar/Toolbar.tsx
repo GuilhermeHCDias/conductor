@@ -1,11 +1,13 @@
 import type { JSX } from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
+import { SendControl } from '../../components/SendControl/SendControl';
 import { Tooltip } from '../../components/Tooltip/Tooltip';
 import { ENVIRONMENT } from '../../fixtures/flows';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
 import { selectOpenName, selectYaml, useFlowStore } from '../../stores/flow.store';
+import { selectControlPhase, selectUnsentCount, usePublishStore } from '../../stores/publish.store';
 import { selectRunning, useRunStore } from '../../stores/run.store';
 import { selectSidebarVisible, useUiStore } from '../../stores/ui.store';
 import styles from './Toolbar.module.css';
@@ -33,6 +35,10 @@ export function Toolbar(): JSX.Element {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const sidebarVisible = useUiStore(selectSidebarVisible);
   const openName = useFlowStore(selectOpenName);
+  const publishLoaded = usePublishStore((state) => state.loaded);
+  const controlPhase = usePublishStore(selectControlPhase);
+  const unsentCount = usePublishStore(selectUnsentCount);
+  const openSheet = usePublishStore((state) => state.openSheet);
 
   // The count is the open flow's own, not a fixture's: a step the command menu
   // appends moves it the moment it lands.
@@ -102,6 +108,13 @@ export function Toolbar(): JSX.Element {
       </button>
 
       <span aria-hidden="true" className={styles.separator} />
+
+      {/* Publish criteria 1–4: the send control, shown only once main's truth
+          arrived — a wrong "Everything sent" would be a small lie. Clicking
+          any interactive state opens the publish sheet. */}
+      {publishLoaded ? (
+        <SendControl count={unsentCount} onClick={openSheet} phase={controlPhase} />
+      ) : null}
 
       <Tooltip content={dark ? 'Light appearance' : 'Dark appearance'}>
         <IconButton
