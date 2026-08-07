@@ -440,8 +440,12 @@ export class PublishService {
           this.deps.aiModel,
           '--output-format',
           'json',
+          // §8.4's set plus `Skill`: the installed `--tools` restricts the
+          // whole built-in set, and without the Skill tool the model cannot
+          // load the very skill the prompt names (verified live against
+          // 2.1.224). Still no Bash, no Write, no Edit.
           '--tools',
-          'Read,Glob,Grep',
+          'Skill,Read,Glob,Grep',
           '--setting-sources',
           '',
           '--strict-mcp-config',

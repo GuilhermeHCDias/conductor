@@ -411,9 +411,12 @@ describe('the describe job', () => {
     expect(code(await service.describe())).toBe('publish/nothing-to-send');
   });
 
-  /** Criterion 10, verbatim — the §8.4 profile against the installed CLI:
-   * read-only tools, no user settings, no MCP, our plugin, capped budget.
-   * Never `--safe-mode`, never `--bare`, never `--mcp-config`. */
+  /** Criterion 10 — the §8.4 profile against the installed CLI: read-only
+   * tools, no user settings, no MCP, our plugin, capped budget. Never
+   * `--safe-mode`, never `--bare`, never `--mcp-config`. `Skill` joins the
+   * three read tools because the installed `--tools` restricts the whole
+   * built-in set — without it the model cannot load the very skill the
+   * prompt names (verified against 2.1.224; see the spec's decisions). */
   it('invokes claude headless with exactly the §8.4 profile', async () => {
     const { service, deps, cloneRoot, events, claudeCalls } = await harness();
     write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
@@ -435,7 +438,7 @@ describe('the describe job', () => {
       '--output-format',
       'json',
       '--tools',
-      'Read,Glob,Grep',
+      'Skill,Read,Glob,Grep',
       '--setting-sources',
       '',
       '--strict-mcp-config',

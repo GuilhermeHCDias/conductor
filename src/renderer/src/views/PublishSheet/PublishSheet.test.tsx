@@ -80,12 +80,10 @@ describe('PublishSheet', () => {
     openWith([CHANGES[0]]);
 
     act(() => {
-      usePublishStore
-        .getState()
-        .applyEvent({
-          ok: true,
-          data: { kind: 'described', describeId: 7, note: 'It waits now.' },
-        });
+      usePublishStore.getState().applyEvent({
+        ok: true,
+        data: { kind: 'described', describeId: 7, note: 'It waits now.' },
+      });
     });
 
     expect(screen.getByRole('textbox')).toHaveValue('It waits now.');

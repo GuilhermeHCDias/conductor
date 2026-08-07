@@ -24,6 +24,16 @@
   border-top: 1px solid var(--a-hair);
 }
 
+.rowIcon {
+  align-self: center;
+  display: inline-flex;
+}
+
+.verb {
+  align-self: center;
+  font: var(--type-caption);
+}
+
 .row[data-kind="added"] .rowIcon,
 .row[data-kind="added"] .verb {
   color: var(--state-pass);
@@ -37,11 +47,6 @@
 .row[data-kind="deleted"] .rowIcon,
 .row[data-kind="deleted"] .verb {
   color: var(--state-fail);
-}
-
-.rowIcon {
-  align-self: center;
-  display: inline-flex;
 }
 
 .file {
@@ -62,11 +67,6 @@
 .place {
   color: var(--text-disabled);
   font: var(--type-mono-label);
-}
-
-.verb {
-  align-self: center;
-  font: var(--type-caption);
 }
 
 .field {
