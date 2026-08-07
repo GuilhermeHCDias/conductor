@@ -124,6 +124,7 @@ function gateway(overrides: { tree?: string; capture?: () => Promise<Buffer> } =
       calls.push({ method: 'test', args });
       return scripted.child;
     },
+    checkSyntax: record('checkSyntax', { ok: true }),
   } as unknown as CliRunner;
 
   return {
@@ -220,6 +221,21 @@ describe('reading the view hierarchy', () => {
     const { gateway: local } = gateway({ tree: '{"elements":[]}' });
 
     await expect(local.hierarchy('R9QYC01EMXL')).rejects.toBeInstanceOf(HierarchyParseError);
+  });
+});
+
+/** Publish criterion 19 — the gate goes through the Gateway (§12 rule 9), and
+ * the Gateway only routes: the invocation's flags are `CliRunner`'s. */
+describe('checking a flow’s syntax', () => {
+  it('checks through the cli runner and answers its verdict', async () => {
+    const { gateway: local, calls } = gateway();
+
+    const verdict = await local.checkSyntax('/repos/slug/conductor/checkout/pix.yml');
+
+    expect(calls).toEqual([
+      { method: 'checkSyntax', args: ['/repos/slug/conductor/checkout/pix.yml'] },
+    ]);
+    expect(verdict).toEqual({ ok: true });
   });
 });
 

@@ -2,8 +2,12 @@
 // `appId`, nome do app e URL do repo NÃO moram aqui: são estado em runtime,
 // derivados do repositório ativo que o usuário colou (§2.1, §12.6).
 export const CONFIG = {
-  /** Branch base para novos PRs. */
-  REPO_BASE_BRANCH: process.env.CONDUCTOR_BASE_BRANCH ?? 'main',
+  /**
+   * Override explícito da branch base de um PR. Vazio = usar a branch com que
+   * o clone veio, lida do próprio clone na hora de publicar (§8.3, emenda
+   * 2026-08-07) — nunca uma constante incondicional.
+   */
+  REPO_BASE_BRANCH: process.env.CONDUCTOR_BASE_BRANCH ?? '',
 
   /**
    * Pasta, na raiz do repo, onde vivem os flows — e o único lugar em que o
@@ -26,4 +30,17 @@ export const CONFIG = {
 
   /** Idem para o `gh`. Vazio = resolver sozinho (`resolve-gh`). */
   GH_PATH: process.env.CONDUCTOR_GH_PATH ?? '',
+
+  /** Idem para o `claude`. Vazio = resolver sozinho (`resolve-claude`). */
+  CLAUDE_PATH: process.env.CONDUCTOR_CLAUDE_PATH ?? '',
+
+  /**
+   * Sempre o alias `sonnet` (§6.0): aponta para o Sonnet mais recente sem
+   * exigir release nosso. A env var permite pinar um ID exato se preciso.
+   */
+  AI_MODEL: process.env.CONDUCTOR_AI_MODEL ?? 'sonnet',
+
+  /** Teto de gasto de uma invocação de describe (§8.4): perfil apertado,
+   * bem abaixo do teto da conversa do AIPanel. */
+  AI_DESCRIBE_BUDGET_USD: 0.25,
 } as const;

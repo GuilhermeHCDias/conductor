@@ -82,15 +82,21 @@ export type FlowRun = {
   readonly kill: () => void;
 };
 
+/** The publication gate's verdict (§4.2, publish criterion 19). The failing
+ * message is the child's own words — raw material for the caller's product
+ * language and the console log, never for the screen. */
+export type SyntaxCheck = { readonly ok: true } | { readonly ok: false; readonly message: string };
+
 /**
  * The one door to everything Conductor knows about a device (.context.md
  * §4.3.7). Services depend on this interface, never on the implementation, so
  * the day execution moves to a remote runner there is one seam to replace
  * (§10.1).
  *
- * Reading the device — and now running on it. `checkSyntax` and `startDevice`
- * are named in §4.3.7 and arrive with the specs that need them; declaring them
- * here before anything can implement them would be a contract nobody honours.
+ * Reading the device — and now running on it and gating what leaves it.
+ * `startDevice` is named in §4.3.7 and arrives with the spec that needs it;
+ * declaring it here before anything can implement it would be a contract
+ * nobody honours.
  *
  * The lone exception on the other side of this door is the AI layer's `maestro
  * mcp`, which is not a Gateway concern: that child belongs to Claude Code
@@ -145,4 +151,12 @@ export interface MaestroGateway {
    * holds the exclusion: `RunService` suspends captures before calling this.
    */
   runFlow(deviceId: string, flowPath: string, handlers: RunFlowHandlers): FlowRun;
+  /**
+   * §4.2's publication gate (publish criterion 19): validates one flow file's
+   * syntax and answers the verdict. A parse, not a run — it touches no device,
+   * so it needs none of §4.3.2's exclusion. Rejects with
+   * `MaestroNotInstalledError` when there is no binary to invoke; the caller
+   * owns turning that into its own refusal.
+   */
+  checkSyntax(flowPath: string): Promise<SyntaxCheck>;
 }
