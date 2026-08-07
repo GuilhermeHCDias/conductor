@@ -321,12 +321,19 @@ export class PublishService {
   }
 
   /** Criterion 14 — the sheet closing kills the `claude` child. The same
-   * cancel serves a send's id (decision), aborting its pipeline mid-step. */
+   * cancel serves a send's id (decision): the pipeline is aborted, says
+   * nothing, and the slot frees for the next send. */
   cancel(jobId: number): Result<{ jobId: number }> {
     if (this.describeJob !== null && this.describeJob.id === jobId) {
       this.describeJob.canceled = true;
       this.describeJob.controller.abort();
       this.describeJob = null;
+      return { ok: true, data: { jobId } };
+    }
+    if (this.sendJob !== null && this.sendJob.id === jobId) {
+      this.sendJob.canceled = true;
+      this.sendJob.controller.abort();
+      this.sendJob = null;
       return { ok: true, data: { jobId } };
     }
     return refuse(ERROR_CODES.publishJobNotFound, `There is no publish job ${jobId}.`);
@@ -337,6 +344,11 @@ export class PublishService {
     clone: ActiveClone,
     changes: PublishChange[],
   ): Promise<void> {
+    // Hoisted so the failure path caches under the real hash too: a timed-out
+    // claude call may have burned budget, and criterion 16 says the same diff
+    // is never paid for twice. `''` survives only when the diff itself never
+    // computed — nothing was invoked, so there is nothing to protect.
+    let hash = '';
     try {
       const publication = this.publications[clone.slug];
       // Criterion 11: the note describes the publication whole — its birth
@@ -345,7 +357,7 @@ export class PublishService {
       const baseline =
         publication === undefined ? await this.unsentBaseline(clone) : publication.baseCommit;
       const diff = await this.publicationDiff(clone, baseline);
-      const hash = hashText(`${baseline}\n${diff.patch}`);
+      hash = hashText(`${baseline}\n${diff.patch}`);
       const cached = this.generations.get(clone.slug);
       if (cached !== undefined && cached.hash === hash) {
         this.emitDescribed(job, cached.description);
@@ -365,7 +377,7 @@ export class PublishService {
       // whatever went wrong lands in the console and the mechanical text
       // lands in the field.
       console.error('The describe job failed; using the mechanical note.', error);
-      const fallback = mechanicalGeneration('', changes);
+      const fallback = mechanicalGeneration(hash, changes);
       this.generations.set(clone.slug, fallback);
       this.emitDescribed(job, fallback.description);
     } finally {
@@ -626,7 +638,12 @@ export class PublishService {
   ): Promise<void> {
     const base = await this.baseBranch(clone);
     if (base === null) {
-      throw new SendRefusal(ERROR_CODES.publishSendFailed, 'The project has no branch to send to.');
+      // Rule 24 holds here too: the clone's HEAD was unreadable, and the
+      // message must say so without a word of Git.
+      throw new SendRefusal(
+        ERROR_CODES.publishSendFailed,
+        'The project could not be read on this Mac. Try again.',
+      );
     }
     this.emitStep(job, 'sending');
     const fetch = await this.git(

@@ -97,6 +97,19 @@ describe('the sheet and the describe job', () => {
     expect(describe).toHaveBeenCalledOnce();
   });
 
+  /** Criterion 28 — the sheet opening is a refresh trigger: the status ask
+   * reaches main, whose handler refreshes the PR state behind it. It matters
+   * most with zero changes — the Waiting for review sheet is exactly where a
+   * merged review must be noticed. */
+  it('asks for the fresh state every time the sheet opens', () => {
+    const status = vi.fn(() => Promise.resolve(ok({ changes: [], reviewOpen: true })));
+    window.conductor.publishStatus = status;
+
+    store().openSheet();
+
+    expect(status).toHaveBeenCalledOnce();
+  });
+
   /** Criterion 10 asks for ≥ 1 unsent change — an empty sheet asks nothing. */
   it('opens the sheet without a describe job when nothing is unsent', () => {
     const describe = vi.fn(() => Promise.resolve(ok({ describeId: 7 })));

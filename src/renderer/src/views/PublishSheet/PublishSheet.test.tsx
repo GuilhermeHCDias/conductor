@@ -23,6 +23,11 @@ function openWith(changes: readonly (typeof CHANGES)[number][]): void {
   window.conductor.publishDescribe = vi.fn(() =>
     Promise.resolve({ ok: true as const, data: { describeId: 7 } }),
   );
+  // The open-time refresh (criterion 28) answers the same truth the store
+  // was seeded with, the way main would.
+  window.conductor.publishStatus = vi.fn(() =>
+    Promise.resolve({ ok: true as const, data: { changes: [...changes], reviewOpen: false } }),
+  );
   usePublishStore.setState({ loaded: true, changes: [...changes] });
   act(() => {
     usePublishStore.getState().openSheet();

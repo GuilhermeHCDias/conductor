@@ -126,9 +126,13 @@ export const usePublishStore = create<PublishState>((set, get) => ({
   },
 
   /** Criteria 4 and 10 — any interactive control state opens the sheet, and
-   * the sheet opening starts the note when there is anything to describe. */
+   * the sheet opening starts the note when there is anything to describe.
+   * The status ask doubles as criterion 28's trigger: main's handler
+   * refreshes the PR state behind it, which is how a Waiting for review
+   * sheet learns the review merged. */
   openSheet: () => {
     set({ sheetOpen: true, failure: null });
+    void get().init();
     if (get().changes.length === 0) {
       return;
     }

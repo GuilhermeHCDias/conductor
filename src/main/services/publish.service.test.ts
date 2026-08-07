@@ -109,6 +109,7 @@ type HarnessOptions = {
   syntax?: (path: string) => SyntaxCheck | Promise<SyntaxCheck>;
   maestroMissing?: boolean;
   describeTimeoutMs?: number;
+  baseBranchOverride?: string;
   now?: () => Date;
 };
 
@@ -157,7 +158,7 @@ async function harness(options: HarnessOptions = {}): Promise<{
     pluginDir: join(dir, 'plugin', 'conductor-plugin'),
     flowsDir: 'conductor',
     extensions: ['.yml', '.yaml'],
-    baseBranchOverride: '',
+    baseBranchOverride: options.baseBranchOverride ?? '',
     aiModel: 'sonnet',
     describeBudgetUsd: 0.25,
     activeClone: () =>
@@ -582,10 +583,12 @@ describe('the describe job', () => {
   });
 
   /** Criterion 15's deadline — a hung claude is killed and the mechanical
-   * note arrives instead; the field never writes forever. */
-  it('kills a claude that outlives the deadline and falls back', async () => {
+   * note arrives instead; the field never writes forever. And criterion 16
+   * still holds over the failure: the timed-out call may have burned budget,
+   * so the same diff is never paid for again — reopening reuses the fallback. */
+  it('kills a claude that outlives the deadline, falls back and caches it', async () => {
     let aborted = 0;
-    const { service, cloneRoot, events } = await harness({
+    const { service, cloneRoot, events, claudeCalls } = await harness({
       describeTimeoutMs: 60,
       claudeRun: (call) =>
         new Promise((_resolve, reject) => {
@@ -609,6 +612,10 @@ describe('the describe job', () => {
     expect(aborted).toBe(1);
     const event = unwrapped(events)[0];
     expect(event?.kind === 'described' ? event.note : null).toBe('Changed: login.yml.');
+
+    data(await service.describe());
+    await until(() => events.length === 2);
+    expect(claudeCalls()).toHaveLength(1);
   });
 
   /** Criterion 14 — the sheet closing kills the child, and a canceled job
@@ -648,6 +655,58 @@ describe('the describe job', () => {
     const { service } = await harness();
 
     expect(code(service.cancel(99))).toBe('publish/job-not-found');
+  });
+});
+
+/** The decision's other half: `publish:cancel` serves a send id too — the
+ * pipeline is aborted, says nothing, and frees the slot. The UI never wires
+ * it, but the channel's contract does not depend on who calls. */
+describe('canceling a send', () => {
+  it('aborts the pipeline silently and frees the slot', async () => {
+    let release: (verdict: SyntaxCheck) => void = () => {};
+    const { service, cloneRoot, events, syntaxChecked } = await harness({
+      syntax: () =>
+        new Promise<SyntaxCheck>((resolve) => {
+          release = resolve;
+        }),
+    });
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+    const { sendId } = data(await service.send('note', null));
+    await until(() => syntaxChecked.length === 1);
+
+    const canceled = service.cancel(sendId);
+    release({ ok: true });
+    await new Promise((resolve) => setTimeout(resolve, 80));
+
+    expect(data(canceled)).toEqual({ jobId: sendId });
+    const kinds = unwrapped(events).map((event) => event.kind);
+    expect(kinds).not.toContain('sent');
+    expect(kinds).not.toContain('send-failed');
+    // The slot is free: a new send is accepted rather than refused.
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n- back\n`);
+    expect((await service.send('note', null)).ok).toBe(true);
+  });
+});
+
+describe('the base branch override', () => {
+  /** Criterion 22 — `CONDUCTOR_BASE_BRANCH` wins over the clone's own branch
+   * when set: the fetch, the parent and the PR base all follow it. */
+  it('fetches, parents and opens the PR on the override', async () => {
+    const bundle = await harness({ baseBranchOverride: 'release' });
+    const { service, cloneRoot, originDir, events, ghCalls, gitCalls } = bundle;
+    await git(cloneRoot, 'push', '-q', 'origin', 'main:release');
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+
+    data(await service.send('note', null));
+    await untilSettled(events);
+
+    const fetch = gitCalls().find((call) => gitSubcommand(call) === 'fetch');
+    expect(fetch?.args.slice(-2)).toEqual(['origin', 'release']);
+    const create = ghCalls().find((call) => call.args[1] === 'create');
+    expect(create?.args[create.args.indexOf('--base') + 1]).toBe('release');
+    expect(await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-tests^')).toBe(
+      await git(originDir, 'rev-parse', 'refs/heads/release'),
+    );
   });
 });
 
