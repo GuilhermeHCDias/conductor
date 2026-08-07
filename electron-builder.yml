@@ -27,6 +27,12 @@ files:
 extraResources:
   - from: resources/scrcpy
     to: scrcpy
+  # Our claude plugin (.context.md §8.4): a real directory on disk, because
+  # `claude --plugin-dir` reads it from another process and app.asar is a
+  # virtual filesystem no other process can open — the scrcpy jar's reason,
+  # and the same dev/packaged resolution (`conductorPluginDir`).
+  - from: resources/conductor-plugin
+    to: conductor-plugin
 mac:
   target:
     - dmg

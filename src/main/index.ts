@@ -3,11 +3,12 @@ import { join } from 'node:path';
 import { optimizer } from '@electron-toolkit/utils';
 import { CONFIG } from '@shared/config';
 import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
-import { app, BrowserWindow } from 'electron';
+import { app, BrowserWindow, shell } from 'electron';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
 import { registerFlowIpc } from './ipc/flow';
 import { registerMaestroIpc } from './ipc/maestro';
+import { registerPublishIpc } from './ipc/publish';
 import { registerRepoIpc } from './ipc/repo';
 import { registerRunIpc } from './ipc/run';
 import { AdbBridge } from './maestro/AdbBridge';
@@ -20,7 +21,9 @@ import { run, runBinary, spawnStreaming } from './process/run';
 import { DeviceService } from './services/device.service';
 import { FlowService } from './services/flow.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
+import { conductorPluginDir, PublishService } from './services/publish.service';
 import { RepoService, type RepoWorkspace } from './services/repo.service';
+import { resolveClaude } from './services/resolve-claude';
 import { resolveGh } from './services/resolve-gh';
 import { RunService } from './services/run.service';
 import { SnapshotService } from './services/snapshot.service';
@@ -161,6 +164,9 @@ if (!app.requestSingleInstanceLock()) {
 
     async function applyWorkspace(next: RepoWorkspace | null): Promise<void> {
       await flowService.setWorkspace(next);
+      // The publish domain follows the same switch: the control reflects the
+      // new repo's own unsent set and review state (criteria 9, 28).
+      await publishService.activeRepoChanged();
       if (connectWindow && next !== null) {
         connectWindow = false;
         for (const window of BrowserWindow.getAllWindows()) {
@@ -218,6 +224,45 @@ if (!app.requestSingleInstanceLock()) {
       configuredPath: CONFIG.MAESTRO_PATH,
     });
     const gateway = new LocalGateway(adb, scrcpy, mcp, capture, cli);
+    // The publish domain (§8): owns the send pipeline, the AI note and the
+    // publication state — its own file, keyed by repo slug. Git runs as the
+    // `git` binary through `run` (§9.1 as amended); `gh` and `claude` resolve
+    // the way they do everywhere.
+    const publishService = new PublishService({
+      stateFile: join(app.getPath('userData'), 'publications.json'),
+      jobsDir: join(app.getPath('userData'), 'publish-jobs'),
+      pluginDir: conductorPluginDir({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+      }),
+      flowsDir: CONFIG.FLOWS_DIR,
+      extensions: CONFIG.FLOW_EXTENSIONS,
+      baseBranchOverride: CONFIG.REPO_BASE_BRANCH,
+      aiModel: CONFIG.AI_MODEL,
+      describeBudgetUsd: CONFIG.AI_DESCRIBE_BUDGET_USD,
+      activeClone: () => repoService.activeClone(),
+      resolveGh: () =>
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable }),
+      resolveClaude: () =>
+        resolveClaude({
+          configuredPath: CONFIG.CLAUDE_PATH,
+          env: process.env,
+          home,
+          isExecutable,
+        }),
+      gateway,
+      run,
+      env: process.env,
+      emitChanged: (payload) => {
+        broadcast(PUSH_CHANNELS.publishChanged, payload);
+      },
+      emitEvent: (payload) => {
+        broadcast(PUSH_CHANNELS.publishEvent, payload);
+      },
+      openExternal: (url) => shell.openExternal(url),
+    });
+    await publishService.start();
     const device = new DeviceService({
       gateway,
       // The active repo's id, live — a switch changes what this answers
@@ -252,9 +297,12 @@ if (!app.requestSingleInstanceLock()) {
       extensions: CONFIG.FLOW_EXTENSIONS,
       emit: (payload) => {
         broadcast(PUSH_CHANNELS.flowChanged, payload);
+        // Criterion 9 — every flow change, whoever made it, is the unsent
+        // set's recompute trigger; the service debounces it itself.
+        publishService.notifyFlowChanged();
       },
     });
-    services.push(device, mcp, runService, flowService, repoService);
+    services.push(device, mcp, runService, flowService, repoService, publishService);
 
     registerAppIpc();
     registerDeviceIpc({ device });
@@ -262,6 +310,7 @@ if (!app.requestSingleInstanceLock()) {
     registerRunIpc({ run: runService });
     registerFlowIpc({ flow: flowService });
     registerRepoIpc({ repo: repoService });
+    registerPublishIpc({ publish: publishService });
 
     watchRenderer(openWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.
