@@ -1,6 +1,6 @@
 # Flow authoring skills — teach the embedded assistant to write Maestro tests
 
-status: todo
+status: done
 created: 2026-08-08
 
 ## Goal
@@ -65,6 +65,8 @@ Give `resources/conductor-plugin/` the two skills the AI window will load when s
 
 28. Before this spec is done, the author shall run three evaluations against a real `claude` session carrying both skills, a connected device and the §4.3.4 allowlist, and record pass/fail with a one-line note in the PR: (a) "write me a test for the login flow" with no flow open, against a real screen; (b) the same request with **no device connected** — expected: the assistant says so and asks, and writes nothing; (c) "add a check that the welcome message appears" against an existing open flow — expected: a surgical edit to that file, comments intact.
 
+⏸️ **Criterion 28 is outstanding — the only one.** Criteria 1–27 are delivered and green; 28 needs a real `claude`, a connected device and a hand at the keyboard, which is why the criterion assigns it to the author and routes the result to the PR. `status: done` marks the implementation, not the evaluation: **run the three before merging.** Everything needed is on this branch — point a session at `resources/conductor-plugin` with the §4.3.4 allowlist and no `Bash`.
+
 ## Constraints
 
 - **Additions only, in `resources/` and one test file.** No `ai.service.ts`, no `ai:*` channel, no preload, store, hook or view change. The AI window does not exist yet (§13 step 8); these skills are authored ahead of the session that will load them, exactly as `describe-changes` was.
@@ -92,4 +94,6 @@ Give `resources/conductor-plugin/` the two skills the AI window will load when s
 - **The assistant edits the open flow, or creates one** → "write me a test for login" with nothing open creates `conductor/login.yml`. Making a non-developer create the file first is friction §1.2 exists to remove. Selecting a newly created file in the editor is the app's job, not the skill's, and belongs to the AI-window spec.
 - **Skill names** `write-flow` and `work-in-conductor` follow the collection's own convention, set by `describe-changes` (imperative verb-object) rather than Anthropic's preferred gerund — the best-practices doc lists both as acceptable and ranks consistency within a collection above the preference.
 - **The guard test is structural, not behavioural** → CI has no `claude`, no credential and no network (§9.0), so criteria 1–7 are what a test can prove. Behaviour is covered by the three manual evaluations in criterion 28, which follow the best-practices doc's "build evaluations first" advice at the only scale this project can run them.
-- (Assumed) The guard test reads the plugin through a path resolved relative to the test file, so it passes in a worktree as well as the main checkout — `worktrees/**` is already excluded from Vitest discovery, but `resources/` is present in both.
+- (Assumed) The guard test reads the plugin through a path resolved relative to the test file, so it passes in a worktree as well as the main checkout — `worktrees/**` is already excluded from Vitest discovery, but `resources/` is present in both. **Resolved as assumed**, through `publish.service.ts`'s own `conductorPluginDir` rather than a second copy of the path, so the test reads the very directory `--plugin-dir` points at.
+- **Criterion 3's ordering clause is enforced on the two skills this spec ships, not on `describe-changes`** → the criterion's other two clauses (≤ 500 lines, English) and criteria 1, 2, 4–7 are enforced on all three, per criterion 25. `describe-changes` satisfies the clause in spirit — its only example is its last section — but it names no rules heading, and the constraints forbid modifying it. The test says so at the assertion; the alternative was a heading-detection heuristic loose enough to prove nothing.
+- **The "nothing that expires" guard rejects any `<digit>.<digit>`**, so it catches "Maestro 1.39" and, incidentally, a decimal price. Deliberate: in a skill about testing, a decimal is always avoidable and a version number never announces itself. It cost one example price a rewrite.
