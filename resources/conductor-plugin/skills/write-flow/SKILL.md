@@ -35,7 +35,7 @@ common way to write a selector that matches nothing:
 | `rid` — resource id | `id:` |
 | `txt` — text | `text:` |
 | `a11y` — accessibility label or content description | `text:` — never `a11y:` |
-| `class`, `hintText`, `value`, `scroll` | nothing. They help tell two nodes apart and they help describe one in the report. None of them is a selector. |
+| `cls`, `hint`, `val`, `scroll` | nothing. They help tell two nodes apart and they help describe one in the report. None of them is a selector. |
 
 The valid selector keys are `id`, `text`, `index`, `point`, and the relational
 ones — `below`, `above`, `leftOf`, `rightOf`.
@@ -208,7 +208,7 @@ welcome message."*
 screen, `mcp__maestro__inspect_screen` reported, among others:
 
 - a node with `txt: "Sign in"` — the screen's title
-- a node with `rid: "com.example.app:id/email_input"`, `hintText: "E-mail"`
+- a node with `rid: "com.example.app:id/email_input"`, `hint: "E-mail"`
 - a node with `rid: "com.example.app:id/password_input"`
 - a node with `txt: "Sign in"`, clickable, no `rid` — the button
 
@@ -216,7 +216,7 @@ screen, `mcp__maestro__inspect_screen` reported, among others:
 
 - The two inputs both carry a resource id, and each id matches exactly one node
   in the tree. Rung 1 settles both: `id: "email_input"`.
-- `hintText: "E-mail"` was **not** used to select. It is not a selector key —
+- `hint: "E-mail"` was **not** used to select. It is not a selector key —
   it only helped confirm which input is which while reading the tree.
 - The button carries no id, so it drops to rung 2 — and `text: "Sign in"`
   matches **two** nodes: the title says exactly the same thing. That is the

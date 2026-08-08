@@ -2,7 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
-import { conductorPluginDir } from './services/publish.service';
+import { conductorPluginDir, stripFrontMatter } from './services/publish.service';
 
 /**
  * The guard over `resources/conductor-plugin` — the skills the app hands to
@@ -64,13 +64,16 @@ const FRONT_MATTER = /^---\r?\n([\s\S]*?)\r?\n---\r?\n/;
 
 /**
  * The front matter as a map, plus the body exactly as `publish.service.ts`
- * hands it to `--system-prompt` — same regex, same trim (its own
- * `stripFrontMatter` is private). Criterion 26 rides on the two agreeing.
+ * hands it to `--system-prompt` — through that module's own
+ * `stripFrontMatter`, never a copy of it: criterion 26 guards that read path,
+ * so it has to run the function the read path runs. The regex below reads the
+ * fields, which is the only part this test needs and the loader's business.
  */
 function parse(source: string): { front: Record<string, string>; body: string } {
+  const body = stripFrontMatter(source);
   const match = source.match(FRONT_MATTER);
   if (match === null) {
-    return { front: {}, body: source };
+    return { front: {}, body };
   }
   const front: Record<string, string> = {};
   let key = '';
@@ -86,7 +89,7 @@ function parse(source: string): { front: Record<string, string>; body: string } 
       front[key] = `${front[key] ?? ''} ${line.trim()}`.trim();
     }
   }
-  return { front, body: source.slice(match[0].length).replace(/^\s*\n/, '') };
+  return { front, body };
 }
 
 type Skill = {

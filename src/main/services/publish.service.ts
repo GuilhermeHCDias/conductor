@@ -1260,8 +1260,10 @@ function describePrompt(diff: { patch: string; entries: PublishChange[] }): stri
 }
 
 /** Front matter is the skill loader's contract, not the model's: what we hand
- * over is the body alone. A file without it is already the body. */
-function stripFrontMatter(source: string): string {
+ * over is the body alone. A file without it is already the body. Exported for
+ * `conductor-plugin.test.ts`, which guards this read path and so has to run
+ * this function rather than a second copy of the regex. */
+export function stripFrontMatter(source: string): string {
   const match = source.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
   return match === null ? source : source.slice(match[0].length).replace(/^\s*\n/, '');
 }
