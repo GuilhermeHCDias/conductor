@@ -510,8 +510,17 @@ export class FlowService {
     return resolve(this.root);
   }
 
+  /** An empty workspace is seeded with `.gitkeep` (decision, 2026-08-08):
+   * Git ships no empty folder (§7.2), so without a file inside, a repo that
+   * never had `conductor/` could never receive the folder through a
+   * publication — the seed counts as an unsent change and rides the next
+   * PR (§7.1). A workspace with any content is left alone. */
   private async ensureRoot(): Promise<void> {
-    await mkdir(this.rootAbsolute(), { recursive: true });
+    const root = this.rootAbsolute();
+    await mkdir(root, { recursive: true });
+    if ((await readdir(root)).length === 0) {
+      await writeFile(join(root, '.gitkeep'), '', 'utf8');
+    }
   }
 
   /**

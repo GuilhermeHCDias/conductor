@@ -10,6 +10,7 @@ import type {
   MirrorHandlers,
   MirrorSession,
   RunFlowHandlers,
+  SyntaxCheck,
 } from './MaestroGateway';
 import { type ParsedOutput, RunOutputParser } from './RunOutputParser';
 import type { ScrcpySource } from './ScrcpySource';
@@ -111,5 +112,11 @@ export class LocalGateway implements MaestroGateway {
     });
 
     return { kill: () => child.kill() };
+  }
+
+  /** The gate (§4.2), routed and nothing else — the invocation's flags and
+   * deadline are `CliRunner`'s. */
+  checkSyntax(flowPath: string): Promise<SyntaxCheck> {
+    return this.cli.checkSyntax(flowPath);
   }
 }

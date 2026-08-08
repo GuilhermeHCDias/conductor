@@ -66,12 +66,29 @@ function idleConductor(): ConductorApi {
     flowDelete: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     flowDeleteFolder: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    // Nothing unsent and no review open — the quiet truth of a fresh
+    // workspace, the way `flowList` answers an empty tree.
+    publishStatus: () =>
+      Promise.resolve({
+        ok: true,
+        data: { repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: false },
+      }),
+    publishDescribe: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    publishSend: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    publishCancel: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    publishOpenPr: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     onDeviceChanged: () => () => {},
     onMirrorEvent: () => () => {},
     onRunEvent: () => () => {},
     onFlowChanged: () => () => {},
     onRepoChanged: () => () => {},
     onRepoResolveEvent: () => () => {},
+    onPublishChanged: () => () => {},
+    onPublishEvent: () => () => {},
   };
 }
 

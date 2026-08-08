@@ -586,6 +586,39 @@ describe('switch', () => {
   });
 });
 
+describe('activeClone', () => {
+  /** The publish domain's window into this one (publish spec): the clone root
+   * and the identity, sync — the branch is deliberately absent, because §8.3's
+   * amendment reads it off the clone at publish time, never from a snapshot. */
+  it('exposes the active clone root and identity', async () => {
+    const { service, reposDir, resolveEvents } = harness();
+    await service.connect(await resolved(service, resolveEvents));
+
+    expect(service.activeClone()).toEqual({
+      slug: SLUG,
+      org: 'loja-verde',
+      name: 'pnp-fast-mode',
+      root: join(reposDir, SLUG),
+    });
+  });
+
+  it('answers null before the first connect', () => {
+    const { service } = harness();
+
+    expect(service.activeClone()).toBeNull();
+  });
+
+  it('follows a switch', async () => {
+    const { service, reposDir, resolveEvents } = harness();
+    await service.connect(await resolved(service, resolveEvents));
+    await service.connect(await resolved(service, resolveEvents, 'github.com/loja-verde/other'));
+
+    await service.switch(SLUG);
+
+    expect(service.activeClone()?.root).toBe(join(reposDir, SLUG));
+  });
+});
+
 describe('persistence', () => {
   it('answers the saved list and active repo after a restart', async () => {
     const first = harness();

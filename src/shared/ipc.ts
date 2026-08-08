@@ -37,6 +37,11 @@ export const CHANNELS = {
   flowDuplicate: 'flow:duplicate',
   flowDelete: 'flow:delete',
   flowDeleteFolder: 'flow:delete-folder',
+  publishStatus: 'publish:status',
+  publishDescribe: 'publish:describe',
+  publishSend: 'publish:send',
+  publishCancel: 'publish:cancel',
+  publishOpenPr: 'publish:open-pr',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -49,6 +54,8 @@ export const PUSH_CHANNELS = {
   flowChanged: 'flow:changed',
   repoChanged: 'repo:changed',
   repoResolveEvent: 'repo:resolve-event',
+  publishChanged: 'publish:changed',
+  publishEvent: 'publish:event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -462,6 +469,64 @@ const flowRef = z.object({ path: z.string() });
 /** The folder-shaped twin. */
 const flowFolderRef = z.object({ folder: z.string() });
 
+/** What happened to a file since the last send — the sheet's whole vocabulary
+ * (criterion 8). A rename crosses as its Added/Deleted pair, never as a kind
+ * of its own: two rows the person can read, not one they cannot. */
+const publishChangeKind = z.enum(['added', 'changed', 'deleted']);
+
+/** One unsent change (criterion 5): the path relative to `conductor/` — the
+ * flow identity of §7.2 — and what happened to it. Never a diff, never file
+ * bodies: the sheet lists, it does not review (§8.5). */
+const publishChange = z.object({
+  path: z.string(),
+  kind: publishChangeKind,
+});
+
+/**
+ * The whole publish projection (criteria 1–3): what the toolbar control and
+ * the sheet derive every state from. The PR's number and URL deliberately
+ * never cross — rule 24 keeps them off the screen, and criterion 27 has main
+ * open the stored URL itself, so the renderer holds only "a review is open".
+ */
+const publishState = z
+  .object({
+    /** The slug of the repo this projection describes — main already publishes
+     * it in the repo list. It is how the renderer tells a repo switch from a
+     * recompute, so a note drafted for one repo never publishes for another. */
+    repo: z.string(),
+    changes: z.array(publishChange).readonly(),
+    reviewOpen: z.boolean(),
+  })
+  .strict();
+
+/** Names a describe or send job. One numbering for both kinds, so a cancel
+ * names either (decision: `publish:cancel` serves both). */
+const publishJobId = z.number().int().nonnegative();
+
+/**
+ * Publish progress, as pushes. The describe result is an event rather than the
+ * invoke's answer because the job outlives the handler (criterion 10); its
+ * `note` is the description alone — the title is AI-owned and never reaches
+ * the renderer (§8.4). A send failure travels with its stable code, and the
+ * message is product language: raw git/gh output stays in main's console
+ * (criterion 26).
+ */
+const publishEvent = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('described'), describeId: publishJobId, note: z.string() }).strict(),
+  z.object({
+    kind: z.literal('send-step'),
+    sendId: publishJobId,
+    step: z.enum(['checking', 'sending', 'opening-review']),
+  }),
+  z.object({ kind: z.literal('sent'), sendId: publishJobId, joined: z.boolean() }),
+  z.object({
+    kind: z.literal('send-failed'),
+    sendId: publishJobId,
+    code: z.string(),
+    message: z.string(),
+  }),
+]);
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   // Clipboard crosses through main because the sandboxed renderer's permission
@@ -550,6 +615,29 @@ export const IPC = {
     request: z.tuple([flowPathArgument]),
     response: flowFolderRef,
   },
+  [CHANNELS.publishStatus]: { request: noArguments, response: publishState },
+  // The sheet opening is the trigger and main computes the change set itself,
+  // so nothing crosses in; the id comes back immediately and the note arrives
+  // as a `publish:event` push (criterion 10) — never awaited here.
+  [CHANNELS.publishDescribe]: {
+    request: noArguments,
+    response: z.object({ describeId: publishJobId }),
+  },
+  // The note as the person edited it (criterion 17), bounded (criterion 32),
+  // and the flow open right now — the slug source at publication birth
+  // (criterion 20), null when none is. The title never crosses: it is
+  // AI-owned and lives main-side (§8.4).
+  [CHANNELS.publishSend]: {
+    request: z.tuple([z.string().max(10_000), z.string().nullable()]),
+    response: z.object({ sendId: publishJobId }),
+  },
+  [CHANNELS.publishCancel]: {
+    request: z.tuple([publishJobId]),
+    response: z.object({ jobId: publishJobId }),
+  },
+  // No arguments by design (criterion 27): main validates and opens the URL
+  // it stored, and answers with what it opened. The renderer never sends one.
+  [CHANNELS.publishOpenPr]: { request: noArguments, response: z.object({ url: z.string() }) },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
@@ -560,6 +648,8 @@ export const PUSH = {
   [PUSH_CHANNELS.flowChanged]: flowIndex,
   [PUSH_CHANNELS.repoChanged]: repoState,
   [PUSH_CHANNELS.repoResolveEvent]: repoResolveEvent,
+  [PUSH_CHANNELS.publishChanged]: publishState,
+  [PUSH_CHANNELS.publishEvent]: publishEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -588,6 +678,10 @@ export type ResolvedRepo = z.infer<typeof resolvedRepo>;
 export type ConnectedRepo = z.infer<typeof connectedRepo>;
 export type RepoState = z.infer<typeof repoState>;
 export type RepoResolveEvent = z.infer<typeof repoResolveEvent>;
+export type PublishChangeKind = z.infer<typeof publishChangeKind>;
+export type PublishChange = z.infer<typeof publishChange>;
+export type PublishState = z.infer<typeof publishState>;
+export type PublishEvent = z.infer<typeof publishEvent>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -736,6 +830,37 @@ export const ERROR_CODES = {
   repoResolveNotFound: 'repo/resolve-not-found',
   /** A switch naming a slug the connected list does not have. */
   repoNotFound: 'repo/not-found',
+  /** A publish operation before any repo is connected — an expected state at
+   * boot, which the store keeps quiet about rather than surfacing. */
+  publishNoRepo: 'publish/no-repo',
+  /** Criterion 24 — §8.3's "nothing new to send": the send is refused and the
+   * sheet returns to the idle truth. */
+  publishNothingToSend: 'publish/nothing-to-send',
+  /** A second send while one is in flight. One publication, one pipeline. */
+  publishSendActive: 'publish/send-active',
+  /**
+   * Criterion 19 — the gate cannot run at all. Distinct from the run path's
+   * `run/maestro-not-found` because it reaches a different surface with its
+   * own message, the way that one is distinct from `mcp/maestro-not-found`.
+   */
+  publishMaestroMissing: 'publish/maestro-missing',
+  /** Criterion 19 — a changed flow failed `check-syntax`. The message names
+   * the file in product language; raw Maestro output never crosses. */
+  publishSyntaxError: 'publish/syntax-error',
+  /**
+   * Criterion 26 — the honest fallback for a pipeline that failed anywhere
+   * else: fetch, commit, push, or `gh`. What happened and what to do, in
+   * product language; the raw stderr goes to main's console alone. The gh
+   * failures deliberately have no publish twins — `repo/gh-missing` and
+   * `repo/gh-unauthenticated` are reused so each keeps its one specific fix.
+   */
+  publishSendFailed: 'publish/send-failed',
+  /** A cancel naming a job that is unknown or already finished — a state,
+   * not a bug, exactly like `run/not-found`. */
+  publishJobNotFound: 'publish/job-not-found',
+  /** View on GitHub with no open review, or with a stored URL that does not
+   * parse as a GitHub PR (criterion 27) — refused, nothing opens. */
+  publishNoReview: 'publish/no-review',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -815,6 +940,30 @@ export interface ConductorApi {
   flowDeleteFolder: (
     ...args: Request<'flow:delete-folder'>
   ) => Promise<Result<Response<'flow:delete-folder'>>>;
+  /** The publish projection on demand — the boot query, and the sheet-open
+   * refresh trigger (criterion 28). The steady state arrives on
+   * `onPublishChanged` instead. */
+  publishStatus: (
+    ...args: Request<'publish:status'>
+  ) => Promise<Result<Response<'publish:status'>>>;
+  /** Starts the AI note (criterion 10) and answers with the job id the moment
+   * the work is accepted — the note itself arrives on `onPublishEvent`. */
+  publishDescribe: (
+    ...args: Request<'publish:describe'>
+  ) => Promise<Result<Response<'publish:describe'>>>;
+  /** Starts the send pipeline (criterion 18): the id immediately, progress as
+   * `publish:event` pushes, and never a pipeline awaited in the handler. */
+  publishSend: (...args: Request<'publish:send'>) => Promise<Result<Response<'publish:send'>>>;
+  /** Criterion 14 — the sheet closing kills the describe job's `claude` child.
+   * One cancel for both job kinds. */
+  publishCancel: (
+    ...args: Request<'publish:cancel'>
+  ) => Promise<Result<Response<'publish:cancel'>>>;
+  /** Criterion 27 — main validates and opens the stored PR URL itself; the
+   * renderer asks, and sends nothing. */
+  publishOpenPr: (
+    ...args: Request<'publish:open-pr'>
+  ) => Promise<Result<Response<'publish:open-pr'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
@@ -835,4 +984,10 @@ export interface ConductorApi {
   onRepoResolveEvent: (
     listener: (payload: PushPayload<'repo:resolve-event'>) => void,
   ) => () => void;
+  /** The unsent set and the review state, recomputed off `flow:changed`
+   * (debounced) and on a repo switch — criterion 9's one path. */
+  onPublishChanged: (listener: (payload: PushPayload<'publish:changed'>) => void) => () => void;
+  /** Describe results and send progress, each event naming its job — a late
+   * event from a superseded job must never decorate a live one. */
+  onPublishEvent: (listener: (payload: PushPayload<'publish:event'>) => void) => () => void;
 }

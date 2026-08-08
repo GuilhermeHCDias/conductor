@@ -1,5 +1,6 @@
 import { ERROR_CODES } from '@shared/ipc';
 import type { SpawnOptions, StreamingProcess } from '../process/run';
+import type { SyntaxCheck } from './MaestroGateway';
 import { resolveMaestro } from './resolve-maestro';
 
 /**
@@ -9,14 +10,17 @@ import { resolveMaestro } from './resolve-maestro';
  * `RunService`, and the process creation itself to `spawnStreaming`, which
  * arrives by injection the way it does everywhere (§10.1, §12.19).
  *
- * Every invocation carries `--no-reinstall-driver` (§4.4a — the default
- * reinstalls the driver on every call, and that is the number one cause of
- * slowness) and `MAESTRO_CLI_NO_ANALYTICS=1` (§4.4c, §12 rule 10).
+ * Every invocation carries `MAESTRO_CLI_NO_ANALYTICS=1` (§4.4c, §12 rule 10).
+ * `--no-reinstall-driver` (§4.4a — the default reinstalls the driver on every
+ * call, and that is the number one cause of slowness) rides only where rule 10
+ * scopes it: `test` and `hierarchy`. `check-syntax` takes the file and nothing
+ * else — verified against the installed CLI, which rejects any flag there.
  *
  * ⚠️ §4.3.2's amendment is this module's standing warning: a raw CLI call and
  * a live `maestro mcp` session contend for the on-device driver, and the
  * failure is *silently incomplete data reported as success*. Whoever calls
  * this must hold the MCP path idle first — `RunService` owns that exclusion.
+ * (`checkSyntax` is exempt: a parse touches no device.)
  */
 
 export type CliRunnerDeps = {
@@ -70,5 +74,58 @@ export class CliRunner {
         killTree: true,
       },
     );
+  }
+
+  /**
+   * §4.2's gate: `maestro check-syntax <file>` — the file and nothing else
+   * (no device, and no `--no-reinstall-driver`: rule 10 scopes that flag to
+   * `hierarchy`/`test`, and the subcommand rejects it). The verdict derives
+   * from the exit alone; the child's output rides the failure as raw words
+   * for the caller to translate. Deadline-guarded so a JVM that hangs becomes
+   * a visible failure, never an eternal "checking" (publish constraint).
+   */
+  checkSyntax(flowPath: string, options: { timeoutMs?: number } = {}): Promise<SyntaxCheck> {
+    const binary = resolveMaestro(this.deps);
+    if (binary === null) {
+      return Promise.reject(new MaestroNotInstalledError());
+    }
+    const timeoutMs = options.timeoutMs ?? 30_000;
+    const child = this.deps.spawn(binary, ['check-syntax', flowPath], {
+      env: { ...this.deps.env, MAESTRO_CLI_NO_ANALYTICS: '1' },
+      killTree: true,
+    });
+    return new Promise((resolve) => {
+      let output = '';
+      let timedOut = false;
+      const deadline = setTimeout(() => {
+        timedOut = true;
+        child.kill();
+      }, timeoutMs);
+      child.onStdout((chunk) => {
+        output += chunk;
+      });
+      child.onStderr((chunk) => {
+        output += chunk;
+      });
+      child.onExit((reason) => {
+        clearTimeout(deadline);
+        if (timedOut) {
+          resolve({
+            ok: false,
+            message: `maestro check-syntax did not finish within ${Math.round(timeoutMs / 1000)} seconds.`,
+          });
+          return;
+        }
+        if (reason.error !== null) {
+          resolve({ ok: false, message: reason.error.message });
+          return;
+        }
+        if (reason.code === 0) {
+          resolve({ ok: true });
+          return;
+        }
+        resolve({ ok: false, message: output.trim() });
+      });
+    });
   }
 }

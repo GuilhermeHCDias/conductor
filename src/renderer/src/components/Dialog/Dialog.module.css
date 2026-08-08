@@ -1,5 +1,8 @@
 /* Ported from the design system's surface/Dialog. The dialog blurs heavier
-   than any other layer — that is how its depth is read. */
+   than any other layer — that is how its depth is read. Its fill departs
+   from the kit (decision 2026-08-08): --glass-dialog is near-opaque, because
+   the app behind the modal showed through --glass-3 and made the sheet hard
+   to read; the frost survives in the blur at the edges. */
 
 .backdrop {
   position: fixed;
@@ -28,7 +31,7 @@
   width: 460px;
   max-width: 100%;
   border-radius: var(--radius-lg);
-  background: var(--glass-3);
+  background: var(--glass-dialog);
   backdrop-filter: blur(var(--blur-heavy)) saturate(var(--saturate-glass));
   -webkit-backdrop-filter: blur(var(--blur-heavy)) saturate(var(--saturate-glass));
   border: var(--border-hair) solid var(--edge-2);
