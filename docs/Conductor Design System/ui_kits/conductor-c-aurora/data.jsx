@@ -65,4 +65,24 @@ const STEP_LABELS = {
   inputText: "Input text",
 };
 
-Object.assign(window, { FLOW_START, TESTS, FOLDERS, REVIEWER, A11Y_FALLBACK, COMMAND_GROUPS, SNIPPETS, STEP_LABELS });
+/* ── Repositories ─────────────────────────────────────────────────────────────────────────
+   The repository is the only thing a person configures, and everything else is derived from it:
+   `app` and `bundle` are read out of the build files, `folder` is where flows live, and the
+   suite below it is what conductor/ contains. Switching repos swaps all of it. */
+const ATENDIMENTO_TESTS = [
+  { id: "a-chamado", name: "abrir-chamado.yaml", folder: "chat", steps: 9, lastResult: "pass", lastRun: "Aug 4, 10:12 am", duration: "0:31" },
+  { id: "a-resposta", name: "resposta-rapida.yaml", folder: "chat", steps: 6, lastResult: "fail", lastRun: "Aug 4, 10:09 am", duration: "0:12" },
+  { id: "a-login", name: "login.yaml", folder: "", steps: 5, lastResult: "pass", lastRun: "Aug 1, 5:20 pm", duration: "0:11" },
+];
+
+const REPOS = [
+  { id: "r-pnp", host: "github.com", org: "loja-verde", name: "pnp-fast-mode", branch: "main", app: "Pedidos", bundle: "com.example.app", platform: "Android", folder: "conductor/", opened: "Now", tests: TESTS, folders: FOLDERS },
+  { id: "r-atendimento", host: "github.com", org: "loja-verde", name: "atendimento-app", branch: "main", app: "Atendimento", bundle: "com.lojaverde.atendimento", platform: "Android", folder: "conductor/", opened: "Yesterday", tests: ATENDIMENTO_TESTS, folders: ["chat"] },
+  { id: "r-entregador", host: "github.com", org: "loja-verde", name: "entregador", branch: "develop", app: "Entregador", bundle: "com.lojaverde.driver", platform: "Android", folder: "conductor/", opened: "Jul 21", tests: [], folders: [] },
+];
+
+/* Repos Conductor recognises when one is pasted for the first time. Anything else still
+   resolves — it simply arrives with an empty conductor/. */
+const REPO_LIBRARY = REPOS;
+
+Object.assign(window, { FLOW_START, TESTS, FOLDERS, REPOS, REPO_LIBRARY, REVIEWER, A11Y_FALLBACK, COMMAND_GROUPS, SNIPPETS, STEP_LABELS });

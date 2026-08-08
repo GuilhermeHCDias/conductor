@@ -12,6 +12,22 @@ import { SelectorSynthError, synthesizeSelector } from './SelectorSynth';
  * screen happens not to exercise. The traps here are §5.3's: tree keys are not
  * selector keys, `text:` is a full-string case-insensitive regex, and text is
  * copied literally from the tree or not at all.
+ *
+ * The runtime model the assertions encode is Maestro's own, read out of
+ * cli-2.8.0 (`Filters.kt`, `Orchestra.buildFilter`, `Maestro.findElementWithTimeout`)
+ * after the 2026-08-06 incident where a recorded `above:` tapped a link on the
+ * far side of the screen:
+ *
+ *  - `idMatches` accepts the resource-id **or** its part after the last `/`.
+ *  - `textMatches` reads text, content-desc **and hintText**.
+ *  - Every index-less selector is wrapped in `deepestMatchingElement`: a match
+ *    with a matching descendant is dropped, and only the deepest survive.
+ *  - `index:` counts the survivors sorted by position — `(y1, x1)`, boundless
+ *    last — never by tree order.
+ *  - A relational filter keeps the nodes whose **top-left corner** satisfies
+ *    the direction against the anchor's; `intersect` then throws the distance
+ *    sort away (`.toSet()`), leaving tree order, `clickableFirst()` ranks
+ *    clickable ones ahead, and the runner taps the first.
  */
 
 const CAPTURE = readFileSync(resolve('src/main/maestro/inspect-screen.capture.json'), 'utf8');
@@ -143,10 +159,13 @@ describe('the ladder against real hardware data', () => {
       expect(result.fragile).toBe(result.level === 'point');
 
       if (result.level === 'id' || result.level === 'text') {
-        expect(countMatches(capture, result)).toBe(1);
+        const matches = matchedNodes(capture, result);
+        expect(matches.length).toBe(1);
+        // Not merely unique: the one node Maestro would resolve is this one.
+        expect(matches[0]).toBe(entry.node);
       }
       if (result.level === 'text-index') {
-        const matches = matchedNodes(capture, result);
+        const matches = positionSorted(matchedNodes(capture, result));
         const index = Number(result.selector.match(/index: (\d+)$/)?.[1]);
         expect(matches[index]).toBe(entry.node);
       }
@@ -154,13 +173,13 @@ describe('the ladder against real hardware data', () => {
   });
 });
 
-/** How many nodes the emitted selector names, by Maestro's own semantics:
- * full-string regex, case-insensitive for `text:` against text and
- * content-desc, case-sensitive for `id:` against resource-id (§5.3). */
-function countMatches(root: TreeNode, result: { level: string; selector: string }): number {
-  return matchedNodes(root, result).length;
-}
-
+/**
+ * The nodes the emitted selector names at runtime, by Maestro's own semantics
+ * (cli-2.8.0): full-string regex — case-insensitive for `text:` against text,
+ * content-desc and hintText; case-sensitive for `id:` against the resource-id
+ * and its part after the last `/` — then `deepestMatchingElement`, which drops
+ * any match with a matching descendant.
+ */
 function matchedNodes(root: TreeNode, result: { level: string; selector: string }): TreeNode[] {
   const value = result.selector.match(/^(?:id|text): "((?:[^"\\]|\\.)*)"/)?.[1];
   if (value === undefined) {
@@ -169,18 +188,53 @@ function matchedNodes(root: TreeNode, result: { level: string; selector: string 
   // Undoing the YAML double-quote escapes yields the regex Maestro compiles —
   // the semantics the emitted selector actually has, wildcards and all.
   const pattern = value.replace(/\\(.)/g, '$1');
-  if (result.level === 'id') {
-    const regex = new RegExp(`^(?:${pattern})$`);
-    return walk(root)
-      .filter((entry) => entry.node.resourceId !== null && regex.test(entry.node.resourceId))
-      .map((entry) => entry.node);
-  }
-  const regex = new RegExp(`^(?:${pattern})$`, 'i');
-  const matches = (candidate: string | null): boolean =>
-    candidate !== null && regex.test(candidate);
-  return walk(root)
-    .filter((entry) => matches(entry.node.text) || matches(entry.node.contentDescription))
-    .map((entry) => entry.node);
+  const hit =
+    result.level === 'id'
+      ? (node: TreeNode): boolean => {
+          const regex = new RegExp(`^(?:${pattern})$`);
+          const rid = node.resourceId;
+          return (
+            rid !== null && (regex.test(rid) || regex.test(rid.slice(rid.lastIndexOf('/') + 1)))
+          );
+        }
+      : (node: TreeNode): boolean => {
+          const regex = new RegExp(`^(?:${pattern})$`, 'i');
+          return [node.text, node.contentDescription, node.hintText].some(
+            (candidate) => candidate !== null && regex.test(candidate),
+          );
+        };
+  return collapseToDeepest(root, hit);
+}
+
+/** `Filters.deepestMatchingElement`: a match with a matching descendant never
+ * reaches the runner — only the deepest survive, in tree order. */
+function collapseToDeepest(root: TreeNode, hit: (node: TreeNode) => boolean): TreeNode[] {
+  const survivors: TreeNode[] = [];
+  const visit = (node: TreeNode): boolean => {
+    let below = false;
+    for (const child of node.children) {
+      below = visit(child) || below;
+    }
+    if (below) {
+      return true;
+    }
+    if (hit(node)) {
+      survivors.push(node);
+      return true;
+    }
+    return false;
+  };
+  visit(root);
+  return survivors;
+}
+
+/** `Filters.INDEX_COMPARATOR` — `index:` counts by position, boundless last. */
+function positionSorted(nodes: readonly TreeNode[]): TreeNode[] {
+  const key = (node: TreeNode): { y: number; x: number } => ({
+    y: node.bounds?.y1 ?? Number.MAX_SAFE_INTEGER,
+    x: node.bounds?.x1 ?? Number.MAX_SAFE_INTEGER,
+  });
+  return [...nodes].sort((a, b) => key(a).y - key(b).y || key(a).x - key(b).x);
 }
 
 /* ── the rungs the capture does not reach ───────────────────────────────── */
@@ -249,6 +303,98 @@ describe('duplicated text', () => {
     });
 
     expect(synthesizeSelector(capture, [0], screen).selector).toBe('text: "A"');
+  });
+
+  /**
+   * ⚠️ A container's content-desc and its label's text routinely repeat each
+   * other (a Material tab: item `content-desc: Explore` wrapping a TextView
+   * `text: Explore`). Maestro's `deepestMatchingElement` drops the container,
+   * so at runtime `text:` names exactly one node — counting it as a duplicate
+   * would demote a sound selector to `index:` for nothing.
+   */
+  it('collapses a container whose descendant carries the same text', () => {
+    const capture = node({
+      bounds: box(0, 0, 100, 300),
+      children: [
+        node({
+          bounds: box(0, 0, 100, 50),
+          contentDescription: 'Explore',
+          clickable: true,
+          children: [node({ bounds: box(10, 10, 90, 40), text: 'Explore' })],
+        }),
+      ],
+    });
+
+    expect(synthesizeSelector(capture, [0, 0], screen)).toEqual({
+      level: 'text',
+      selector: 'text: "Explore"',
+      fragile: false,
+    });
+  });
+
+  /**
+   * ⚠️ `Filters.index` sorts its matches by position — `(y1, x1)`, the
+   * `INDEX_COMPARATOR` — never by tree order. A tree whose second child is
+   * drawn above its first would otherwise get an index that taps the wrong
+   * twin at runtime.
+   */
+  it('counts index: in position order, not tree order', () => {
+    const capture = node({
+      bounds: box(0, 0, 100, 300),
+      children: [
+        node({ bounds: box(0, 100, 100, 150), text: 'Q' }),
+        node({ bounds: box(0, 0, 100, 50), text: 'Q' }),
+      ],
+    });
+
+    // The first child in tree order is the *second* by position.
+    expect(synthesizeSelector(capture, [0], screen)).toEqual({
+      level: 'text-index',
+      selector: 'text: "Q"\nindex: 1',
+      fragile: false,
+    });
+  });
+
+  /** ⚠️ `Filters.textMatches` also reads hintText. A field whose hint repeats
+   * the target's text is a second runtime match, even though hintText is never
+   * a selector value of ours (§5.3). */
+  it('counts a hintText match toward text uniqueness', () => {
+    const capture = node({
+      bounds: box(0, 0, 100, 300),
+      children: [
+        node({ bounds: box(0, 0, 100, 50), text: 'Search' }),
+        node({ bounds: box(0, 100, 100, 150), hintText: 'Search' }),
+      ],
+    });
+
+    expect(synthesizeSelector(capture, [0], screen)).toEqual({
+      level: 'text-index',
+      selector: 'text: "Search"\nindex: 0',
+      fragile: false,
+    });
+  });
+});
+
+describe('id matching', () => {
+  const screen = { width: 100, height: 200 };
+
+  /**
+   * ⚠️ `Filters.idMatches` accepts the resource-id *or* its part after the
+   * last `/`. A bare testID therefore collides with any namespaced id ending
+   * in the same name, and emitting `id:` here would tap one of two at runtime.
+   * With no text either, and no anchor that can name it, the honest answer is
+   * `point:`.
+   */
+  it('climbs past an id whose prefixless form matches a second node', () => {
+    const capture = node({
+      bounds: box(0, 0, 100, 200),
+      children: [
+        node({ bounds: box(0, 0, 100, 50), resourceId: 'submit' }),
+        node({ bounds: box(0, 100, 100, 150), resourceId: 'com.app:id/submit' }),
+      ],
+    });
+
+    expect(synthesizeSelector(capture, [0], screen).level).toBe('point');
   });
 });
 
@@ -343,7 +489,13 @@ describe('relational selectors', () => {
     expect(synthesizeSelector(capture, [1], screen).selector).toBe('below:\n  id: "app:id/label"');
   });
 
-  /** The direction names where the target sits relative to the anchor. */
+  /**
+   * The direction names where the target sits relative to the anchor — by
+   * top-left corners, Maestro's own predicate. The targets are clickable
+   * because `above`/`leftOf` also admit every enclosing container (a wrapper's
+   * corner is above its content's): `clickableFirst()` is what carries the
+   * pick past the containers to the element the person actually meant.
+   */
   it.each([
     ['above', box(0, 100, 100, 150), box(0, 160, 100, 210)],
     ['leftOf', box(40, 60, 80, 160), box(80, 60, 100, 160)],
@@ -351,7 +503,10 @@ describe('relational selectors', () => {
   ] as const)('emits %s: when the target is %s the anchor', (direction, target, anchor) => {
     const capture = node({
       bounds: box(0, 0, 100, 220),
-      children: [node({ bounds: anchor, text: 'Anchor' }), node({ bounds: target })],
+      children: [
+        node({ bounds: anchor, text: 'Anchor' }),
+        node({ bounds: target, clickable: true }),
+      ],
     });
 
     expect(synthesizeSelector(capture, [1], screen).selector).toBe(
@@ -360,12 +515,13 @@ describe('relational selectors', () => {
   });
 
   /**
-   * ⚠️ The relational filter names the element *closest* to the anchor in that
-   * direction. When another node sits between the anchor and the target, the
-   * selector would land on the interloper — so it is not emitted, and the
-   * ladder falls through to `point:`.
+   * ⚠️ Maestro resolves a relational selector to the first node in **tree
+   * order** that satisfies the direction — `intersect` throws the distance
+   * sort away (`Filters.kt`, `.toSet()`). A node earlier in the tree between
+   * the anchor and the target is the runtime pick, so the selector is not
+   * emitted and the ladder falls through to `point:`.
    */
-  it('refuses an anchor whose closest match is a different node', () => {
+  it('refuses an anchor when an earlier node in tree order is the pick', () => {
     const capture = node({
       bounds: box(0, 0, 100, 220),
       children: [
@@ -377,6 +533,199 @@ describe('relational selectors', () => {
 
     const result = synthesizeSelector(capture, [2], screen);
     expect(result.level).toBe('point');
+  });
+
+  /**
+   * ⚠️ `above:`'s predicate is `candidate.y1 < anchor.y1`, which the enclosing
+   * container satisfies too — its corner is above everything it wraps, and it
+   * sits first in tree order. For a non-clickable target nothing outranks it,
+   * so the container is what Maestro would tap.
+   */
+  it('refuses above: when the enclosing container is the runtime pick', () => {
+    const capture = node({
+      bounds: box(0, 0, 100, 220),
+      children: [
+        node({ bounds: box(0, 160, 100, 210), text: 'Anchor' }),
+        node({ bounds: box(0, 100, 100, 150) }),
+      ],
+    });
+
+    expect(synthesizeSelector(capture, [1], screen).level).toBe('point');
+  });
+
+  /**
+   * ⚠️ `clickableFirst()` ranks every clickable candidate ahead of the rest,
+   * still in tree order — so a clickable node earlier in the tree steals the
+   * pick from a clickable target, however far from the anchor it sits. This is
+   * the 2026-08-06 incident in miniature.
+   */
+  it('refuses a direction when an earlier clickable steals the pick', () => {
+    // A boundless root, the way real captures report theirs (§5.2).
+    const capture = node({
+      children: [
+        node({ bounds: box(0, 50, 100, 90), clickable: true }),
+        node({ bounds: box(0, 200, 100, 250), text: 'Anchor' }),
+        node({ bounds: box(0, 100, 100, 150), clickable: true }),
+      ],
+    });
+
+    expect(synthesizeSelector(capture, [2], screen).level).toBe('point');
+  });
+
+  /**
+   * ⚠️ The target can be an ancestor Maestro's collapse makes unnameable by
+   * text (its label matches instead) — but the relational rung can still name
+   * it when the runtime pick lands on it: here the clickable container is the
+   * first candidate above its own label. This is the tab item's happy path.
+   */
+  it('falls through to a relational anchored on the target own label', () => {
+    const capture = node({
+      bounds: box(0, 0, 100, 220),
+      children: [
+        node({
+          bounds: box(0, 0, 100, 50),
+          contentDescription: 'Explore',
+          clickable: true,
+          children: [node({ bounds: box(10, 10, 90, 40), text: 'Explore' })],
+        }),
+      ],
+    });
+
+    expect(synthesizeSelector(capture, [0], screen)).toEqual({
+      level: 'relational',
+      selector: 'above:\n  text: "Explore"',
+      fragile: false,
+    });
+  });
+});
+
+describe('the 2026-08-06 incident', () => {
+  /** The Galaxy A07's screen, hierarchy units at scale 1. */
+  const screen = { width: 720, height: 1600 };
+
+  const APP = 'com.kuei.ainativesampleapp';
+
+  /**
+   * The screen `teste.yaml`'s second step was recorded on, geometry lifted
+   * from the run log (`~/.maestro/tests/2026-08-06_145024`): a content area
+   * whose first clickable is a documentation link, and a Material bottom bar
+   * whose selected tab shows its large label while the other shows its small
+   * one. Tree order is the screen's own: content first, navigation bar last.
+   */
+  const incident = (): TreeNode =>
+    node({
+      bounds: box(0, 0, 720, 1600),
+      children: [
+        node({
+          bounds: box(0, 64, 720, 1359),
+          children: [
+            node({
+              bounds: box(177, 417, 544, 504),
+              contentDescription: 'Expo documentation, ',
+              clickable: true,
+            }),
+            node({ bounds: box(500, 600, 700, 800) }),
+          ],
+        }),
+        node({
+          bounds: box(0, 1359, 720, 1510),
+          children: [
+            node({
+              bounds: box(44, 1359, 360, 1510),
+              contentDescription: 'Home',
+              clickable: true,
+              children: [
+                node({
+                  bounds: box(141, 1382, 261, 1510),
+                  resourceId: `${APP}:id/navigation_bar_item_content_container`,
+                  children: [
+                    node({
+                      bounds: box(180, 1389, 225, 1434),
+                      resourceId: `${APP}:id/navigation_bar_item_icon_view`,
+                    }),
+                    node({
+                      bounds: box(161, 1450, 240, 1510),
+                      resourceId: `${APP}:id/navigation_bar_item_labels_group`,
+                      children: [
+                        node({
+                          bounds: box(161, 1465, 240, 1505),
+                          text: 'Home',
+                          resourceId: `${APP}:id/navigation_bar_item_large_label_view`,
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+            node({
+              bounds: box(360, 1359, 676, 1510),
+              contentDescription: 'Explore',
+              clickable: true,
+              children: [
+                node({
+                  bounds: box(458, 1382, 578, 1510),
+                  resourceId: `${APP}:id/navigation_bar_item_content_container`,
+                  children: [
+                    node({
+                      bounds: box(495, 1389, 540, 1434),
+                      resourceId: `${APP}:id/navigation_bar_item_icon_view`,
+                    }),
+                    node({
+                      bounds: box(478, 1450, 557, 1510),
+                      resourceId: `${APP}:id/navigation_bar_item_labels_group`,
+                      children: [
+                        node({
+                          bounds: box(478, 1450, 557, 1480),
+                          text: 'Explore',
+                          resourceId: `${APP}:id/navigation_bar_item_small_label_view`,
+                        }),
+                      ],
+                    }),
+                  ],
+                }),
+              ],
+            }),
+          ],
+        }),
+      ],
+    });
+
+  /**
+   * ⚠️ The regression itself. The recorded step was
+   * `tapOn: above: id: …small_label_view` — synthesised for the tab's inner
+   * container under the old closest-by-centre model, validated, and then
+   * resolved by Maestro to the first clickable in tree order above the label:
+   * the documentation link at (360, 460), which opened the browser. Under
+   * Maestro's real semantics no anchor and no direction name this container,
+   * so the ladder must fall to `point:` and carry the fragility warning.
+   */
+  it('refuses the recorded above: selector and falls to point:', () => {
+    const tree = incident();
+    const path = pathTo(
+      tree,
+      (n) =>
+        n.resourceId === `${APP}:id/navigation_bar_item_content_container` && n.bounds?.x1 === 458,
+    );
+
+    expect(synthesizeSelector(tree, path, screen)).toEqual({
+      level: 'point',
+      selector: 'point: 72%,90%',
+      fragile: true,
+    });
+  });
+
+  /** The tab's label, though, is nameable outright — its Material id is
+   * unique on this screen, and the collapsed match is the label itself. */
+  it('names the tab label by its unique id', () => {
+    const tree = incident();
+    const path = pathTo(tree, (n) => n.text === 'Explore');
+
+    expect(synthesizeSelector(tree, path, screen)).toEqual({
+      level: 'id',
+      selector: `id: "${APP}:id/navigation_bar_item_small_label_view"`,
+      fragile: false,
+    });
   });
 });
 

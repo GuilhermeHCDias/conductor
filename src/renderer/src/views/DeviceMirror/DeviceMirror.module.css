@@ -146,9 +146,11 @@
 /* The DS highlight: accent-tinted fill, 1.5px accent border, mono label above
    — never a dashed marquee. Positioned in stream px; the phone's transform
    scales it with the picture, so anything that must keep an on-screen size
-   divides by `--fit-scale` to counter it. No transition: the box states the
-   tree's answer, it never glides toward it — animated geometry is a box that
-   carries the previous element's size for the whole flight. */
+   divides by `--fit-scale` to counter it. The geometry glides between
+   elements (amended 2026-08-06, on the user's ask): the flight is one
+   --dur-fast beat, long enough to read as one box travelling and short
+   enough that it carries the previous element's shape for barely a frame —
+   and the tokens zero under reduced motion, restoring the snap. */
 .highlight {
   position: absolute;
   border-radius: var(--radius-xs);
@@ -158,6 +160,20 @@
     0 0 0 calc(1px / var(--fit-scale, 1)) oklch(0% 0 0 / 0.35),
     0 0 18px var(--device-highlight-glow);
   pointer-events: none;
+  transition:
+    left var(--dur-fast) var(--ease-out),
+    top var(--dur-fast) var(--ease-out),
+    width var(--dur-fast) var(--ease-out),
+    height var(--dur-fast) var(--ease-out),
+    opacity var(--dur-fast) var(--ease-out);
+}
+
+/* The first hover is an appearance where the box lands, not a flight in from
+   a stale corner. */
+@starting-style {
+  .highlight {
+    opacity: 0;
+  }
 }
 
 /* Counter-scaled from its anchor corner, so the type renders at its own size

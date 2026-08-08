@@ -223,6 +223,83 @@ describe('the selection rules', () => {
   });
 });
 
+/* ── the semantic tier ──────────────────────────────────────────────────── */
+
+describe('the semantic tier (criteria 8 and 10 amended 2026-08-06)', () => {
+  /**
+   * The RN trees this product inspects are full of decoration that reports
+   * bounds and nothing else — `StyleSheet.absoluteFill` overlays, gradients,
+   * hairline separators. Smallest-area-then-deepest hands them the hit: the
+   * overlay shares the card's bounds and sits deeper, so every hover lands on
+   * a node the synthesiser can say nothing about. The amendment: a node
+   * carrying nothing a selector could name — no `clickable`, no id, no text,
+   * no description, no hint — loses to any semantic node that also contains
+   * the point, whatever their areas and depths.
+   */
+  it('prefers the clickable card over its bare overlay with identical bounds', () => {
+    const tree = node({
+      bounds: box(0, 0, 200, 100),
+      clickable: true,
+      children: [node({ bounds: box(0, 0, 200, 100) })],
+    });
+
+    expect(hitTest(tree, { x: 100, y: 50 })).toEqual([]);
+  });
+
+  it('prefers the row text over a bare hairline lying across it', () => {
+    const tree = node({
+      bounds: box(0, 0, 200, 200),
+      children: [
+        node({ bounds: box(0, 40, 200, 80), text: 'Pix' }),
+        node({ bounds: box(0, 58, 200, 60) }),
+      ],
+    });
+
+    expect(hitTest(tree, { x: 100, y: 59 })).toEqual([0]);
+  });
+
+  /** A hint is §5.3's `textMatches` third leg — an empty input is still a
+   * thing the person means to tap. */
+  it('counts a hint as semantic', () => {
+    const tree = node({
+      bounds: box(0, 0, 200, 200),
+      children: [
+        node({ bounds: box(0, 0, 200, 40), hintText: 'CPF' }),
+        node({ bounds: box(0, 10, 200, 12) }),
+      ],
+    });
+
+    expect(hitTest(tree, { x: 100, y: 11 })).toEqual([0]);
+  });
+
+  /** The tier orders, it never excludes: where only decoration contains the
+   * point, the hit still answers — a product image with no attributes must
+   * stay hoverable, and its menu reachable (criterion 25 unchanged). */
+  it('still answers the smallest bare node where nothing semantic contains the point', () => {
+    const tree = node({
+      bounds: box(0, 0, 200, 200),
+      children: [
+        node({ bounds: box(0, 0, 100, 100), children: [node({ bounds: box(0, 0, 40, 40) })] }),
+      ],
+    });
+
+    expect(hitTest(tree, { x: 10, y: 10 })).toEqual([0, 0]);
+  });
+
+  /** Within the tier the old rules stand: the text inside a clickable button
+   * keeps the hit — its `text:` selector is the stable one, and the tap it
+   * writes lands inside the button all the same. */
+  it('keeps the smallest semantic node when semantic nodes nest', () => {
+    const tree = node({
+      bounds: box(0, 0, 100, 40),
+      clickable: true,
+      children: [node({ bounds: box(20, 10, 80, 30), text: 'Entrar' })],
+    });
+
+    expect(hitTest(tree, { x: 50, y: 20 })).toEqual([0]);
+  });
+});
+
 /* ── Alt retargeting ────────────────────────────────────────────────────── */
 
 describe('retargeting to the parent', () => {

@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"ConductorDesignSystem_527814","components":[{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Checkbox","sourcePath":"components/core/Checkbox.jsx"},{"name":"ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"ICON_NAMES","sourcePath":"components/core/Icon.jsx"},{"name":"ACTION_ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"Input","sourcePath":"components/core/Input.jsx"},{"name":"Kbd","sourcePath":"components/core/Kbd.jsx"},{"name":"SegmentedControl","sourcePath":"components/core/SegmentedControl.jsx"},{"name":"Select","sourcePath":"components/core/Select.jsx"},{"name":"StatusDot","sourcePath":"components/core/StatusDot.jsx"},{"name":"Switch","sourcePath":"components/core/Switch.jsx"},{"name":"Tooltip","sourcePath":"components/core/Tooltip.jsx"},{"name":"ChatComposer","sourcePath":"components/studio/ChatComposer.jsx"},{"name":"ChatMessage","sourcePath":"components/studio/ChatMessage.jsx"},{"name":"DeviceMirror","sourcePath":"components/studio/DeviceMirror.jsx"},{"name":"DeviceSelector","sourcePath":"components/studio/DeviceSelector.jsx"},{"name":"FileTree","sourcePath":"components/studio/FileTree.jsx"},{"name":"LogStream","sourcePath":"components/studio/LogStream.jsx"},{"name":"RunBar","sourcePath":"components/studio/RunBar.jsx"},{"name":"TestList","sourcePath":"components/studio/TestList.jsx"},{"name":"TitleBar","sourcePath":"components/studio/TitleBar.jsx"},{"name":"YamlEditor","sourcePath":"components/studio/YamlEditor.jsx"},{"name":"ContextMenu","sourcePath":"components/surface/ContextMenu.jsx"},{"name":"Dialog","sourcePath":"components/surface/Dialog.jsx"},{"name":"Divider","sourcePath":"components/surface/Divider.jsx"},{"name":"EmptyState","sourcePath":"components/surface/EmptyState.jsx"},{"name":"GlassPanel","sourcePath":"components/surface/GlassPanel.jsx"},{"name":"PanelHeader","sourcePath":"components/surface/PanelHeader.jsx"},{"name":"TabStrip","sourcePath":"components/surface/TabStrip.jsx"},{"name":"Toolbar","sourcePath":"components/surface/Toolbar.jsx"}],"sourceHashes":{"components/core/Badge.jsx":"a5930bf169a3","components/core/Button.jsx":"cdf2b4b14000","components/core/Checkbox.jsx":"001bc191d563","components/core/Icon.jsx":"90d227340fd5","components/core/IconButton.jsx":"dfe290a3ea47","components/core/Input.jsx":"362d6ff20788","components/core/Kbd.jsx":"fe13f03fb620","components/core/SegmentedControl.jsx":"227a9979e57c","components/core/Select.jsx":"66feb21b7caa","components/core/StatusDot.jsx":"16f6665004ee","components/core/Switch.jsx":"b7ad10c7a1f5","components/core/Tooltip.jsx":"76adcc4e387f","components/studio/ChatComposer.jsx":"19cebb31f254","components/studio/ChatMessage.jsx":"84df920d7dd4","components/studio/DeviceMirror.jsx":"5bed2b342dd5","components/studio/DeviceSelector.jsx":"451ef165c1f8","components/studio/FileTree.jsx":"930b2bbebf31","components/studio/LogStream.jsx":"9bf781b3d5c8","components/studio/RunBar.jsx":"9f9c52f9fb0f","components/studio/TestList.jsx":"954555828845","components/studio/TitleBar.jsx":"d15171c8ed3b","components/studio/YamlEditor.jsx":"5cda21f876bb","components/surface/ContextMenu.jsx":"6000eb4caffe","components/surface/Dialog.jsx":"aff822164d2f","components/surface/Divider.jsx":"5b4485a0dd2f","components/surface/EmptyState.jsx":"5155589764d8","components/surface/GlassPanel.jsx":"9362b153ec84","components/surface/PanelHeader.jsx":"a70d030b441c","components/surface/TabStrip.jsx":"dda2dd4d62c1","components/surface/Toolbar.jsx":"dcab2b0b1dad","ui_kits/conductor-c-aurora/AppUnderTest.jsx":"baf680a07a68","ui_kits/conductor-c-aurora/CDoctor.jsx":"cc5216aaaae5","ui_kits/conductor-c-aurora/CDoctorB.jsx":"9a97f0172d4d","ui_kits/conductor-c-aurora/CRegions.jsx":"51b14e537c6d","ui_kits/conductor-c-aurora/CReview.jsx":"a74c0e8200a8","ui_kits/conductor-c-aurora/CShell.jsx":"98902c0d665a","ui_kits/conductor-c-aurora/data.jsx":"fecaa306e0b1","ui_kits/conductor-c-aurora/useInspector.jsx":"8273301df2b8"},"inlinedExternals":[],"unexposedExports":[]} */
+/* @ds-bundle: {"format":4,"namespace":"ConductorDesignSystem_527814","components":[{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Checkbox","sourcePath":"components/core/Checkbox.jsx"},{"name":"ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"ICON_NAMES","sourcePath":"components/core/Icon.jsx"},{"name":"ACTION_ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"Input","sourcePath":"components/core/Input.jsx"},{"name":"Kbd","sourcePath":"components/core/Kbd.jsx"},{"name":"SegmentedControl","sourcePath":"components/core/SegmentedControl.jsx"},{"name":"Select","sourcePath":"components/core/Select.jsx"},{"name":"StatusDot","sourcePath":"components/core/StatusDot.jsx"},{"name":"Switch","sourcePath":"components/core/Switch.jsx"},{"name":"Tooltip","sourcePath":"components/core/Tooltip.jsx"},{"name":"ChatComposer","sourcePath":"components/studio/ChatComposer.jsx"},{"name":"ChatMessage","sourcePath":"components/studio/ChatMessage.jsx"},{"name":"DeviceMirror","sourcePath":"components/studio/DeviceMirror.jsx"},{"name":"DeviceSelector","sourcePath":"components/studio/DeviceSelector.jsx"},{"name":"FileTree","sourcePath":"components/studio/FileTree.jsx"},{"name":"LogStream","sourcePath":"components/studio/LogStream.jsx"},{"name":"RunBar","sourcePath":"components/studio/RunBar.jsx"},{"name":"TestList","sourcePath":"components/studio/TestList.jsx"},{"name":"TitleBar","sourcePath":"components/studio/TitleBar.jsx"},{"name":"YamlEditor","sourcePath":"components/studio/YamlEditor.jsx"},{"name":"ContextMenu","sourcePath":"components/surface/ContextMenu.jsx"},{"name":"Dialog","sourcePath":"components/surface/Dialog.jsx"},{"name":"Divider","sourcePath":"components/surface/Divider.jsx"},{"name":"EmptyState","sourcePath":"components/surface/EmptyState.jsx"},{"name":"GlassPanel","sourcePath":"components/surface/GlassPanel.jsx"},{"name":"PanelHeader","sourcePath":"components/surface/PanelHeader.jsx"},{"name":"TabStrip","sourcePath":"components/surface/TabStrip.jsx"},{"name":"Toolbar","sourcePath":"components/surface/Toolbar.jsx"}],"sourceHashes":{"components/core/Badge.jsx":"a5930bf169a3","components/core/Button.jsx":"cdf2b4b14000","components/core/Checkbox.jsx":"001bc191d563","components/core/Icon.jsx":"a449f77c7faf","components/core/IconButton.jsx":"dfe290a3ea47","components/core/Input.jsx":"362d6ff20788","components/core/Kbd.jsx":"fe13f03fb620","components/core/SegmentedControl.jsx":"227a9979e57c","components/core/Select.jsx":"66feb21b7caa","components/core/StatusDot.jsx":"16f6665004ee","components/core/Switch.jsx":"b7ad10c7a1f5","components/core/Tooltip.jsx":"76adcc4e387f","components/studio/ChatComposer.jsx":"19cebb31f254","components/studio/ChatMessage.jsx":"84df920d7dd4","components/studio/DeviceMirror.jsx":"5bed2b342dd5","components/studio/DeviceSelector.jsx":"451ef165c1f8","components/studio/FileTree.jsx":"930b2bbebf31","components/studio/LogStream.jsx":"9bf781b3d5c8","components/studio/RunBar.jsx":"9f9c52f9fb0f","components/studio/TestList.jsx":"954555828845","components/studio/TitleBar.jsx":"d15171c8ed3b","components/studio/YamlEditor.jsx":"5cda21f876bb","components/surface/ContextMenu.jsx":"6000eb4caffe","components/surface/Dialog.jsx":"aff822164d2f","components/surface/Divider.jsx":"5b4485a0dd2f","components/surface/EmptyState.jsx":"5155589764d8","components/surface/GlassPanel.jsx":"9362b153ec84","components/surface/PanelHeader.jsx":"a70d030b441c","components/surface/TabStrip.jsx":"dda2dd4d62c1","components/surface/Toolbar.jsx":"dcab2b0b1dad","ui_kits/conductor-c-aurora/AppUnderTest.jsx":"baf680a07a68","ui_kits/conductor-c-aurora/CDoctor.jsx":"cc5216aaaae5","ui_kits/conductor-c-aurora/CDoctorB.jsx":"9a97f0172d4d","ui_kits/conductor-c-aurora/CRegions.jsx":"b8b854e465e8","ui_kits/conductor-c-aurora/CRepo.jsx":"a23f65247a68","ui_kits/conductor-c-aurora/CReview.jsx":"a74c0e8200a8","ui_kits/conductor-c-aurora/CShell.jsx":"86a2079820b8","ui_kits/conductor-c-aurora/data.jsx":"2dfafcd35260","ui_kits/conductor-c-aurora/useInspector.jsx":"8273301df2b8"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
@@ -57,6 +57,8 @@ const ICONS = {
   "file-text": "<path d=\"M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2.4 2.4 0 0 1 1.704.706l3.588 3.588A2.4 2.4 0 0 1 20 8v12a2 2 0 0 1-2 2z\"/><path d=\"M14 2v5a1 1 0 0 0 1 1h5\"/><path d=\"M10 9H8\"/><path d=\"M16 13H8\"/><path d=\"M16 17H8\"/>",
   "folder": "<path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/>",
   "folder-open": "<path d=\"m6 14 1.5-2.9A2 2 0 0 1 9.24 10H20a2 2 0 0 1 1.94 2.5l-1.54 6a2 2 0 0 1-1.95 1.5H4a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h3.9a2 2 0 0 1 1.69.9l.81 1.2a2 2 0 0 0 1.67.9H18a2 2 0 0 1 2 2v2\"/>",
+  "clipboard": "<rect width=\"8\" height=\"4\" x=\"8\" y=\"2\" rx=\"1\" ry=\"1\"/><path d=\"M16 4h2a2 2 0 0 1 2 2v14a2 2 0 0 1-2 2H6a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h2\"/>",
+  "package": "<path d=\"M11 21.73a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73z\"/><path d=\"M12 22V12\"/><path d=\"m3.3 7 8.7 5 8.7-5\"/><path d=\"m7.5 4.27 9 5.15\"/>",
   "folder-plus": "<path d=\"M12 10v6\"/><path d=\"M9 13h6\"/><path d=\"M20 20a2 2 0 0 0 2-2V8a2 2 0 0 0-2-2h-7.9a2 2 0 0 1-1.69-.9L9.6 3.9A2 2 0 0 0 7.93 3H4a2 2 0 0 0-2 2v13a2 2 0 0 0 2 2Z\"/>",
   "file-plus": "<path d=\"M15 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V7Z\"/><path d=\"M14 2v4a2 2 0 0 0 2 2h4\"/><path d=\"M9 15h6\"/><path d=\"M12 18v-6\"/>",
   "circle-check": "<circle cx=\"12\" cy=\"12\" r=\"10\"/><path d=\"m9 12 2 2 4-4\"/>",
@@ -4411,9 +4413,15 @@ function CFlows({
       ...PANEL,
       display: "grid",
       gridTemplateColumns: "minmax(0, 1fr)",
-      gridTemplateRows: "auto auto minmax(0, 1fr) auto"
+      gridTemplateRows: "auto auto auto minmax(0, 1fr) auto"
     }
-  }, /*#__PURE__*/React.createElement("div", {
+  }, /*#__PURE__*/React.createElement(window.CRepoBar, {
+    repo: s.repo,
+    repos: s.repos,
+    activeId: s.repo.id,
+    onSelect: s.switchRepo,
+    onAdd: () => s.setAddRepo(true)
+  }), /*#__PURE__*/React.createElement("div", {
     style: HEADER
   }, /*#__PURE__*/React.createElement("span", {
     style: CAPS
@@ -4425,7 +4433,7 @@ function CFlows({
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }
-  }, "conductor/ \xB7 ", failing, " failing"), /*#__PURE__*/React.createElement("span", {
+  }, s.repo.folder, " \xB7 ", failing, " failing"), /*#__PURE__*/React.createElement("span", {
     style: {
       flex: 1
     }
@@ -4520,7 +4528,55 @@ function CFlows({
       color: "var(--text-disabled)",
       textAlign: "center"
     }
-  }, "Nothing matches \u201C", query, "\u201D.") : null), /*#__PURE__*/React.createElement("div", {
+  }, "Nothing matches \u201C", query, "\u201D.") : null, !s.tests.length && !draft ? /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      justifyItems: "center",
+      gap: 10,
+      padding: "28px 16px",
+      textAlign: "center"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "file-code",
+    size: 20,
+    color: "var(--text-disabled)"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      gap: 3
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-caption)",
+      color: "var(--text-secondary)"
+    }
+  }, "No flows in ", s.repo.folder, " yet"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-disabled)",
+      textWrap: "pretty"
+    }
+  }, "Conductor creates the folder with the first one.")), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => s.startNew("flow", ""),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      height: 26,
+      padding: "0 11px",
+      background: "var(--a-well)",
+      border: A_HAIR,
+      borderRadius: "var(--a-radius-field)",
+      cursor: "pointer",
+      font: "var(--type-caption)",
+      color: "var(--text-primary)"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "plus",
+    size: 12,
+    color: "var(--accent)"
+  }), "New flow")) : null), /*#__PURE__*/React.createElement("div", {
     style: {
       display: "flex",
       alignItems: "center",
@@ -5159,6 +5215,914 @@ Object.assign(window, {
 });
 })(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/conductor-c-aurora/CRegions.jsx", error: String((e && e.message) || e) }); }
 
+// ui_kits/conductor-c-aurora/CRepo.jsx
+try { (() => {
+/* AURORA — the repository IS the configuration.
+
+   Conductor asks for one thing, once: the address of the repo being tested. Everything else is
+   read from it — which app to launch (so the bundle id is never typed), which branch is
+   checked out, and the conductor/ folder the flows live in. Two surfaces share one resolver:
+
+   1. CConnectWindow — first run. A small window, same family as the Doctor installer: Doctor
+      sets up the Mac, this points Conductor at a project. Nothing else stands between the
+      person and the app.
+   2. CRepoPopover — the switcher at the top of the sidebar. Repos are a list, not a setting;
+      switching one swaps the whole workspace, and "Add repository…" reopens the same resolver
+      as a sheet.
+
+   The resolver never asks for anything it can read. If it cannot read the repo, it says so in
+   the terms the developer will act on — the gh command, verbatim. */
+const RepoNS = window.ConductorDesignSystem_527814;
+const {
+  Icon: RIcon,
+  Button: RButton,
+  IconButton: RIconButton,
+  Dialog: RDialog,
+  Tooltip: RTooltip
+} = RepoNS;
+const R_HAIR = "1px solid var(--a-hair)";
+const R_WELL = {
+  background: "var(--a-well)",
+  border: R_HAIR,
+  borderRadius: "var(--a-radius-surface)"
+};
+
+/* People paste three different strings meaning the same repository: the browser URL (often with
+   /tree/main on the end), the https clone URL, and the SSH remote. All three are accepted. */
+function parseRepo(raw) {
+  const t = (raw || "").trim().replace(/\s+/g, "");
+  const m = t.match(/^(?:https?:\/\/)?(?:git@)?(github\.com|gitlab\.com|bitbucket\.org)[/:]([\w.-]+)\/([\w.-]+?)(?:\.git)?(?:\/.*)?$/i);
+  return m ? {
+    host: m[1].toLowerCase(),
+    org: m[2],
+    name: m[3]
+  } : null;
+}
+const titleFrom = name => name.split(/[-_]/).map(w => w.charAt(0).toUpperCase() + w.slice(1)).join(" ");
+
+/* A repo Conductor has never seen resolves too — it just has nothing in conductor/ yet. That is
+   a normal state, not an error: the folder is created with the first flow. */
+function repoFromUrl(p) {
+  const known = (window.REPO_LIBRARY || []).find(r => r.name.toLowerCase() === p.name.toLowerCase());
+  if (known) return {
+    ...known,
+    id: "r-" + p.name.toLowerCase()
+  };
+  return {
+    id: "r-" + p.name.toLowerCase(),
+    host: p.host,
+    org: p.org,
+    name: p.name,
+    branch: "main",
+    app: titleFrom(p.name),
+    bundle: "com." + p.org.replace(/[-_.]/g, "") + "." + p.name.replace(/[-_.]/g, ""),
+    platform: "Android",
+    folder: "conductor/",
+    opened: "Now",
+    tests: [],
+    folders: []
+  };
+}
+const RESOLVE_STEPS = ["Reading the repository", "Finding the app module", "Looking for conductor/"];
+function useRepoConnect(repos = [], onDone) {
+  const [url, setUrl] = React.useState("");
+  const [phase, setPhase] = React.useState("idle");
+  const [step, setStep] = React.useState(0);
+  const [found, setFound] = React.useState(null);
+  const [error, setError] = React.useState(null);
+  const timers = React.useRef([]);
+  React.useEffect(() => () => timers.current.forEach(clearTimeout), []);
+  const clear = () => {
+    timers.current.forEach(clearTimeout);
+    timers.current = [];
+  };
+  const reset = () => {
+    clear();
+    setPhase("idle");
+    setStep(0);
+    setFound(null);
+    setError(null);
+  };
+  const fail = (title, body, cmd) => {
+    setError({
+      title,
+      body,
+      cmd
+    });
+    setPhase("error");
+  };
+  const submit = () => {
+    const p = parseRepo(url);
+    if (!p) return fail("That is not a repository address", "Paste the address you would clone from — github.com/org/app. The browser URL and the SSH remote both work.");
+    if (repos.some(r => r.name.toLowerCase() === p.name.toLowerCase())) return fail("Already connected", p.org + "/" + p.name + " is in your list. Switch to it from the sidebar.");
+    clear();
+    setPhase("resolving");
+    setStep(0);
+    [1, 2, 3].forEach(i => timers.current.push(setTimeout(() => setStep(i), 620 * i)));
+    timers.current.push(setTimeout(() => {
+      if (p.host !== "github.com") return fail("Conductor reads GitHub only, for now", p.host + " repositories are not supported yet.");
+      if (/private|privado|interno/i.test(p.name)) return fail("Conductor cannot read this repository", "gh could not reach " + p.org + "/" + p.name + ". Sign in with an account that has access, then try again.", "gh auth login");
+      const repo = repoFromUrl(p);
+      setFound(repo);
+      setPhase("found");
+    }, 2240));
+  };
+  return {
+    url,
+    setUrl,
+    phase,
+    step,
+    found,
+    error,
+    submit,
+    reset,
+    confirm: () => found && onDone && onDone(found)
+  };
+}
+
+/* ── Resolver body, shared by the first-run window and the add sheet ─────────────────────── */
+
+function CRepoField({
+  c,
+  autoFocus
+}) {
+  const ref = React.useRef(null);
+  const [focus, setFocus] = React.useState(false);
+  React.useEffect(() => {
+    if (autoFocus && ref.current) ref.current.focus();
+  }, [autoFocus]);
+  const busy = c.phase === "resolving";
+  const invalid = c.phase === "error";
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      flex: 1,
+      minWidth: 0,
+      height: 34,
+      padding: "0 11px",
+      background: "var(--a-well)",
+      borderRadius: "var(--a-radius-field)",
+      border: "1px solid " + (invalid ? "var(--state-fail)" : focus ? "var(--accent-edge)" : "var(--a-hair)"),
+      boxShadow: focus && !invalid ? "var(--glow-accent)" : "none",
+      transition: "box-shadow var(--dur-fast) var(--ease-out), border-color var(--dur-fast) var(--ease-out)"
+    }
+  }, /*#__PURE__*/React.createElement(RIcon, {
+    name: "git-branch",
+    size: 14,
+    color: invalid ? "var(--state-fail)" : focus ? "var(--accent)" : "var(--text-tertiary)"
+  }), /*#__PURE__*/React.createElement("input", {
+    ref: ref,
+    value: c.url,
+    disabled: busy,
+    onChange: e => {
+      c.setUrl(e.target.value);
+      if (c.phase !== "idle") c.reset();
+    },
+    onFocus: () => setFocus(true),
+    onBlur: () => setFocus(false),
+    onKeyDown: e => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        c.submit();
+      }
+    },
+    placeholder: "github.com/org/app",
+    spellCheck: false,
+    autoCapitalize: "off",
+    autoCorrect: "off",
+    style: {
+      flex: 1,
+      minWidth: 0,
+      background: "none",
+      border: "none",
+      outline: "none",
+      font: "var(--type-code-sm)",
+      color: "var(--text-primary)"
+    }
+  }), c.url ? /*#__PURE__*/React.createElement(RIconButton, {
+    icon: "x",
+    label: "Clear",
+    size: "sm",
+    onClick: () => {
+      c.setUrl("");
+      c.reset();
+    }
+  }) : /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => c.setUrl("https://github.com/loja-verde/pnp-fast-mode"),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 5,
+      height: 22,
+      padding: "0 8px",
+      background: "none",
+      border: R_HAIR,
+      borderRadius: "var(--a-radius-field)",
+      cursor: "pointer",
+      font: "var(--type-caption)",
+      color: "var(--text-secondary)"
+    }
+  }, /*#__PURE__*/React.createElement(RIcon, {
+    name: "clipboard",
+    size: 11,
+    color: "var(--text-tertiary)"
+  }), "Paste")), /*#__PURE__*/React.createElement(RButton, {
+    variant: "primary",
+    loading: busy,
+    disabled: !c.url.trim(),
+    onClick: c.submit
+  }, "Connect"));
+}
+function CResolveSteps({
+  step
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...R_WELL,
+      display: "grid",
+      gap: 9,
+      padding: "12px 13px"
+    }
+  }, RESOLVE_STEPS.map((label, i) => {
+    const done = step > i;
+    const active = step === i;
+    return /*#__PURE__*/React.createElement("span", {
+      key: label,
+      style: {
+        display: "flex",
+        alignItems: "center",
+        gap: 9,
+        font: "var(--type-caption)",
+        color: done ? "var(--text-secondary)" : active ? "var(--text-primary)" : "var(--text-disabled)"
+      }
+    }, done ? /*#__PURE__*/React.createElement(RIcon, {
+      name: "check",
+      size: 13,
+      color: "var(--state-pass)"
+    }) : active ? /*#__PURE__*/React.createElement("span", {
+      style: {
+        display: "flex",
+        animation: "cd-spin 900ms linear infinite"
+      }
+    }, /*#__PURE__*/React.createElement(RIcon, {
+      name: "loader-circle",
+      size: 13,
+      color: "var(--accent)"
+    })) : /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 13,
+        height: 13,
+        display: "grid",
+        placeItems: "center"
+      }
+    }, /*#__PURE__*/React.createElement("span", {
+      style: {
+        width: 4,
+        height: 4,
+        borderRadius: 999,
+        background: "var(--a-hair-strong)"
+      }
+    })), label);
+  }));
+}
+
+/* What was read, in the order it matters: the app that will launch, the branch, the folder.
+   The bundle id is shown because it is the thing the person would otherwise have had to find. */
+function CRepoFound({
+  repo
+}) {
+  const rows = [{
+    icon: "package",
+    label: "App",
+    value: repo.app,
+    mono: false,
+    note: repo.bundle
+  }, {
+    icon: "git-branch",
+    label: "Branch",
+    value: repo.branch
+  }, {
+    icon: "folder",
+    label: repo.folder,
+    value: repo.tests.length ? repo.tests.length + (repo.tests.length === 1 ? " flow" : " flows") : "empty for now",
+    quiet: !repo.tests.length
+  }];
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      ...R_WELL,
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      padding: "10px 13px",
+      borderBottom: R_HAIR
+    }
+  }, /*#__PURE__*/React.createElement(RIcon, {
+    name: "circle-check",
+    size: 15,
+    color: "var(--state-pass)"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-body-strong)",
+      color: "var(--text-primary)",
+      flex: 1,
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, repo.org, "/", repo.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-disabled)"
+    }
+  }, repo.platform)), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gap: 8,
+      padding: "11px 13px"
+    }
+  }, rows.map(r => /*#__PURE__*/React.createElement("span", {
+    key: r.label,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement(RIcon, {
+    name: r.icon,
+    size: 13,
+    color: "var(--text-tertiary)"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-caption)",
+      color: "var(--text-tertiary)",
+      width: 62,
+      flex: "none"
+    }
+  }, r.label), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-caption)",
+      color: r.quiet ? "var(--text-disabled)" : "var(--text-primary)",
+      minWidth: 0,
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, r.value), r.note ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-disabled)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, r.note) : null))), repo.tests.length ? null : /*#__PURE__*/React.createElement("p", {
+    style: {
+      font: "var(--type-caption)",
+      color: "var(--text-tertiary)",
+      padding: "0 13px 11px",
+      textWrap: "pretty"
+    }
+  }, "Conductor creates conductor/ with your first flow."));
+}
+function CRepoError({
+  error,
+  onRetry
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gap: 9,
+      padding: "12px 13px",
+      background: "var(--state-fail-quiet)",
+      border: "1px solid var(--state-fail-edge)",
+      borderRadius: "var(--a-radius-surface)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "flex-start",
+      gap: 9
+    }
+  }, /*#__PURE__*/React.createElement(RIcon, {
+    name: "circle-x",
+    size: 15,
+    color: "var(--state-fail)",
+    style: {
+      marginTop: 1,
+      flex: "none"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      gap: 3,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-body-strong)",
+      color: "var(--text-primary)"
+    }
+  }, error.title), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-caption)",
+      color: "var(--text-secondary)",
+      textWrap: "pretty"
+    }
+  }, error.body))), error.cmd ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "7px 10px",
+      background: "var(--a-well)",
+      border: R_HAIR,
+      borderRadius: "var(--a-radius-field)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-tertiary)"
+    }
+  }, "$"), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-code-sm)",
+      color: "var(--text-primary)",
+      flex: 1
+    }
+  }, error.cmd), /*#__PURE__*/React.createElement(RTooltip, {
+    content: "Copy"
+  }, /*#__PURE__*/React.createElement(RIconButton, {
+    icon: "copy",
+    label: "Copy command",
+    size: "sm"
+  }))) : null, onRetry ? /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "flex"
+    }
+  }, /*#__PURE__*/React.createElement(RButton, {
+    variant: "ghost",
+    size: "sm",
+    icon: "refresh-cw",
+    onClick: onRetry
+  }, "Try again")) : null);
+}
+function CRepoResolver({
+  c,
+  autoFocus
+}) {
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gap: 12
+    }
+  }, /*#__PURE__*/React.createElement(CRepoField, {
+    c: c,
+    autoFocus: autoFocus
+  }), c.phase === "resolving" ? /*#__PURE__*/React.createElement(CResolveSteps, {
+    step: c.step
+  }) : null, c.phase === "found" ? /*#__PURE__*/React.createElement(CRepoFound, {
+    repo: c.found
+  }) : null, c.phase === "error" ? /*#__PURE__*/React.createElement(CRepoError, {
+    error: c.error,
+    onRetry: c.error.cmd ? c.submit : null
+  }) : null);
+}
+
+/* ── First run ─────────────────────────────────────────────────────────────────────────── */
+
+function CConnectWindow({
+  onDone
+}) {
+  const c = useRepoConnect([], onDone);
+  return /*#__PURE__*/React.createElement("div", {
+    className: "a-rim",
+    style: {
+      position: "relative",
+      zIndex: 1,
+      width: 560,
+      boxSizing: "border-box",
+      display: "grid",
+      gridTemplateRows: "auto minmax(0,1fr) auto",
+      borderRadius: "var(--a-radius-window)",
+      background: "var(--a-panel)",
+      backdropFilter: "blur(var(--a-blur)) saturate(var(--a-saturate))",
+      WebkitBackdropFilter: "blur(var(--a-blur)) saturate(var(--a-saturate))",
+      boxShadow: "var(--shadow-window)",
+      overflow: "hidden"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      height: 38,
+      padding: "0 14px",
+      background: "var(--a-chrome)",
+      borderBottom: R_HAIR
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 12,
+      height: 12,
+      borderRadius: 999,
+      background: "oklch(65% 0.200 24)",
+      boxShadow: "inset 0 0 0 0.5px oklch(52% 0.180 24)"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 12,
+      height: 12,
+      borderRadius: 999,
+      background: "var(--a-hair-strong)"
+    }
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      width: 12,
+      height: 12,
+      borderRadius: 999,
+      background: "var(--a-hair-strong)"
+    }
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      alignContent: "start",
+      gap: 16,
+      padding: "26px 30px 24px"
+    }
+  }, /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      gap: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      placeItems: "center",
+      width: 38,
+      height: 38,
+      borderRadius: 11,
+      background: "var(--grad-aurora)",
+      boxShadow: "var(--shadow-2), var(--a-refract)",
+      marginBottom: 6
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-title-3)",
+      color: "oklch(100% 0 0)",
+      letterSpacing: "-0.05em"
+    }
+  }, "C")), /*#__PURE__*/React.createElement("h1", {
+    style: {
+      font: "var(--type-title-2)",
+      color: "var(--text-primary)"
+    }
+  }, "Point Conductor at a repository"), /*#__PURE__*/React.createElement("p", {
+    style: {
+      font: "var(--type-body)",
+      color: "var(--text-secondary)",
+      textWrap: "pretty"
+    }
+  }, "Everything comes from the repo: the app to launch, its bundle id, and the conductor/ folder your flows live in. You can add more later.")), /*#__PURE__*/React.createElement(CRepoResolver, {
+    c: c,
+    autoFocus: true
+  })), /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 8,
+      padding: "10px 16px",
+      borderTop: R_HAIR,
+      background: "var(--a-well)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-tertiary)",
+      flex: 1
+    }
+  }, "Nothing is pushed without you"), /*#__PURE__*/React.createElement(RButton, {
+    variant: "primary",
+    disabled: c.phase !== "found",
+    onClick: c.confirm
+  }, c.phase === "found" ? "Open " + c.found.app : "Open project")));
+}
+
+/* ── Switcher ──────────────────────────────────────────────────────────────────────────── */
+
+function CRepoRow({
+  repo,
+  active,
+  onSelect
+}) {
+  const [hover, setHover] = React.useState(false);
+  return /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+    onClick: () => onSelect(repo.id),
+    style: {
+      display: "grid",
+      gridTemplateColumns: "auto minmax(0,1fr) auto",
+      alignItems: "center",
+      gap: 9,
+      width: "100%",
+      padding: "7px 9px",
+      textAlign: "left",
+      cursor: "pointer",
+      borderRadius: "var(--a-radius-field)",
+      background: hover ? "var(--glass-hover)" : "transparent",
+      border: "1px solid transparent"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      placeItems: "center",
+      width: 24,
+      height: 24,
+      borderRadius: 7,
+      background: active ? "var(--grad-aurora)" : "var(--a-well)",
+      border: active ? "none" : R_HAIR,
+      font: "var(--type-body-strong)",
+      color: active ? "oklch(100% 0 0)" : "var(--text-tertiary)"
+    }
+  }, repo.app.charAt(0)), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      gap: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-caption)",
+      color: "var(--text-primary)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, repo.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-disabled)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, repo.bundle)), active ? /*#__PURE__*/React.createElement(RIcon, {
+    name: "check",
+    size: 13,
+    color: "var(--accent)"
+  }) : /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-disabled)"
+    }
+  }, repo.tests.length || ""));
+}
+
+/* A project picker, not a menu: each row carries the bundle id, which is how people tell two
+   builds of the same app apart. */
+function CRepoPopover({
+  at,
+  repos,
+  activeId,
+  onSelect,
+  onAdd,
+  onClose
+}) {
+  if (!at) return null;
+  return /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement("div", {
+    style: {
+      position: "fixed",
+      inset: 0,
+      zIndex: 70
+    },
+    onClick: onClose,
+    onContextMenu: e => {
+      e.preventDefault();
+      onClose();
+    }
+  }), /*#__PURE__*/React.createElement("div", {
+    className: "a-rim",
+    style: {
+      position: "fixed",
+      left: at.x,
+      top: at.y,
+      width: 282,
+      zIndex: 71,
+      display: "grid",
+      gap: 2,
+      padding: 6,
+      background: "linear-gradient(0deg, oklch(100% 0 0 / 0.13), oklch(100% 0 0 / 0.13)), var(--a-content)",
+      backdropFilter: "blur(var(--a-blur)) saturate(var(--a-saturate))",
+      WebkitBackdropFilter: "blur(var(--a-blur)) saturate(var(--a-saturate))",
+      borderRadius: "var(--a-radius-surface)",
+      boxShadow: "var(--a-refract), var(--shadow-window)",
+      animation: "cd-menu-in var(--dur-fast) var(--ease-out)"
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-label)",
+      letterSpacing: "var(--ls-caps)",
+      textTransform: "uppercase",
+      color: "var(--text-tertiary)",
+      padding: "6px 9px 4px"
+    }
+  }, "Repositories"), repos.map(r => /*#__PURE__*/React.createElement(CRepoRow, {
+    key: r.id,
+    repo: r,
+    active: r.id === activeId,
+    onSelect: onSelect
+  })), /*#__PURE__*/React.createElement("span", {
+    style: {
+      height: 1,
+      background: "var(--a-hair)",
+      margin: "4px 0"
+    }
+  }), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: onAdd,
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 9,
+      width: "100%",
+      padding: "7px 9px",
+      textAlign: "left",
+      cursor: "pointer",
+      background: "none",
+      border: "none",
+      borderRadius: "var(--a-radius-field)",
+      font: "var(--type-caption)",
+      color: "var(--text-secondary)"
+    }
+  }, /*#__PURE__*/React.createElement(RIcon, {
+    name: "plus",
+    size: 13,
+    color: "var(--text-tertiary)"
+  }), "Add repository\u2026")));
+}
+
+/* The sidebar's top bar. It names the project the whole sidebar belongs to, and carries the two
+   facts that change under you: the branch and the app being launched. */
+function CRepoBar({
+  repo,
+  repos,
+  activeId,
+  onSelect,
+  onAdd
+}) {
+  const [at, setAt] = React.useState(null);
+  const [hover, setHover] = React.useState(false);
+  return /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "flex",
+      alignItems: "center",
+      height: 44,
+      padding: "0 8px",
+      borderBottom: R_HAIR,
+      flex: "none",
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onMouseEnter: () => setHover(true),
+    onMouseLeave: () => setHover(false),
+    onClick: e => {
+      const r = e.currentTarget.getBoundingClientRect();
+      setAt(at ? null : {
+        x: Math.round(r.left),
+        y: Math.round(r.bottom + 5)
+      });
+    },
+    style: {
+      display: "grid",
+      gridTemplateColumns: "auto minmax(0,1fr) auto",
+      alignItems: "center",
+      gap: 9,
+      flex: 1,
+      minWidth: 0,
+      height: 34,
+      padding: "0 7px",
+      textAlign: "left",
+      cursor: "pointer",
+      borderRadius: "var(--a-radius-field)",
+      background: at || hover ? "var(--glass-hover)" : "transparent",
+      border: "1px solid " + (at ? "var(--a-hair)" : "transparent")
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      placeItems: "center",
+      width: 22,
+      height: 22,
+      borderRadius: 6,
+      background: "var(--grad-aurora)",
+      boxShadow: "var(--a-refract)",
+      font: "var(--type-body-strong)",
+      color: "oklch(100% 0 0)"
+    }
+  }, repo.app.charAt(0)), /*#__PURE__*/React.createElement("span", {
+    style: {
+      display: "grid",
+      gap: 1,
+      minWidth: 0
+    }
+  }, /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-body-strong)",
+      color: "var(--text-primary)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, repo.name), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-mono-label)",
+      color: "var(--text-disabled)",
+      overflow: "hidden",
+      textOverflow: "ellipsis",
+      whiteSpace: "nowrap"
+    }
+  }, repo.branch, " \xB7 ", repo.bundle)), /*#__PURE__*/React.createElement(RIcon, {
+    name: "chevrons-up-down",
+    size: 13,
+    color: "var(--text-tertiary)"
+  })), /*#__PURE__*/React.createElement(CRepoPopover, {
+    at: at,
+    repos: repos,
+    activeId: activeId,
+    onSelect: id => {
+      onSelect(id);
+      setAt(null);
+    },
+    onAdd: () => {
+      setAt(null);
+      onAdd();
+    },
+    onClose: () => setAt(null)
+  }));
+}
+
+/* Adding a repo later is the same act as the first one, so it is the same resolver — only the
+   container changes, from a window to a sheet. */
+function CAddRepoDialog({
+  open,
+  repos,
+  onAdd,
+  onClose
+}) {
+  const c = useRepoConnect(repos, onAdd);
+  React.useEffect(() => {
+    if (open) {
+      c.setUrl("");
+      c.reset();
+    }
+  }, [open]);
+  return /*#__PURE__*/React.createElement(RDialog, {
+    open: open,
+    icon: "git-branch",
+    title: "Add repository",
+    subtitle: "Conductor reads the app, its bundle id and the conductor/ folder from the repo.",
+    width: 520,
+    onClose: onClose,
+    footer: /*#__PURE__*/React.createElement(React.Fragment, null, /*#__PURE__*/React.createElement(RButton, {
+      variant: "ghost",
+      onClick: onClose
+    }, "Cancel"), /*#__PURE__*/React.createElement(RButton, {
+      variant: "primary",
+      disabled: c.phase !== "found",
+      onClick: c.confirm
+    }, c.phase === "found" ? "Open " + c.found.app : "Open project"))
+  }, /*#__PURE__*/React.createElement(CRepoResolver, {
+    c: c,
+    autoFocus: open
+  }));
+}
+Object.assign(window, {
+  CConnectWindow,
+  CRepoBar,
+  CAddRepoDialog,
+  CRepoPopover,
+  parseRepo,
+  repoFromUrl
+});
+})(); } catch (e) { __ds_ns.__errors.push({ path: "ui_kits/conductor-c-aurora/CRepo.jsx", error: String((e && e.message) || e) }); }
+
 // ui_kits/conductor-c-aurora/CReview.jsx
 try { (() => {
 /* AURORA — sending work to the team.
@@ -5612,6 +6576,12 @@ function useStudioC(opts = {}) {
   const [menu, setMenu] = React.useState(null);
   const [rowMenu, setRowMenu] = React.useState(null);
   const [tests, setTests] = React.useState(window.TESTS);
+  /* The repository is the configuration: switching one swaps the suite, the folders, the open
+     documents and the bundle id every new flow is written against. */
+  const [repos, setRepos] = React.useState(window.REPOS);
+  const [repoId, setRepoId] = React.useState(window.REPOS[0].id);
+  const [addRepo, setAddRepo] = React.useState(!!opts.addRepo);
+  const repo = repos.find(r => r.id === repoId) || repos[0];
   const [folders, setFolders] = React.useState(window.FOLDERS || []);
   const [collapsed, setCollapsed] = React.useState({});
   /* Creating and renaming both happen IN the tree, Finder-style: one editable row, no dialog.
@@ -5673,6 +6643,7 @@ function useStudioC(opts = {}) {
         setNewItem(null);
         setRenameItem(null);
         setConfirm(null);
+        setAddRepo(false);
       }
     };
     window.addEventListener("keydown", onKey);
@@ -5737,6 +6708,30 @@ function useStudioC(opts = {}) {
      "checkout" and you get checkout.yaml. */
   const withExt = n => /\.ya?ml$/i.test(n) ? n : n + ".yaml";
   const taken = (list, name) => list.some(x => x.toLowerCase() === name.toLowerCase());
+  const flowStart = () => window.FLOW_START.replace("com.example.app", repo.bundle);
+
+  /* Opening a repository is a whole-workspace change, so nothing carries over: documents, run
+     results and the assistant thread all belong to the project that was open. */
+  function loadRepo(r) {
+    setTests(r.tests || []);
+    setFolders(r.folders || []);
+    setCollapsed({});
+    setNewItem(null);
+    setRenameItem(null);
+    setConfirm(null);
+    setSent([]);
+    setSteps([]);
+    setRunning(false);
+    setThread([HELLO]);
+    setLower("assistant");
+    const first = (r.tests || [])[0];
+    setTabs(first ? [{
+      id: first.id,
+      label: first.name
+    }] : []);
+    setActiveTab(first ? first.id : null);
+    setYaml(window.FLOW_START.replace("com.example.app", r.bundle));
+  }
   function startNew(kind, folder = "") {
     setRenameItem(null);
     if (folder) setCollapsed(c => ({
@@ -5786,7 +6781,7 @@ function useStudioC(opts = {}) {
       label: name
     }]);
     setActiveTab(id);
-    setYaml(window.FLOW_START);
+    setYaml(flowStart());
     setNewItem(null);
   };
   const commitRename = () => {
@@ -5862,6 +6857,23 @@ function useStudioC(opts = {}) {
     setRowMenu,
     tests,
     setTests,
+    repos,
+    repo,
+    switchRepo: id => {
+      if (id === repoId) return;
+      const next = repos.find(r => r.id === id);
+      if (!next) return;
+      setRepoId(id);
+      loadRepo(next);
+    },
+    addRepo,
+    setAddRepo,
+    connectRepo: r => {
+      setRepos(list => [r, ...list]);
+      setRepoId(r.id);
+      loadRepo(r);
+      setAddRepo(false);
+    },
     folders,
     collapsed,
     toggleFolder: name => setCollapsed(c => ({
@@ -6406,11 +7418,13 @@ function CToolbar({
 function StudioC({
   doctor = false,
   doctorVariant = "a",
-  send = false
+  send = false,
+  addRepo = false
 }) {
   const s = useStudioC({
     doctor,
-    send
+    send,
+    addRepo
   });
   const DoctorSheet = doctorVariant === "b" && window.CDoctorSheetB ? window.CDoctorSheetB : window.CDoctorSheet;
   const [dark, setDark] = useAuroraTheme();
@@ -6501,6 +7515,11 @@ function StudioC({
     s: s
   }), /*#__PURE__*/React.createElement(CConfirmDelete, {
     s: s
+  }), /*#__PURE__*/React.createElement(window.CAddRepoDialog, {
+    open: s.addRepo,
+    repos: s.repos,
+    onAdd: s.connectRepo,
+    onClose: () => s.setAddRepo(false)
   }));
 }
 Object.assign(window, {
@@ -6641,10 +7660,86 @@ const STEP_LABELS = {
   copyTextFrom: "Copy text from",
   inputText: "Input text"
 };
+
+/* ── Repositories ─────────────────────────────────────────────────────────────────────────
+   The repository is the only thing a person configures, and everything else is derived from it:
+   `app` and `bundle` are read out of the build files, `folder` is where flows live, and the
+   suite below it is what conductor/ contains. Switching repos swaps all of it. */
+const ATENDIMENTO_TESTS = [{
+  id: "a-chamado",
+  name: "abrir-chamado.yaml",
+  folder: "chat",
+  steps: 9,
+  lastResult: "pass",
+  lastRun: "Aug 4, 10:12 am",
+  duration: "0:31"
+}, {
+  id: "a-resposta",
+  name: "resposta-rapida.yaml",
+  folder: "chat",
+  steps: 6,
+  lastResult: "fail",
+  lastRun: "Aug 4, 10:09 am",
+  duration: "0:12"
+}, {
+  id: "a-login",
+  name: "login.yaml",
+  folder: "",
+  steps: 5,
+  lastResult: "pass",
+  lastRun: "Aug 1, 5:20 pm",
+  duration: "0:11"
+}];
+const REPOS = [{
+  id: "r-pnp",
+  host: "github.com",
+  org: "loja-verde",
+  name: "pnp-fast-mode",
+  branch: "main",
+  app: "Pedidos",
+  bundle: "com.example.app",
+  platform: "Android",
+  folder: "conductor/",
+  opened: "Now",
+  tests: TESTS,
+  folders: FOLDERS
+}, {
+  id: "r-atendimento",
+  host: "github.com",
+  org: "loja-verde",
+  name: "atendimento-app",
+  branch: "main",
+  app: "Atendimento",
+  bundle: "com.lojaverde.atendimento",
+  platform: "Android",
+  folder: "conductor/",
+  opened: "Yesterday",
+  tests: ATENDIMENTO_TESTS,
+  folders: ["chat"]
+}, {
+  id: "r-entregador",
+  host: "github.com",
+  org: "loja-verde",
+  name: "entregador",
+  branch: "develop",
+  app: "Entregador",
+  bundle: "com.lojaverde.driver",
+  platform: "Android",
+  folder: "conductor/",
+  opened: "Jul 21",
+  tests: [],
+  folders: []
+}];
+
+/* Repos Conductor recognises when one is pasted for the first time. Anything else still
+   resolves — it simply arrives with an empty conductor/. */
+const REPO_LIBRARY = REPOS;
 Object.assign(window, {
   FLOW_START,
   TESTS,
   FOLDERS,
+  REPOS,
+  REPO_LIBRARY,
   REVIEWER,
   A11Y_FALLBACK,
   COMMAND_GROUPS,

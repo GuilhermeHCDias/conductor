@@ -441,14 +441,21 @@ export function DeviceMirror(): JSX.Element {
   const handlePointerMove = (event: PointerEvent<HTMLCanvasElement>): void => {
     // A highlight chasing the pointer through a scroll describes a tree the
     // drag is in the middle of invalidating — so the overlay holds still until
-    // the gesture lands and the recapture that follows it settles.
-    if (suppressed || !inspecting || drag.current !== null) {
+    // the gesture lands and the recapture that follows it settles. A drag's
+    // travel is not a standing pointer either, so nothing is recorded.
+    if (drag.current !== null) {
       return;
     }
     const box = event.currentTarget.getBoundingClientRect();
     const offsetX = event.clientX - box.left;
     const offsetY = event.clientY - box.top;
+    // Recorded whatever the mode (amended 2026-08-06): switching Inspect on —
+    // and the first snapshot landing — re-aims from where the pointer already
+    // stands, instead of waiting for the hand to move again.
     lastPointer.current = { offsetX, offsetY };
+    if (suppressed || !inspecting) {
+      return;
+    }
     aim(offsetX, offsetY, altHeld);
   };
 
@@ -556,7 +563,16 @@ export function DeviceMirror(): JSX.Element {
     appId: appIdentity?.appId ?? '',
   });
 
-  const hoveredNode = nodeFor(hoveredPath);
+  /**
+   * The selection outlives the hover that made it (amended 2026-08-06, on the
+   * user's ask). Reaching the menu crosses off the canvas, and criterion 15
+   * rightly clears the hover on the way out — but the menu and the prompt are
+   * *about* an element, and losing its box mid-selection loses the very thing
+   * they describe. While either is open, the highlight pins to their element;
+   * the hover takes back over when they close.
+   */
+  const shownPath = dialog?.path ?? menu?.path ?? hoveredPath;
+  const hoveredNode = nodeFor(shownPath);
   const highlight =
     hoveredNode !== null && hoveredNode.bounds !== null && inspectGeometry !== null
       ? nodeStreamRect(hoveredNode.bounds, inspectGeometry)

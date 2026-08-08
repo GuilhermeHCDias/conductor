@@ -236,10 +236,13 @@ function CFlows({ s }) {
       />
     );
   return (
-    <div style={{ ...PANEL, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "auto auto minmax(0, 1fr) auto" }}>
+    <div style={{ ...PANEL, display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "auto auto auto minmax(0, 1fr) auto" }}>
+      {/* The repository the whole sidebar belongs to. It sits above the Flows header because
+          everything below it — folders, flows, the suite run — comes out of that one repo. */}
+      <window.CRepoBar repo={s.repo} repos={s.repos} activeId={s.repo.id} onSelect={s.switchRepo} onAdd={() => s.setAddRepo(true)} />
       <div style={HEADER}>
         <span style={CAPS}>Flows</span>
-        <span style={{ font: "var(--type-mono-label)", color: "var(--text-disabled)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>conductor/ · {failing} failing</span>
+        <span style={{ font: "var(--type-mono-label)", color: "var(--text-disabled)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{s.repo.folder} · {failing} failing</span>
         <span style={{ flex: 1 }} />
         <Tooltip content="New flow or folder" shortcut="⌘N">
           <IconButton
@@ -293,6 +296,21 @@ function CFlows({ s }) {
             </>
           )}
         {!shown.length && q ? <div style={{ padding: "20px 12px", font: "var(--type-caption)", color: "var(--text-disabled)", textAlign: "center" }}>Nothing matches “{query}”.</div> : null}
+        {/* A freshly connected repo lands here. The folder does not exist yet, so the empty state
+            is the one action that creates it. */}
+        {!s.tests.length && !draft ? (
+          <div style={{ display: "grid", justifyItems: "center", gap: 10, padding: "28px 16px", textAlign: "center" }}>
+            <Icon name="file-code" size={20} color="var(--text-disabled)" />
+            <span style={{ display: "grid", gap: 3 }}>
+              <span style={{ font: "var(--type-caption)", color: "var(--text-secondary)" }}>No flows in {s.repo.folder} yet</span>
+              <span style={{ font: "var(--type-mono-label)", color: "var(--text-disabled)", textWrap: "pretty" }}>Conductor creates the folder with the first one.</span>
+            </span>
+            <button type="button" onClick={() => s.startNew("flow", "")} style={{ display: "flex", alignItems: "center", gap: 6, height: 26, padding: "0 11px", background: "var(--a-well)", border: A_HAIR, borderRadius: "var(--a-radius-field)", cursor: "pointer", font: "var(--type-caption)", color: "var(--text-primary)" }}>
+              <Icon name="plus" size={12} color="var(--accent)" />
+              New flow
+            </button>
+          </div>
+        ) : null}
       </div>
       {/* macOS puts persistent actions on a bottom bar of the sidebar, not on a floating pill. */}
       <div style={{ display: "flex", alignItems: "center", gap: 4, height: 34, padding: "0 8px", borderTop: A_HAIR, flex: "none" }}>

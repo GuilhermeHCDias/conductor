@@ -508,13 +508,24 @@ describe('what the criteria name', () => {
   });
 
   /**
-   * Criterion 13 — the highlight states the tree's answer, it never glides
-   * toward it. Animating its geometry means the box on screen carries the
-   * *previous* element's size and place for the duration, which reads as the
-   * wrong height or width on every hover.
+   * Criterion 13, amended 2026-08-06 on the user's ask — the highlight glides
+   * between elements instead of snapping. The flight runs on token clocks and
+   * lasts one --dur-fast beat: long enough to read as one box travelling,
+   * short enough that it describes the previous element for barely a frame —
+   * the concern the original criterion recorded. Reduced motion zeroes the
+   * tokens, which restores the snap outright.
    */
-  it('snaps the highlight instead of animating its geometry', () => {
-    expect(rule(mirror, '.highlight')).not.toContain('transition');
+  it('glides the highlight between elements on token clocks', () => {
+    const highlight = rule(mirror, '.highlight');
+    for (const property of ['left', 'top', 'width', 'height', 'opacity']) {
+      expect(highlight).toContain(`${property} var(--dur-fast) var(--ease-out)`);
+    }
+  });
+
+  /** The first hover is an appearance, not a flight in from a stale corner:
+   * the box fades in where it lands. */
+  it('fades the highlight in from nothing', () => {
+    expect(mirror).toContain('@starting-style');
   });
 
   /**

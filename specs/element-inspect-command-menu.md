@@ -103,7 +103,12 @@ turns them into the product's core loop.
 7. The system shall map a pointer position into hierarchy units by composing: canvas CSS px →
    stream px (the existing fit scale) → screenshot px (stream size vs screenshot size) → hierarchy
    units (the calibrated scale) — and never `window.devicePixelRatio`.
-8. The system shall select the **deepest, smallest-area** node whose bounds contain the point.
+8. The system shall select the **deepest, smallest-area** node whose bounds contain the point —
+   keeping **semantic nodes ahead of bare ones** (amended 2026-08-06): a node carrying none of
+   `clickable === true`, a `resourceId`, `text`, a `content-desc` or a `hintText` is decoration
+   with a bounding box — an absolute-fill overlay, a gradient, a hairline — and loses to any
+   semantic node that also contains the point, whatever their areas and depths. Bare nodes still
+   answer where nothing semantic contains the point: the tier orders, it never excludes.
 9. The system shall skip nodes with zero width or height, and nodes with no bounds at all.
 10. When candidates tie, the system shall prefer `clickable === true`, then a node with a
     `resourceId`, then one with `text`.
@@ -121,7 +126,10 @@ turns them into the product's core loop.
 14. The highlight label shall name the element as the DS does — a short kind (the class name's last
     segment) and its text (falling back to `content-desc`, then `resource-id`) — with the text
     taken **literally** from the tree, never transcribed from pixels.
-15. When the pointer leaves the canvas, the highlight shall clear.
+15. When the pointer leaves the canvas, the highlight shall clear — unless the menu or the
+    inputText prompt is open (amended 2026-08-06): both are *about* an element, and reaching
+    them crosses off the canvas, so while either is open the highlight pins to their element;
+    the hover takes back over when they close.
 16. While a recapture is in flight, the system shall mark the overlay as updating (a visible stale
     chip per §5.5) rather than hiding the divergence; hover keeps answering from the previous
     snapshot until the new one lands.
@@ -327,6 +335,22 @@ turns them into the product's core loop.
   as wrong width/height on every hover; **(e)** the highlight label counter-scales by
   `--fit-scale` (and the border divides by it) so it stays readable at any fit, flipping inside
   the box at the screen's top edge; header tool glyphs went from 14 to 16 px in the same pass.
+- **Second on-device pass: the highlight kept losing its element** (Engineer, 2026-08-06).
+  The report: hover and selection landing on the wrong component, the highlight sometimes
+  vanishing outright. Three corrections, criteria 8 and 15 amended in place: **(a)** the
+  semantic tier — RN trees are dense with decoration that reports bounds and nothing else
+  (`StyleSheet.absoluteFill` overlays, gradients, hairline separators), and smallest-area-
+  then-deepest handed them the hit: the overlay shares the card's bounds and sits deeper, so
+  it won every hover over the card, the synthesiser got a node it could say nothing about
+  (straight to relational/`point:`), and a hairline's box drawn on screen is invisible —
+  read as "the highlight disappeared". Bare nodes now rank behind semantic ones, and only
+  answer where nothing semantic contains the point. **(b)** the pinned selection — reaching
+  the menu crosses off the canvas, and criterion 15's clear-on-leave erased the highlight of
+  the very element the menu was about; while the menu or the prompt is open, the highlight
+  pins to their element. **(c)** the standing pointer — `lastPointer` was only recorded
+  while inspection was fully live, so flipping the switch on (or the first snapshot landing)
+  showed nothing until the hand moved; the pointer is now recorded whatever the mode, and
+  the existing re-aim effect does the rest.
   A sixth followed with the live drag (see the control-socket spec's 2026-08-05 amendment):
   **(f)** a right-click mid-drag opens no menu — it would describe a screen the finger is still
   changing, and its commands would drive touches into the live gesture as a second finger.

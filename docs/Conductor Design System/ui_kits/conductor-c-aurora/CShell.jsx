@@ -41,6 +41,12 @@ function useStudioC(opts = {}) {
   const [menu, setMenu] = React.useState(null);
   const [rowMenu, setRowMenu] = React.useState(null);
   const [tests, setTests] = React.useState(window.TESTS);
+  /* The repository is the configuration: switching one swaps the suite, the folders, the open
+     documents and the bundle id every new flow is written against. */
+  const [repos, setRepos] = React.useState(window.REPOS);
+  const [repoId, setRepoId] = React.useState(window.REPOS[0].id);
+  const [addRepo, setAddRepo] = React.useState(!!opts.addRepo);
+  const repo = repos.find((r) => r.id === repoId) || repos[0];
   const [folders, setFolders] = React.useState(window.FOLDERS || []);
   const [collapsed, setCollapsed] = React.useState({});
   /* Creating and renaming both happen IN the tree, Finder-style: one editable row, no dialog.
@@ -76,7 +82,7 @@ function useStudioC(opts = {}) {
       if (meta && e.key.toLowerCase() === "b") { e.preventDefault(); setFlowsPref((p) => !(p === "auto" ? frame.flows : p)); }
       if (meta && e.key.toLowerCase() === "j") { e.preventDefault(); setLower((l) => (l === "assistant" ? "run" : "assistant")); }
       if (meta && e.key.toLowerCase() === "n") { e.preventDefault(); startNew(e.shiftKey ? "folder" : "flow", ""); }
-      if (e.key === "Escape") { setMenu(null); setRowMenu(null); setDoctor(false); setSendOpen(false); setNewItem(null); setRenameItem(null); setConfirm(null); }
+      if (e.key === "Escape") { setMenu(null); setRowMenu(null); setDoctor(false); setSendOpen(false); setNewItem(null); setRenameItem(null); setConfirm(null); setAddRepo(false); }
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
@@ -136,6 +142,27 @@ function useStudioC(opts = {}) {
      "checkout" and you get checkout.yaml. */
   const withExt = (n) => (/\.ya?ml$/i.test(n) ? n : n + ".yaml");
   const taken = (list, name) => list.some((x) => x.toLowerCase() === name.toLowerCase());
+  const flowStart = () => window.FLOW_START.replace("com.example.app", repo.bundle);
+
+  /* Opening a repository is a whole-workspace change, so nothing carries over: documents, run
+     results and the assistant thread all belong to the project that was open. */
+  function loadRepo(r) {
+    setTests(r.tests || []);
+    setFolders(r.folders || []);
+    setCollapsed({});
+    setNewItem(null);
+    setRenameItem(null);
+    setConfirm(null);
+    setSent([]);
+    setSteps([]);
+    setRunning(false);
+    setThread([HELLO]);
+    setLower("assistant");
+    const first = (r.tests || [])[0];
+    setTabs(first ? [{ id: first.id, label: first.name }] : []);
+    setActiveTab(first ? first.id : null);
+    setYaml(window.FLOW_START.replace("com.example.app", r.bundle));
+  }
 
   function startNew(kind, folder = "") {
     setRenameItem(null);
@@ -160,7 +187,7 @@ function useStudioC(opts = {}) {
     setTests((t) => [...t, { id, name, folder: newItem.folder, steps: 0, lastResult: "never", change: "new" }]);
     setTabs((t) => [...t, { id, label: name }]);
     setActiveTab(id);
-    setYaml(window.FLOW_START);
+    setYaml(flowStart());
     setNewItem(null);
   };
 
@@ -214,6 +241,21 @@ function useStudioC(opts = {}) {
 
   return {
     frame, inspector, yaml, aiLines, menu, setMenu, rowMenu, setRowMenu, tests, setTests,
+    repos, repo,
+    switchRepo: (id) => {
+      if (id === repoId) return;
+      const next = repos.find((r) => r.id === id);
+      if (!next) return;
+      setRepoId(id);
+      loadRepo(next);
+    },
+    addRepo, setAddRepo,
+    connectRepo: (r) => {
+      setRepos((list) => [r, ...list]);
+      setRepoId(r.id);
+      loadRepo(r);
+      setAddRepo(false);
+    },
     folders, collapsed, toggleFolder: (name) => setCollapsed((c) => ({ ...c, [name]: !c[name] })),
     newItem, setNewItem, startNew, commitNew,
     renameItem, setRenameItem, commitRename,
@@ -488,8 +530,8 @@ function CToolbar({ s, dark, setDark }) {
   );
 }
 
-function StudioC({ doctor = false, doctorVariant = "a", send = false }) {
-  const s = useStudioC({ doctor, send });
+function StudioC({ doctor = false, doctorVariant = "a", send = false, addRepo = false }) {
+  const s = useStudioC({ doctor, send, addRepo });
   const DoctorSheet = doctorVariant === "b" && window.CDoctorSheetB ? window.CDoctorSheetB : window.CDoctorSheet;
   const [dark, setDark] = useAuroraTheme();
   const total = s.commandCount() || 1;
@@ -533,6 +575,7 @@ function StudioC({ doctor = false, doctorVariant = "a", send = false }) {
       <CFlowMenu s={s} />
       <CDevices s={s} />
       <CConfirmDelete s={s} />
+      <window.CAddRepoDialog open={s.addRepo} repos={s.repos} onAdd={s.connectRepo} onClose={() => s.setAddRepo(false)} />
     </div>
   );
 }

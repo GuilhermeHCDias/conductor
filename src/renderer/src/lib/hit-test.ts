@@ -70,14 +70,25 @@ export function pointToHierarchy(
 
 /**
  * The element under the point, as its path of child indices — the same path
- * synthesis names (criterion 23). §5.5's rules: skip the boundless and the
- * zero-sized as targets (but never as parents — the real root is boundless and
- * everything hangs under it), take the **smallest area**, break ties by
+ * synthesis names (criterion 23). §5.5's rules, criteria 8–10 as amended
+ * 2026-08-06: skip the boundless and the zero-sized as targets (but never as
+ * parents — the real root is boundless and everything hangs under it), keep
+ * **semantic nodes ahead of bare ones** — RN trees are full of decoration
+ * (absolute-fill overlays, gradients, hairlines) that reports bounds and
+ * nothing a selector could name, and it must never steal the hit from the
+ * element it decorates — then take the **smallest area**, break ties by
  * **depth**, then prefer `clickable`, a `resourceId`, and `text`, in that
- * order (criteria 8–10).
+ * order. Bare nodes still answer where nothing semantic contains the point:
+ * the tier orders, it never excludes.
  */
 export function hitTest(tree: TreeNode, point: HierarchyPoint): readonly number[] | null {
-  let winner: { path: readonly number[]; area: number; depth: number; rank: number } | null = null;
+  let winner: {
+    path: readonly number[];
+    tier: number;
+    area: number;
+    depth: number;
+    rank: number;
+  } | null = null;
 
   const visit = (node: TreeNode, path: readonly number[]): void => {
     const bounds = node.bounds;
@@ -87,6 +98,7 @@ export function hitTest(tree: TreeNode, point: HierarchyPoint): readonly number[
       if (width > 0 && height > 0) {
         const candidate = {
           path,
+          tier: semantic(node) ? 0 : 1,
           area: width * height,
           depth: path.length,
           rank: preferenceRank(node),
@@ -180,6 +192,22 @@ function contains(bounds: Bounds, point: HierarchyPoint): boolean {
   return point.x >= bounds.x1 && point.x < bounds.x2 && point.y >= bounds.y1 && point.y < bounds.y2;
 }
 
+/**
+ * A node someone could actually mean: it is interactive, or it carries any of
+ * the three text legs a selector (or its uniqueness check) can read — §5.3's
+ * `text`, `content-desc` and `hintText` — or the id §5.4 prefers above all.
+ * Everything else is decoration with a bounding box.
+ */
+function semantic(node: TreeNode): boolean {
+  return (
+    node.clickable === true ||
+    node.resourceId !== null ||
+    node.text !== null ||
+    node.contentDescription !== null ||
+    node.hintText !== null
+  );
+}
+
 /** Criterion 10's ladder, as a rank: lower wins. */
 function preferenceRank(node: TreeNode): number {
   if (node.clickable === true) {
@@ -195,9 +223,12 @@ function preferenceRank(node: TreeNode): number {
 }
 
 function beats(
-  candidate: { area: number; depth: number; rank: number },
-  winner: { area: number; depth: number; rank: number },
+  candidate: { tier: number; area: number; depth: number; rank: number },
+  winner: { tier: number; area: number; depth: number; rank: number },
 ): boolean {
+  if (candidate.tier !== winner.tier) {
+    return candidate.tier < winner.tier;
+  }
   if (candidate.area !== winner.area) {
     return candidate.area < winner.area;
   }

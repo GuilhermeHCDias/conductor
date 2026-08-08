@@ -7,7 +7,7 @@ import type {
   SynthesizedSelector,
 } from '@shared/ipc';
 import type { SnapshotView, TreeNode } from '@shared/types';
-import { act, cleanup, render, screen, waitFor } from '@testing-library/react';
+import { act, cleanup, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { DEVICE as PHONE } from '../../lib/mirror-fit';
@@ -1394,9 +1394,10 @@ describe('inspecting the screen', () => {
 
     await rightClickAt(canvas, at(scale, 116, 256));
 
-    expect(await screen.findByRole('menu')).toBeInTheDocument();
+    const menu = await screen.findByRole('menu');
     expect(conductor.maestroSynthesizeSelector).toHaveBeenCalledWith('snapshot-1', [0, 0]);
-    expect(screen.getByText('Button · "Entrar"')).toBeInTheDocument();
+    // Scoped to the menu: the pinned highlight now carries the same label.
+    expect(within(menu).getByText('Button · "Entrar"')).toBeInTheDocument();
     expect(screen.getByRole('menuitem', { name: 'tapOn' })).toBeInTheDocument();
   });
 
@@ -1451,6 +1452,49 @@ describe('inspecting the screen', () => {
     await settleInput();
 
     expect(conductor.mirrorInput).not.toHaveBeenCalled();
+  });
+
+  /**
+   * The selection outlives the hover that made it (amended 2026-08-06, on the
+   * user's ask). Reaching the menu means crossing off the canvas, and
+   * criterion 15 rightly kills the hover on the way out — but the menu is
+   * *about* an element, and a menu floating beside an unmarked screen loses
+   * the very thing it describes. While the menu is open, the highlight pins
+   * to the menu's own element, whatever the pointer does.
+   */
+  it('keeps the highlight pinned to the selection while the menu is open', async () => {
+    const { canvas, scale } = await inspecting();
+    hoverAt(canvas, at(scale, 116, 256));
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+
+    const highlight = screen.getByTestId('inspect-highlight');
+    expect(within(highlight).getByText('Button · "Entrar"')).toBeInTheDocument();
+  });
+
+  /** And through the prompt the menu hands its element to: the dialog types
+   * into that element, and the pin is what says which one. */
+  it('keeps the highlight pinned through the inputText dialog', async () => {
+    const { canvas, scale } = await inspecting();
+    await rightClickAt(canvas, at(scale, 116, 256));
+    await screen.findByRole('menu');
+    act(() => {
+      canvas.dispatchEvent(
+        new MouseEvent('pointerout', { bubbles: true, relatedTarget: document.body }),
+      );
+    });
+
+    await userEvent.click(screen.getByRole('menuitem', { name: 'inputText' }));
+    await screen.findByLabelText('Text to type');
+
+    const highlight = screen.getByTestId('inspect-highlight');
+    expect(within(highlight).getByText('Button · "Entrar"')).toBeInTheDocument();
   });
 
   it('closes on Escape writing nothing', async () => {
@@ -1771,6 +1815,21 @@ describe('inspecting the screen', () => {
       hoverAt(canvas, at(scale, 116, 256));
 
       expect(screen.getByTestId('inspect-highlight')).toBeInTheDocument();
+    });
+
+    /** Amended 2026-08-06, on the user's ask: the pointer standing on the
+     * screen when the switch turns on is an aim already taken — the highlight
+     * appears where it stands, without waiting for the hand to move. */
+    it('re-aims from the standing pointer when the switch turns back on', async () => {
+      const { canvas, scale } = await inspecting();
+      await toggle();
+      hoverAt(canvas, at(scale, 116, 256));
+      expect(screen.queryByTestId('inspect-highlight')).not.toBeInTheDocument();
+
+      await toggle();
+
+      const highlight = screen.getByTestId('inspect-highlight');
+      expect(within(highlight).getByText('Button · "Entrar"')).toBeInTheDocument();
     });
   });
 
