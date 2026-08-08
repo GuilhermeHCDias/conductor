@@ -31,7 +31,7 @@ function trustedEvent(): unknown {
   return { senderFrame: mainFrame, sender: { mainFrame } };
 }
 
-const STATE = { changes: [], reviewOpen: false };
+const STATE = { repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: false };
 
 /** Every method answers ok with a recognizable payload, so pass-through is
  * visible; a test that needs a failure swaps one in. */

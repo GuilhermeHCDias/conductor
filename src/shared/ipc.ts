@@ -490,6 +490,10 @@ const publishChange = z.object({
  */
 const publishState = z
   .object({
+    /** The slug of the repo this projection describes — main already publishes
+     * it in the repo list. It is how the renderer tells a repo switch from a
+     * recompute, so a note drafted for one repo never publishes for another. */
+    repo: z.string(),
     changes: z.array(publishChange).readonly(),
     reviewOpen: z.boolean(),
   })

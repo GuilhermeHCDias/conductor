@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import { Dialog } from '../../components/Dialog/Dialog';
 import { Icon, type IconName } from '../../components/Icon/Icon';
 import { selectOpenPath, useFlowStore } from '../../stores/flow.store';
-import { selectSheetPhase, usePublishStore } from '../../stores/publish.store';
+import { selectCanSend, selectSheetPhase, usePublishStore } from '../../stores/publish.store';
 import styles from './PublishSheet.module.css';
 
 /**
@@ -36,9 +36,11 @@ export function PublishSheet(): JSX.Element | null {
   const changes = usePublishStore((state) => state.changes);
   const reviewOpen = usePublishStore((state) => state.reviewOpen);
   const phase = usePublishStore(selectSheetPhase);
+  const canSend = usePublishStore(selectCanSend);
   const note = usePublishStore((state) => state.note);
   const writing = usePublishStore((state) => state.writing);
   const sendStep = usePublishStore((state) => state.sendStep);
+  const sentJoined = usePublishStore((state) => state.sentJoined);
   const failure = usePublishStore((state) => state.failure);
   const closeSheet = usePublishStore((state) => state.closeSheet);
   const editNote = usePublishStore((state) => state.editNote);
@@ -59,9 +61,12 @@ export function PublishSheet(): JSX.Element | null {
       ? 'Everything sent'
       : `Send ${count} ${count === 1 ? 'change' : 'changes'}`;
   // Criterion 6 — with a review already open, the sheet says these changes
-  // join it; there is never a second review.
+  // join it; there is never a second review. Criterion 23 — right after a
+  // subsequent send, the sent state says they joined the one already open.
   const subtitle = sent
-    ? 'Your team will look at these and put them in the shared project. You can keep working — new changes join the same review.'
+    ? sentJoined
+      ? 'These changes joined the review your team is already looking at. You can keep working — new changes join the same review.'
+      : 'Your team will look at these and put them in the shared project. You can keep working — new changes join the same review.'
     : reviewOpen
       ? 'These changes will join the review your team is already looking at.'
       : 'Your work is already saved on this Mac. Sending puts it in front of your team, who adds it to the shared project.';
@@ -100,11 +105,11 @@ export function PublishSheet(): JSX.Element | null {
           ) : (
             <>
               <button className={styles.ghost} disabled={sending} onClick={onClose} type="button">
-                Not yet
+                Cancel
               </button>
               <button
                 className={styles.primary}
-                disabled={sending || count === 0}
+                disabled={!canSend}
                 onClick={() => {
                   void sendForReview(openPath);
                 }}
@@ -137,24 +142,37 @@ export function PublishSheet(): JSX.Element | null {
       {sent ? null : (
         <label className={styles.field}>
           <span className={styles.label}>
-            What changed? <span className={styles.optional}>Optional — it helps the reviewer.</span>
+            What changed? <span className={styles.required}>Required — your team reads this.</span>
             {writing ? (
               <span className={styles.writing}>
-                <Icon className={styles.spin} name="loader-circle" size={12} />
+                <Icon className={styles.sparkle} name="sparkles" size={12} />
                 Writing…
               </span>
             ) : null}
           </span>
-          <textarea
-            className={styles.note}
-            disabled={sending}
-            onChange={(event) => {
-              editNote(event.target.value);
-            }}
-            placeholder="Fixed the checkout test after the button moved"
-            rows={2}
-            value={note}
-          />
+          {/* The well exists for the writing treatment alone: a textarea draws
+              no pseudo-elements, so the travelling edge needs a box of its
+              own around it. */}
+          <span className={styles.well} data-writing={writing ? 'true' : undefined}>
+            {/* Locked while the AI writes, and `readOnly` rather than
+                `disabled` on purpose: the field is being written into, not
+                unavailable. It keeps its place in the tab order, stays
+                announced beside `aria-busy`, and keeps its own colours under
+                the writing treatment — a greyed-out box would read as broken
+                for the second it lasts. */}
+            <textarea
+              aria-busy={writing}
+              className={styles.note}
+              disabled={sending}
+              onChange={(event) => {
+                editNote(event.target.value);
+              }}
+              placeholder={writing ? '' : 'Fixed the checkout test after the button moved'}
+              readOnly={writing}
+              rows={2}
+              value={note}
+            />
+          </span>
         </label>
       )}
       {failure === null ? null : (

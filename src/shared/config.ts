@@ -36,9 +36,16 @@ export const CONFIG = {
 
   /**
    * Sempre o alias `sonnet` (§6.0): aponta para o Sonnet mais recente sem
-   * exigir release nosso. A env var permite pinar um ID exato se preciso.
+   * exigir release nosso.
    */
-  AI_MODEL: process.env.CONDUCTOR_AI_MODEL ?? 'sonnet',
+  AI_MODEL: 'sonnet',
+
+  /**
+   * Modelo da invocação de describe (§8.4, emenda 2026-08-08): sempre o alias
+   * mais rápido, porque a nota precisa cair no campo com a folha ainda aberta.
+   * O "sempre Sonnet" da §6.0 vale para a janela de IA (AI_MODEL), não aqui.
+   */
+  AI_DESCRIBE_MODEL: 'haiku',
 
   /** Teto de gasto de uma invocação de describe (§8.4): perfil apertado,
    * bem abaixo do teto da conversa do AIPanel. */

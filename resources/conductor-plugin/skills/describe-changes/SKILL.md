@@ -1,6 +1,6 @@
 ---
 name: describe-changes
-description: Write the plain-English title and description of a set of changed end-to-end tests, from a prepared diff. Use when asked to describe test changes for a review — the prompt names a job directory containing diff.patch and changed-files.txt.
+description: Write the plain-English title and description of a set of changed end-to-end tests, from a prepared diff. Use when asked to describe test changes for a review — the prompt carries the changed-files listing and the diff inline.
 ---
 
 # describe-changes
@@ -9,17 +9,16 @@ You are describing changes to automated end-to-end tests so that a teammate —
 who may not be a programmer — instantly understands what the tests now do
 differently. The reader sees only your text, never the diff.
 
-## What to read
+## What you are given
 
-The prompt names a **job directory**. Read from it, in this order:
+The prompt carries everything, inline — there is nothing to open, and you have
+no tools to open it with:
 
-1. `changed-files.txt` — one line per file: `added`, `changed` or `deleted`,
+1. `## changed-files.txt` — one line per file: `added`, `changed` or `deleted`,
    then the file's path.
-2. `diff.patch` — the full diff of every change.
-
-The prompt also names the folder holding the **current test files**. When the
-diff alone does not make a test's purpose clear, Read the changed file there
-to see it whole. Do not read files that did not change.
+2. `## diff.patch` — the diff of every change, with wide context, so a changed
+   test usually appears whole. Where a very large publication was cut, the
+   patch says so; describe what you were given and never guess past it.
 
 ## What to write
 

@@ -239,7 +239,7 @@ if (!app.requestSingleInstanceLock()) {
       flowsDir: CONFIG.FLOWS_DIR,
       extensions: CONFIG.FLOW_EXTENSIONS,
       baseBranchOverride: CONFIG.REPO_BASE_BRANCH,
-      aiModel: CONFIG.AI_MODEL,
+      describeModel: CONFIG.AI_DESCRIBE_MODEL,
       describeBudgetUsd: CONFIG.AI_DESCRIBE_BUDGET_USD,
       activeClone: () => repoService.activeClone(),
       resolveGh: () =>

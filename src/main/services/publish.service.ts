@@ -63,8 +63,9 @@ export type PublishServiceDeps = {
   /** `CONFIG.REPO_BASE_BRANCH`: an explicit override, or `''` to use the
    * branch the clone came with, read at publish time (criterion 22). */
   readonly baseBranchOverride: string;
-  /** `CONFIG.AI_MODEL` — always the `sonnet` alias (§6.0). */
-  readonly aiModel: string;
+  /** `CONFIG.AI_DESCRIBE_MODEL` — the fastest alias (`haiku`): the note must
+   * land while the sheet is still open. §6.0's `sonnet` is the AIPanel's. */
+  readonly describeModel: string;
   /** `CONFIG.AI_DESCRIBE_BUDGET_USD` — the describe invocation's hard ceiling. */
   readonly describeBudgetUsd: number;
   /** The active repo's clone, live — a switch changes what this answers. */
@@ -164,6 +165,12 @@ const NETWORK_TIMEOUT_MS = 60_000;
  * mechanical note takes over (criterion 15). */
 const DESCRIBE_TIMEOUT_MS = 60_000;
 
+/** The patch rides in argv now, and argv is bounded by the OS — ~1 MB on
+ * macOS, and a spawn that overflows it fails outright. A publication big
+ * enough to reach this is far past the point where more diff buys the model
+ * a better sentence, so it is cut and told so. */
+const PROMPT_PATCH_LIMIT = 120_000;
+
 /** Criterion 12's bound, and PR-title convention. */
 const TITLE_LIMIT = 72;
 
@@ -188,6 +195,10 @@ export class PublishService {
   /** One refresh at a time; a trigger during one simply rides it. */
   private refreshing = false;
   private readonly generations = new Map<string, Generation>();
+  /** The describe skill's body, read once per run. `undefined` is "not read
+   * yet"; `null` is "read and not there", which degrades to the mechanical
+   * note without retrying a missing file on every open. */
+  private instructions: string | null | undefined = undefined;
 
   constructor(deps: PublishServiceDeps) {
     this.deps = deps;
@@ -363,7 +374,7 @@ export class PublishService {
         this.emitDescribed(job, cached.description);
         return;
       }
-      const generation = await this.generate(job, clone, changes, diff, hash);
+      const generation = await this.generate(job, changes, diff, hash);
       if (job.canceled || this.disposed) {
         return;
       }
@@ -393,9 +404,14 @@ export class PublishService {
     baseline: string,
   ): Promise<{ patch: string; entries: PublishChange[] }> {
     return this.withTempIndex(clone, baseline, async (indexEnv) => {
+      // `-U25`: a flow is tens of lines, so this much context hands the model
+      // each changed test essentially whole. It is what replaces the `Read`
+      // tool the amended §8.4 profile no longer grants — the skill's "when the
+      // diff alone does not make a test's purpose clear" case, paid for in
+      // context instead of in a round trip.
       const patch = await this.git(
         clone,
-        ['diff-index', '--cached', '-p', '--no-renames', baseline],
+        ['diff-index', '--cached', '-p', '-U25', '--no-renames', baseline],
         indexEnv,
       );
       if (patch.code !== 0) {
@@ -413,67 +429,69 @@ export class PublishService {
   }
 
   /**
-   * One `claude -p` with exactly the §8.4 profile — read-only tools, none of
-   * the user's configuration, our plugin as the only addition, budget capped
-   * — or the mechanical fallback wherever that cannot happen (criterion 15).
-   * The job dir is the only way the model sees the diff (criterion 11): it
-   * runs with no `Bash`, so it could not ask git if it wanted to.
+   * One `claude -p` with the §8.4 profile as amended (2026-08-08) — no tools
+   * at all, none of the user's configuration, the skill's own text as the
+   * system prompt, budget capped — or the mechanical fallback wherever that
+   * cannot happen (criterion 15).
+   *
+   * The amendment is a latency decision, measured: the profile it replaces
+   * spent 14.1s to write two lines, of which ~12s was thinking the answer
+   * never needed and the rest four round trips (load the skill, read two
+   * files, answer). Inlining the material and disabling thinking makes the
+   * same model produce the same text in 1.5s for a tenth of the cost. What
+   * §8.4 guaranteed only gets stricter: a model with no tools cannot read,
+   * write or run anything, and criterion 11's "the diff is the only way it
+   * sees the changes" is now literal rather than merely enforced.
    */
   private async generate(
     job: DescribeJob,
-    clone: ActiveClone,
     changes: PublishChange[],
     diff: { patch: string; entries: PublishChange[] },
     hash: string,
   ): Promise<Generation> {
     const claude = this.deps.resolveClaude();
-    if (claude === null) {
+    const instructions = await this.describeInstructions();
+    // A model with no instructions still answers, and something is worse than
+    // the mechanical note: both absences degrade the same way (criterion 15).
+    if (claude === null || instructions === null) {
       return mechanicalGeneration(hash, changes);
     }
-    const jobDir = join(this.deps.jobsDir, `describe-${job.id}`);
-    await mkdir(jobDir, { recursive: true });
+    await mkdir(this.deps.jobsDir, { recursive: true });
     const timeoutMs = this.deps.describeTimeoutMs ?? DESCRIBE_TIMEOUT_MS;
     const deadline = setTimeout(() => {
       job.controller.abort();
     }, timeoutMs);
     try {
-      await writeFile(join(jobDir, 'diff.patch'), diff.patch, 'utf8');
-      await writeFile(join(jobDir, 'changed-files.txt'), listingOf(diff.entries), 'utf8');
-      const prompt =
-        'Use the describe-changes skill. ' +
-        `The job directory is ${jobDir}: read diff.patch and changed-files.txt there. ` +
-        `The current test files live under ${join(clone.root, this.deps.flowsDir)}. ` +
-        'Answer exactly in the output format the skill defines.';
       const result = await this.deps.run(
         claude,
         [
           '-p',
           '--model',
-          this.deps.aiModel,
+          this.deps.describeModel,
           '--output-format',
           'json',
-          // §8.4's set plus `Skill`: the installed `--tools` restricts the
-          // whole built-in set, and without the Skill tool the model cannot
-          // load the very skill the prompt names (verified live against
-          // 2.1.224). Still no Bash, no Write, no Edit.
+          '--effort',
+          'low',
+          // Nothing to read, nothing to load: the material is in the prompt.
+          // This is also why no `--plugin-dir` and no `--add-dir` ride here —
+          // there is no tool that could use either.
           '--tools',
-          'Skill,Read,Glob,Grep',
+          '',
           '--setting-sources',
           '',
           '--strict-mcp-config',
-          '--plugin-dir',
-          this.deps.pluginDir,
-          '--add-dir',
-          jobDir,
-          '--add-dir',
-          join(clone.root, this.deps.flowsDir),
+          '--system-prompt',
+          instructions,
           '--max-budget-usd',
           String(this.deps.describeBudgetUsd),
-          prompt,
+          describePrompt(diff),
         ],
         {
-          cwd: jobDir,
-          env: this.deps.env,
+          cwd: this.deps.jobsDir,
+          // The user's own environment — `claude` still finds its login (§9.0)
+          // — plus the one knob that keeps a two-line answer from costing a
+          // thousand thinking tokens.
+          env: { ...this.deps.env, MAX_THINKING_TOKENS: '0' },
           timeout: timeoutMs,
           signal: job.controller.signal,
         },
@@ -486,8 +504,28 @@ export class PublishService {
       return parsed ?? mechanicalGeneration(hash, changes);
     } finally {
       clearTimeout(deadline);
-      await rm(jobDir, { recursive: true, force: true }).catch(() => {});
     }
+  }
+
+  /**
+   * The describe skill's body, read once from our own plugin (§8.4). It stays
+   * a real skill file — the single place a bad note is fixed, and the plugin
+   * stays what §6.0 loads for the AIPanel — but this invocation hands its text
+   * over directly instead of paying a round trip for the model to load it.
+   * Front matter is the loader's business, never the model's.
+   */
+  private async describeInstructions(): Promise<string | null> {
+    if (this.instructions !== undefined) {
+      return this.instructions;
+    }
+    const path = join(this.deps.pluginDir, 'skills', 'describe-changes', 'SKILL.md');
+    try {
+      this.instructions = stripFrontMatter(await readFile(path, 'utf8'));
+    } catch (error) {
+      console.error('The describe skill could not be read; using the mechanical note.', error);
+      this.instructions = null;
+    }
+    return this.instructions;
   }
 
   private emitDescribed(job: DescribeJob, note: string): void {
@@ -1042,6 +1080,7 @@ export class PublishService {
     // state the control would render as "Everything sent" over unsent work.
     const publication = this.publications[clone.slug];
     return {
+      repo: clone.slug,
       changes: await this.changeSet(clone, await this.unsentBaseline(clone, publication)),
       reviewOpen: publication !== undefined,
     };
@@ -1206,6 +1245,28 @@ function listingOf(entries: PublishChange[]): string {
 }
 
 /**
+ * Criterion 11's material, inlined: the listing first, then the patch. The
+ * model runs with no tools, so this prompt is not its first source but its
+ * only one — which is also why the listing goes above the cut. Whoever reads
+ * a truncated prompt still learns every file that changed; what is lost is
+ * detail inside the last of them.
+ */
+function describePrompt(diff: { patch: string; entries: PublishChange[] }): string {
+  const patch =
+    diff.patch.length <= PROMPT_PATCH_LIMIT
+      ? diff.patch
+      : `${diff.patch.slice(0, PROMPT_PATCH_LIMIT)}\n… diff truncated after ${PROMPT_PATCH_LIMIT} characters; ${diff.patch.length - PROMPT_PATCH_LIMIT} more were dropped.\n`;
+  return `## changed-files.txt\n\n${listingOf(diff.entries)}\n## diff.patch\n\n${patch}`;
+}
+
+/** Front matter is the skill loader's contract, not the model's: what we hand
+ * over is the body alone. A file without it is already the body. */
+function stripFrontMatter(source: string): string {
+  const match = source.match(/^---\r?\n[\s\S]*?\r?\n---\r?\n/);
+  return match === null ? source : source.slice(match[0].length).replace(/^\s*\n/, '');
+}
+
+/**
  * Criterion 15's mechanical text — "Update 3 tests in checkout" and a
  * description listing the files. Plain and honest: it is what publishes when
  * the AI cannot write, so it must never look like an error.
@@ -1275,7 +1336,18 @@ function clampTitle(title: string): string {
  * their back, which nothing here does (decision).
  */
 function credentialArgs(gh: string): string[] {
-  return ['-c', 'credential.helper=', '-c', `credential.helper=!"${gh}" auth git-credential`];
+  return [
+    '-c',
+    'credential.helper=',
+    '-c',
+    `credential.helper=!${shellSingleQuoted(gh)} auth git-credential`,
+  ];
+}
+
+/** The helper value is run by `sh`: single quotes neutralize every character
+ * a resolved path could carry, with `'` itself spelled `'\''`. */
+function shellSingleQuoted(path: string): string {
+  return `'${path.replaceAll("'", "'\\''")}'`;
 }
 
 /** Criterion 27 — `https://github.com/<org>/<repo>/pull/<n>`, by parsing,

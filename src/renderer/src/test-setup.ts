@@ -68,7 +68,11 @@ function idleConductor(): ConductorApi {
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     // Nothing unsent and no review open — the quiet truth of a fresh
     // workspace, the way `flowList` answers an empty tree.
-    publishStatus: () => Promise.resolve({ ok: true, data: { changes: [], reviewOpen: false } }),
+    publishStatus: () =>
+      Promise.resolve({
+        ok: true,
+        data: { repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: false },
+      }),
     publishDescribe: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     publishSend: () =>

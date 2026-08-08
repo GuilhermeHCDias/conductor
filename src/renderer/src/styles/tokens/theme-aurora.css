@@ -47,6 +47,9 @@
   --glass-1: oklch(100% 0 0 / 0.36);
   --glass-2: oklch(100% 0 0 / 0.58);
   --glass-3: oklch(100% 0 0 / 0.78);
+  /* The dialog's fill: near-opaque (decision 2026-08-08) — content behind a
+     modal read through --glass-3 and fought the sheet's own text. */
+  --glass-dialog: oklch(100% 0 0 / 0.94);
   --glass-sunken: oklch(28% 0.030 240 / 0.045);
   --material-vibrant: oklch(100% 0 0 / 0.44);
   --material-content: oklch(100% 0 0 / 0.80);

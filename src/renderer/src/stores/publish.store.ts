@@ -14,6 +14,9 @@ export type PublishData = {
   /** `publish:status` answered at least once — before it, the control shows
    * nothing rather than asserting a truth it does not have. */
   readonly loaded: boolean;
+  /** The repo the projection belongs to — how a switch is told apart from a
+   * recompute, so drafts never cross repos (criterion 13). */
+  readonly repoSlug: string | null;
   readonly changes: readonly PublishChange[];
   readonly reviewOpen: boolean;
   readonly sheetOpen: boolean;
@@ -25,6 +28,9 @@ export type PublishData = {
   readonly writing: boolean;
   readonly sending: boolean;
   readonly sendStep: 'checking' | 'sending' | 'opening-review' | null;
+  /** Criterion 23's UI clause — the last sent event said the changes joined
+   * the review already open, so the sent state can say so. */
+  readonly sentJoined: boolean;
   readonly failure: { readonly code: string; readonly message: string } | null;
 };
 
@@ -44,6 +50,7 @@ export type PublishState = PublishData & PublishActions;
 function createPublishData(): PublishData {
   return {
     loaded: false,
+    repoSlug: null,
     changes: [],
     reviewOpen: false,
     sheetOpen: false,
@@ -52,6 +59,7 @@ function createPublishData(): PublishData {
     writing: false,
     sending: false,
     sendStep: null,
+    sentJoined: false,
     failure: null,
   };
 }
@@ -80,7 +88,27 @@ export const usePublishStore = create<PublishState>((set, get) => ({
       set({ loaded: true, changes: [], reviewOpen: false });
       return;
     }
-    set({ loaded: true, changes: payload.data.changes, reviewOpen: payload.data.reviewOpen });
+    const fresh = {
+      loaded: true,
+      repoSlug: payload.data.repo,
+      changes: payload.data.changes,
+      reviewOpen: payload.data.reviewOpen,
+    };
+    // Another repo's projection: whatever was drafted or in flight belonged
+    // to the previous one and must not publish here (criterion 13).
+    const switched = get().repoSlug !== null && get().repoSlug !== payload.data.repo;
+    set(
+      switched
+        ? {
+            ...fresh,
+            note: '',
+            noteEdited: false,
+            writing: false,
+            failure: null,
+            sentJoined: false,
+          }
+        : fresh,
+    );
   },
 
   applyEvent: (payload) => {
@@ -116,6 +144,7 @@ export const usePublishStore = create<PublishState>((set, get) => ({
         sendStep: null,
         reviewOpen: true,
         changes: [],
+        sentJoined: event.joined,
         failure: null,
         note: '',
         noteEdited: false,
@@ -126,16 +155,16 @@ export const usePublishStore = create<PublishState>((set, get) => ({
   },
 
   /** Criteria 4 and 10 — any interactive control state opens the sheet, and
-   * the sheet opening starts the note when there is anything to describe.
+   * the sheet opening starts the note. Main is the gate: the local set is a
+   * projection that can lag disk, so the ask always goes out and an empty set
+   * answers with the quiet `publish/nothing-to-send` refusal (criterion 16
+   * keeps a repeat ask off the meter — the cache answers an unchanged set).
    * The status ask doubles as criterion 28's trigger: main's handler
    * refreshes the PR state behind it, which is how a Waiting for review
    * sheet learns the review merged. */
   openSheet: () => {
-    set({ sheetOpen: true, failure: null });
+    set({ sheetOpen: true, failure: null, sentJoined: false });
     void get().init();
-    if (get().changes.length === 0) {
-      return;
-    }
     cancelPending = false;
     set({ writing: true });
     void window.conductor.publishDescribe().then((result) => {
@@ -169,14 +198,30 @@ export const usePublishStore = create<PublishState>((set, get) => ({
     set({ sheetOpen: false, writing: false });
   },
 
-  /** Criterion 17 — the person edits freely; the edited text is what
-   * publishes, and the AI never writes over it again (criterion 13). */
+  /** Criterion 17 — the person edits freely once the note has landed; the
+   * edited text is what publishes, and the AI never writes over it again
+   * (criterion 13).
+   *
+   * While the AI is still writing, an edit is refused (product owner,
+   * 2026-08-08): the field is about to be filled, so anything typed into it
+   * would either be thrown away or fight the arriving sentence. The view's
+   * `readOnly` announces this; the rule is here, the way criterion 17's own
+   * required-note rule is. */
   editNote: (text) => {
+    if (get().writing) {
+      return;
+    }
     set({ note: text, noteEdited: true });
   },
 
+  /** The gate the disabled button only announces (criterion 17 as amended):
+   * a publication carries the person's own account of the work, so blank text
+   * never reaches main, and neither does a sentence the AI is still writing —
+   * nobody has read it yet. Emptiness of the *change set* is deliberately not
+   * checked here: the local set can lag disk, so that call stays main's
+   * (criterion 24). */
   sendForReview: async (openFlowPath) => {
-    if (get().sending) {
+    if (get().sending || get().writing || get().note.trim() === '') {
       return;
     }
     set({ sending: true, sendStep: 'checking', failure: null });
@@ -222,6 +267,14 @@ export function selectSheetPhase(state: PublishState): 'compose' | 'sending' | '
     return 'sending';
   }
   return state.reviewOpen && state.changes.length === 0 ? 'sent' : 'compose';
+}
+
+/** Criteria 13 and 17 as amended — what the send button obeys: something to
+ * send, something described, and no job of either kind in flight. */
+export function selectCanSend(state: PublishState): boolean {
+  return (
+    !state.sending && !state.writing && state.changes.length > 0 && state.note.trim().length > 0
+  );
 }
 
 export function selectUnsentCount(state: PublishState): number {

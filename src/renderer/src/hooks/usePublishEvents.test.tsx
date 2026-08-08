@@ -29,7 +29,12 @@ beforeEach(() => {
   stateListeners = [];
   eventListeners = [];
   unsubscribed = 0;
-  status = vi.fn(() => Promise.resolve({ ok: true, data: { changes: [], reviewOpen: false } }));
+  status = vi.fn(() =>
+    Promise.resolve({
+      ok: true,
+      data: { repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: false },
+    }),
+  );
   window.conductor = {
     ...window.conductor,
     publishStatus: status,
@@ -63,7 +68,11 @@ describe('usePublishEvents', () => {
     act(() => {
       stateListeners[0]?.({
         ok: true,
-        data: { changes: [{ path: 'login.yml', kind: 'added' }], reviewOpen: true },
+        data: {
+          repo: 'loja-verde-pnp-1a2b3c4d',
+          changes: [{ path: 'login.yml', kind: 'added' }],
+          reviewOpen: true,
+        },
       });
     });
 

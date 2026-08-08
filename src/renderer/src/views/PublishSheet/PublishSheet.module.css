@@ -85,8 +85,8 @@
   gap: var(--space-3);
 }
 
-.optional {
-  color: var(--text-disabled);
+.required {
+  color: var(--text-tertiary);
 }
 
 /* Criterion 13's writing state: quiet, beside the label — the field itself
@@ -99,9 +99,102 @@
   margin-left: auto;
 }
 
+/* The mark of a sentence being written, not of something loading: it breathes
+   rather than spins. */
+.sparkle {
+  animation: cd-pulse calc(var(--dur-lazy) * 3) var(--ease-in-out) infinite;
+  display: inline-flex;
+}
+
 .spin {
   animation: cd-spin var(--dur-lazy) linear infinite;
   display: inline-flex;
+}
+
+/* ── The field while the AI writes ──────────────────────────────────────────
+   The generation moment, drawn the way the platform draws it: a light running
+   around the edge of the field, a bloom under it, and a slow sheen crossing
+   the surface. Three layers, one state — `data-writing` on the well — and all
+   three end the instant the sentence lands. The angle is a registered property
+   so the conic sweep can be animated at all, and every clock is a multiple of
+   `--dur-lazy`: reduced motion zeroes the token, so it zeroes these too, and
+   the ring stands still instead of travelling — the state stays legible
+   without the movement. */
+
+@property --note-sweep {
+  syntax: "<angle>";
+  inherits: false;
+  initial-value: 0deg;
+}
+
+.well {
+  border-radius: var(--a-radius-field);
+  display: block;
+  /* Its own stacking context, so the bloom can sit behind the field without
+     falling behind the sheet it is drawn on. */
+  isolation: isolate;
+  position: relative;
+}
+
+.well::before,
+.well::after {
+  border-radius: inherit;
+  content: "";
+  inset: -1px;
+  opacity: 0;
+  pointer-events: none;
+  position: absolute;
+  transition: opacity var(--dur-base) var(--ease-out);
+}
+
+/* The travelling light, masked down to the field's own edge. The hues are the
+   aurora triad the brand gradient is made of — the accent and the AI blue are
+   semantic, and the mint is the one highlight the token set names nowhere
+   else; a full turn of them means the edge is lit all the way round and it is
+   the colour that moves, not a comet chasing itself. */
+.well::before {
+  background: conic-gradient(
+    from var(--note-sweep),
+    var(--accent) 0deg,
+    var(--ai) 120deg,
+    var(--mint-400) 240deg,
+    var(--accent) 360deg
+  );
+  mask:
+    linear-gradient(#000 0 0) content-box,
+    linear-gradient(#000 0 0);
+  mask-composite: exclude;
+  padding: 1px;
+}
+
+/* What that light casts on the sheet beneath it. */
+.well::after {
+  background: conic-gradient(
+    from var(--note-sweep),
+    var(--accent) 0deg,
+    var(--ai) 120deg,
+    var(--mint-400) 240deg,
+    var(--accent) 360deg
+  );
+  filter: blur(12px);
+  inset: -5px;
+  z-index: -1;
+}
+
+.well[data-writing="true"]::before {
+  animation: note-sweep calc(var(--dur-lazy) * 5) linear infinite;
+  opacity: 1;
+}
+
+.well[data-writing="true"]::after {
+  animation: note-sweep calc(var(--dur-lazy) * 5) linear infinite;
+  opacity: 0.34;
+}
+
+@keyframes note-sweep {
+  to {
+    --note-sweep: 360deg;
+  }
 }
 
 .note {
@@ -109,11 +202,35 @@
   border: 1px solid var(--a-hair);
   border-radius: var(--a-radius-field);
   color: var(--text-primary);
+  display: block;
   font: var(--type-body);
   outline: none;
   padding: 8px 10px;
   resize: none;
   transition: var(--t-hover);
+  width: 100%;
+  /* The sheen rides `background-image` under `cd-shimmer`, so it is declared
+     here and only travels while writing. */
+  background-image: linear-gradient(
+    100deg,
+    transparent 34%,
+    var(--ai-quiet-hover) 46%,
+    transparent 58%
+  );
+  background-position: -200% 0;
+  background-size: 220% 100%;
+}
+
+/* The hairline steps aside for the travelling edge; the focus ring does not —
+   the person can type into the field while the AI writes, and a ring they can
+   see is the whole point of it. */
+.well[data-writing="true"] .note {
+  animation: cd-shimmer calc(var(--dur-lazy) * 5) linear infinite;
+  border-color: transparent;
+  /* Locked while the AI writes: no text cursor and no caret, so the field
+     never invites a sentence it would refuse. */
+  caret-color: transparent;
+  cursor: default;
 }
 
 .note:focus-visible {

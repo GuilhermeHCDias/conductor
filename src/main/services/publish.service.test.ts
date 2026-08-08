@@ -111,7 +111,15 @@ type HarnessOptions = {
   describeTimeoutMs?: number;
   baseBranchOverride?: string;
   now?: () => Date;
+  /** `null` plants no `SKILL.md` — the describe job has no instructions to
+   * carry and degrades to the mechanical note (criterion 15). */
+  skill?: null;
 };
+
+/** The shipped skill's shape: front matter the loader reads, then the body
+ * that is the describe job's whole system prompt (§8.4 as amended). */
+const SKILL_BODY = '# describe-changes\n\nWrite a title and a description.\n';
+const SKILL_FILE = `---\nname: describe-changes\ndescription: Write the note.\n---\n\n${SKILL_BODY}`;
 
 const PR_URL = 'https://github.com/loja-verde/pnp/pull/41';
 
@@ -146,6 +154,13 @@ async function harness(options: HarnessOptions = {}): Promise<{
     await plantRepo(cloneRoot, originDir, options.repo?.files);
   }
 
+  const pluginDir = join(dir, 'plugin', 'conductor-plugin');
+  if (options.skill !== null) {
+    const skillDir = join(pluginDir, 'skills', 'describe-changes');
+    mkdirSync(skillDir, { recursive: true });
+    writeFileSync(join(skillDir, 'SKILL.md'), SKILL_FILE, 'utf8');
+  }
+
   const calls: Call[] = [];
   const events: Result<PublishEvent>[] = [];
   const changed: Result<PublishState>[] = [];
@@ -155,11 +170,11 @@ async function harness(options: HarnessOptions = {}): Promise<{
   const deps: PublishServiceDeps = {
     stateFile: join(dir, 'publications.json'),
     jobsDir: join(dir, 'jobs'),
-    pluginDir: join(dir, 'plugin', 'conductor-plugin'),
+    pluginDir,
     flowsDir: 'conductor',
     extensions: ['.yml', '.yaml'],
     baseBranchOverride: options.baseBranchOverride ?? '',
-    aiModel: 'sonnet',
+    describeModel: 'haiku',
     describeBudgetUsd: 0.25,
     activeClone: () =>
       options.repo === null
@@ -291,7 +306,11 @@ describe('the unsent set', () => {
   it('answers empty over a clean tree', async () => {
     const { service } = await harness();
 
-    expect(data(await service.status())).toEqual({ changes: [], reviewOpen: false });
+    expect(data(await service.status())).toEqual({
+      repo: 'loja-verde-pnp-1a2b3c4d',
+      changes: [],
+      reviewOpen: false,
+    });
   });
 
   /** Criterion 7 — the difference between the working tree and the base tip,
@@ -393,7 +412,11 @@ describe('the debounced recompute', () => {
     await service.activeRepoChanged();
 
     expect(changed).toHaveLength(1);
-    expect(data(changed[0] as Result<PublishState>)).toEqual({ changes: [], reviewOpen: false });
+    expect(data(changed[0] as Result<PublishState>)).toEqual({
+      repo: 'loja-verde-pnp-1a2b3c4d',
+      changes: [],
+      reviewOpen: false,
+    });
   });
 });
 
@@ -428,58 +451,109 @@ describe('the describe job', () => {
     const call = claudeCalls()[0] as Call;
     expect(call.command).toBe(CLAUDE);
     const args = [...call.args];
-    const prompt = args.at(-1) as string;
-    expect(prompt).toContain('describe-changes');
-    const jobDir = call.options?.cwd as string;
-    expect(jobDir.startsWith(deps.jobsDir)).toBe(true);
     expect(args.slice(0, -1)).toEqual([
       '-p',
       '--model',
-      'sonnet',
+      'haiku',
       '--output-format',
       'json',
+      '--effort',
+      'low',
       '--tools',
-      'Skill,Read,Glob,Grep',
+      '',
       '--setting-sources',
       '',
       '--strict-mcp-config',
-      '--plugin-dir',
-      deps.pluginDir,
-      '--add-dir',
-      jobDir,
-      '--add-dir',
-      join(cloneRoot, 'conductor'),
+      '--system-prompt',
+      SKILL_BODY,
       '--max-budget-usd',
       '0.25',
     ]);
+    expect(call.options?.cwd).toBe(deps.jobsDir);
     expect(call.options?.signal).toBeInstanceOf(AbortSignal);
     expect(call.options?.timeout).toBe(5_000);
   });
 
-  /** Criterion 11 — the diff and the changed-files listing are written by us
-   * into the job dir; the model never runs git and is never handed the diff
-   * any other way. */
-  it('hands the model the diff and the listing through the job dir', async () => {
-    let seen: { patch: string; files: string } | null = null;
-    const { service, cloneRoot, events } = await harness({
-      claudeRun: (call) => {
-        const jobDir = call.options?.cwd as string;
-        seen = {
-          patch: readFileSync(join(jobDir, 'diff.patch'), 'utf8'),
-          files: readFileSync(join(jobDir, 'changed-files.txt'), 'utf8'),
-        };
-        return { stdout: AI_RESULT, stderr: '', code: 0 };
-      },
-    });
+  /** The note is two lines of prose, and every thinking token is wall-clock
+   * the sheet spends waiting: measured at 14.1s with thinking on against
+   * 1.5s with it off, same model, same text. The knob is the child's env. */
+  it('runs the describe child with thinking disabled', async () => {
+    const { service, cloneRoot, events, claudeCalls } = await harness();
     write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
 
     data(await service.describe());
     await until(() => events.length > 0);
 
-    const captured = seen as { patch: string; files: string } | null;
-    expect(captured?.patch).toContain('conductor/login.yml');
-    expect(captured?.patch).toContain('+- back');
-    expect(captured?.files).toBe('changed conductor/login.yml\n');
+    const call = claudeCalls()[0] as Call;
+    expect(call.options?.env?.MAX_THINKING_TOKENS).toBe('0');
+    // Still the user's own environment otherwise — `claude` finds its login.
+    expect(call.options?.env?.GIT_AUTHOR_NAME).toBe(GIT_ENV.GIT_AUTHOR_NAME);
+  });
+
+  /** Criterion 11 — the diff and the changed-files listing reach the model
+   * inlined in the prompt; it runs with no tools at all, so this is not
+   * merely its first source but its only one. */
+  it('inlines the diff and the listing in the prompt', async () => {
+    const { service, cloneRoot, events, claudeCalls } = await harness();
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+
+    data(await service.describe());
+    await until(() => events.length > 0);
+
+    const prompt = (claudeCalls()[0] as Call).args.at(-1) as string;
+    expect(prompt).toContain('changed conductor/login.yml');
+    expect(prompt).toContain('+- back');
+    expect(prompt).toContain('diff --git');
+  });
+
+  /** §8.4 as amended — the skill file stays the one place a bad note is
+   * fixed; what changed is that we hand its text over instead of paying a
+   * round trip for the model to load it. Front matter is the loader's, not
+   * the model's. */
+  it('carries the skill body as the system prompt, front matter stripped', async () => {
+    const { service, cloneRoot, events, claudeCalls } = await harness();
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+
+    data(await service.describe());
+    await until(() => events.length > 0);
+
+    const args = (claudeCalls()[0] as Call).args;
+    const prompt = args[args.indexOf('--system-prompt') + 1] as string;
+    expect(prompt).toBe(SKILL_BODY);
+    expect(prompt).not.toContain('name: describe-changes');
+  });
+
+  /** Criterion 15's shape again: an instruction-less model would answer
+   * something, and something is worse than the mechanical note. */
+  it('falls back to mechanical text when the skill file is missing', async () => {
+    const { service, cloneRoot, events, claudeCalls } = await harness({ skill: null });
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+
+    data(await service.describe());
+    await until(() => events.length > 0);
+
+    expect(claudeCalls()).toEqual([]);
+    expect(unwrapped(events)).toEqual([
+      { kind: 'described', describeId: 1, note: 'Changed: login.yml.' },
+    ]);
+  });
+
+  /** The diff rides in argv now, and argv is bounded by the OS (~1 MB on
+   * macOS). A publication large enough to overflow it must still describe —
+   * truncated, and saying so — never crash the spawn. */
+  it('truncates a diff too large to ride in argv', async () => {
+    const { service, cloneRoot, events, claudeCalls } = await harness();
+    const huge = Array.from({ length: 40_000 }, (_, i) => `- tapOn: "Botao ${i}"`).join('\n');
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}${huge}\n`);
+
+    data(await service.describe());
+    await until(() => events.length > 0);
+
+    const prompt = (claudeCalls()[0] as Call).args.at(-1) as string;
+    expect(prompt.length).toBeLessThan(200_000);
+    expect(prompt).toContain('truncated');
+    // The listing survives whole: what changed is never the part dropped.
+    expect(prompt).toContain('changed conductor/login.yml');
   });
 
   /** Criterion 13 — the note the field prefills with is the description; the
@@ -911,7 +985,7 @@ describe('the first send', () => {
       '-c',
       'credential.helper=',
       '-c',
-      `credential.helper=!"${GH}" auth git-credential`,
+      `credential.helper=!'${GH}' auth git-credential`,
       'fetch',
       'origin',
       'main',
@@ -933,6 +1007,23 @@ describe('the first send', () => {
         expect(index.startsWith(join(cloneRoot, '.git'))).toBe(false);
       }
     }
+  });
+
+  /** The helper value is a shell command git hands to `sh` (the `!` prefix):
+   * the resolved `gh` path rides inside single quotes so a path carrying `"`,
+   * `$` or a quote of its own cannot break out (rule 19's spirit). */
+  it('quotes the gh path in the credential helper against shell metacharacters', async () => {
+    const hostile = '/fake/we"ird$\'d/gh';
+    const { service, cloneRoot, events, gitCalls } = await harness({ gh: hostile });
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+
+    data(await service.send('note', null));
+    await untilSettled(events);
+
+    const fetch = gitCalls().find((call) => gitSubcommand(call) === 'fetch');
+    expect(fetch?.args).toContain(
+      "credential.helper=!'/fake/we\"ird$'\\''d/gh' auth git-credential",
+    );
   });
 
   /** Criterion 20 — `gh pr create --base --head --title --body-file`: the
@@ -1005,7 +1096,11 @@ describe('the first send', () => {
     });
     expect(publication.baseCommit).toBe(await git(cloneRoot, 'rev-parse', 'origin/main'));
     expect(publication.lastSentCommit).toMatch(/^[0-9a-f]{40}$/);
-    expect(data(await service.status())).toEqual({ changes: [], reviewOpen: true });
+    expect(data(await service.status())).toEqual({
+      repo: 'loja-verde-pnp-1a2b3c4d',
+      changes: [],
+      reviewOpen: true,
+    });
   });
 
   /** Criterion 20 — the commit carries exactly the `conductor/` scope: the
@@ -1136,7 +1231,7 @@ describe('subsequent sends', () => {
     let patch: string | null = null;
     const bundle = await harness({
       claudeRun: (call) => {
-        patch = readFileSync(join(call.options?.cwd as string, 'diff.patch'), 'utf8');
+        patch = call.args.at(-1) as string;
         return { stdout: AI_RESULT, stderr: '', code: 0 };
       },
     });

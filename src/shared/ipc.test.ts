@@ -789,19 +789,32 @@ describe('publish:status', () => {
 
   /** Criteria 1–3 — everything the control and the sheet derive their states
    * from: the unsent changes and whether a review is open. The PR URL never
-   * crosses; View on GitHub asks main to open the stored one (criterion 27). */
-  it('answers the unsent changes and whether a review is open', () => {
+   * crosses; View on GitHub asks main to open the stored one (criterion 27).
+   * The projection names its repo (the slug main published) so the renderer
+   * can tell a repo switch from a recompute and drop cross-repo drafts. */
+  it('answers the unsent changes and whether a review is open, named by repo', () => {
     expect(
-      schema.response.safeParse({ changes: [PUBLISH_CHANGE], reviewOpen: false }).success,
+      schema.response.safeParse({
+        repo: 'loja-verde-pnp-1a2b3c4d',
+        changes: [PUBLISH_CHANGE],
+        reviewOpen: false,
+      }).success,
     ).toBe(true);
-    expect(schema.response.safeParse({ changes: [], reviewOpen: true }).success).toBe(true);
-    expect(schema.response.safeParse({ changes: [] }).success).toBe(false);
+    expect(
+      schema.response.safeParse({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: true })
+        .success,
+    ).toBe(true);
+    expect(schema.response.safeParse({ changes: [], reviewOpen: true }).success).toBe(false);
+    expect(
+      schema.response.safeParse({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [] }).success,
+    ).toBe(false);
   });
 
   /** Criterion 8's vocabulary, and only it. */
   it('refuses a change of no declared kind', () => {
     expect(
       schema.response.safeParse({
+        repo: 'loja-verde-pnp-1a2b3c4d',
         changes: [{ path: 'pix.yml', kind: 'renamed' }],
         reviewOpen: false,
       }).success,
@@ -811,6 +824,7 @@ describe('publish:status', () => {
   it('refuses a URL riding the state', () => {
     expect(
       schema.response.safeParse({
+        repo: 'loja-verde-pnp-1a2b3c4d',
         changes: [],
         reviewOpen: true,
         url: 'https://github.com/org/repo/pull/7',
@@ -1117,8 +1131,14 @@ describe('publish:changed', () => {
   /** Criterion 9 — the debounced recompute and the repo switch push the same
    * projection `publish:status` answers. */
   it('carries the same state publish:status answers', () => {
-    expect(schema.safeParse({ changes: [PUBLISH_CHANGE], reviewOpen: false }).success).toBe(true);
-    expect(schema.safeParse({ changes: [PUBLISH_CHANGE] }).success).toBe(false);
+    expect(
+      schema.safeParse({
+        repo: 'loja-verde-pnp-1a2b3c4d',
+        changes: [PUBLISH_CHANGE],
+        reviewOpen: false,
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ changes: [PUBLISH_CHANGE], reviewOpen: false }).success).toBe(false);
   });
 });
 

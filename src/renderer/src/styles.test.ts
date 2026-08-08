@@ -166,13 +166,25 @@ describe('motion', () => {
   // ⏸️ Amended by the repo-connect spec: the resolver's progress spinner is
   // the DS's own `cd-spin`, on the token clock — reduced motion stops it
   // like everything else.
-  it.each(MODULES)('$name animates only a DS entrance, on token clocks', ({ css }) => {
+  // ⏸️ Amended by the send-changes spec: the publish sheet's writing state is
+  // the app's first animation that is a *state* rather than an entrance — the
+  // AI writing the note (criterion 13). The design system ships no such
+  // motion, so it is drawn here, and it stays inside criterion 9 the way the
+  // rule intends: no clock is a number, each is a multiple of `--dur-lazy`,
+  // which reduced motion sets to 0ms — the animation is dead at the token
+  // before the global `!important` is even consulted.
+  const ANIMATIONS = [
+    /cd-(fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)/,
+    /cd-spin var\(--dur-lazy\) linear infinite/,
+    /(cd-pulse|cd-shimmer|note-sweep) calc\(var\(--dur-lazy\) \* \d+\) (linear|var\(--ease-in-out\)) infinite/,
+  ];
+  const ANIMATION = new RegExp(`^animation: (${ANIMATIONS.map((each) => each.source).join('|')})$`);
+
+  it.each(MODULES)('$name animates only a DS entrance or the writing state', ({ css }) => {
     const animations = css.match(/animation:[^;]*/g) ?? [];
 
     for (const declaration of animations) {
-      expect(declaration).toMatch(
-        /^animation: cd-((fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)|spin var\(--dur-lazy\) linear infinite)$/,
-      );
+      expect(declaration).toMatch(ANIMATION);
     }
   });
 });

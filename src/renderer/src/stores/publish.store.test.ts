@@ -2,6 +2,7 @@ import type { Result } from '@shared/ipc';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   resetPublishStore,
+  selectCanSend,
   selectControlPhase,
   selectSheetPhase,
   usePublishStore,
@@ -34,7 +35,9 @@ beforeEach(() => {
 describe('init', () => {
   it('stores the answer and marks the state loaded', async () => {
     window.conductor.publishStatus = vi.fn(() =>
-      Promise.resolve(ok({ changes: [CHANGE], reviewOpen: false })),
+      Promise.resolve(
+        ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [CHANGE], reviewOpen: false }),
+      ),
     );
 
     await store().init();
@@ -76,10 +79,43 @@ describe('the control phase', () => {
 
 describe('the pushed state', () => {
   it('applies a publish:changed push', () => {
-    store().applyState(ok({ changes: [CHANGE], reviewOpen: true }));
+    store().applyState(
+      ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [CHANGE], reviewOpen: true }),
+    );
 
     expect(store().changes).toEqual([CHANGE]);
     expect(store().reviewOpen).toBe(true);
+  });
+
+  /** Criterion 13 across repos — a draft typed for one repo must never offer
+   * itself as what publishes for another; the projection's own repo slug is
+   * how a switch is told apart from a recompute (criterion 9's second half). */
+  it('drops the drafts of another repo when the projection switches', () => {
+    store().applyState(
+      ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [CHANGE], reviewOpen: false }),
+    );
+    store().editNote('Words for the first repo.');
+
+    store().applyState(ok({ repo: 'acme-app-9z8y7x6w', changes: [], reviewOpen: true }));
+
+    expect(store().note).toBe('');
+    expect(store().noteEdited).toBe(false);
+    expect(store().writing).toBe(false);
+    expect(store().failure).toBeNull();
+  });
+
+  it('keeps the typed draft across a recompute of the same repo', () => {
+    store().applyState(
+      ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [CHANGE], reviewOpen: false }),
+    );
+    store().editNote('My own words.');
+
+    store().applyState(
+      ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [CHANGE], reviewOpen: false }),
+    );
+
+    expect(store().note).toBe('My own words.');
+    expect(store().noteEdited).toBe(true);
   });
 });
 
@@ -102,7 +138,9 @@ describe('the sheet and the describe job', () => {
    * most with zero changes — the Waiting for review sheet is exactly where a
    * merged review must be noticed. */
   it('asks for the fresh state every time the sheet opens', () => {
-    const status = vi.fn(() => Promise.resolve(ok({ changes: [], reviewOpen: true })));
+    const status = vi.fn(() =>
+      Promise.resolve(ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: true })),
+    );
     window.conductor.publishStatus = status;
 
     store().openSheet();
@@ -110,16 +148,22 @@ describe('the sheet and the describe job', () => {
     expect(status).toHaveBeenCalledOnce();
   });
 
-  /** Criterion 10 asks for ≥ 1 unsent change — an empty sheet asks nothing. */
-  it('opens the sheet without a describe job when nothing is unsent', () => {
-    const describe = vi.fn(() => Promise.resolve(ok({ describeId: 7 })));
+  /** Criterion 10 with main as the only gate: the local set is a projection
+   * that can lag disk, so opening always asks — an actually-empty set answers
+   * with main's quiet `publish/nothing-to-send` refusal, never a phantom job. */
+  it('asks for a describe even when the local set looks empty', async () => {
+    const describe = vi.fn(() =>
+      Promise.resolve(refusal('publish/nothing-to-send', 'There is nothing new to send.')),
+    );
     window.conductor.publishDescribe = describe;
 
     store().openSheet();
 
     expect(store().sheetOpen).toBe(true);
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(describe).toHaveBeenCalledOnce();
     expect(store().writing).toBe(false);
-    expect(describe).not.toHaveBeenCalled();
   });
 
   /** Criterion 13 — the note arrives into an untouched field… */
@@ -135,16 +179,31 @@ describe('the sheet and the describe job', () => {
     expect(store().note).toBe('The test waits.');
   });
 
-  /** …and never over the person's own words. */
-  it('never overwrites a note the person already typed', async () => {
+  /** The field is locked while the AI writes (product owner, 2026-08-08), and
+   * the rule lives here — the view's `readOnly` only announces it. Typing into
+   * a field whose content is about to be replaced is work thrown away. */
+  it('ignores an edit while the note is being written', async () => {
     window.conductor.publishDescribe = vi.fn(() => Promise.resolve(ok({ describeId: 7 })));
     usePublishStore.setState({ changes: [CHANGE] });
     store().openSheet();
-    store().editNote('My own words.');
+
+    store().editNote('Typed too early.');
+
+    expect(store().note).toBe('');
+    expect(store().noteEdited).toBe(false);
+  });
+
+  /** …so the written note always lands, and the person edits after it. */
+  it('lands the written note, then takes the edits', async () => {
+    window.conductor.publishDescribe = vi.fn(() => Promise.resolve(ok({ describeId: 7 })));
+    usePublishStore.setState({ changes: [CHANGE] });
+    store().openSheet();
 
     store().applyEvent(ok({ kind: 'described' as const, describeId: 7, note: 'The test waits.' }));
+    store().editNote('My own words.');
 
     expect(store().note).toBe('My own words.');
+    expect(store().noteEdited).toBe(true);
     expect(store().writing).toBe(false);
   });
 
@@ -182,7 +241,55 @@ describe('the sheet and the describe job', () => {
   });
 });
 
+describe('what can be sent', () => {
+  /** Criterion 17 as amended — the description is the person's word about
+   * their own work, so nothing sends without it, and nothing sends while the
+   * AI is still writing one. */
+  it('allows a send only with changes, a description and no job running', () => {
+    usePublishStore.setState({ changes: [CHANGE], note: 'The test waits.' });
+    expect(selectCanSend(store())).toBe(true);
+
+    usePublishStore.setState({ writing: true });
+    expect(selectCanSend(store())).toBe(false);
+
+    usePublishStore.setState({ writing: false, sending: true });
+    expect(selectCanSend(store())).toBe(false);
+
+    usePublishStore.setState({ sending: false, note: '   ' });
+    expect(selectCanSend(store())).toBe(false);
+
+    usePublishStore.setState({ note: 'The test waits.', changes: [] });
+    expect(selectCanSend(store())).toBe(false);
+  });
+});
+
 describe('sending', () => {
+  /** The disabled button is the affordance; this is the rule — blank text
+   * never reaches main. */
+  it('refuses to send with nothing described', async () => {
+    const send = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
+    window.conductor.publishSend = send;
+    usePublishStore.setState({ changes: [CHANGE], note: '  \n ' });
+
+    await store().sendForReview(null);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(store().sending).toBe(false);
+  });
+
+  /** The AI's own sentence is not the person's yet — a send while it is being
+   * written would publish a text nobody has read. */
+  it('refuses to send while the note is still being written', async () => {
+    const send = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
+    window.conductor.publishSend = send;
+    usePublishStore.setState({ changes: [CHANGE], note: 'Half a sen', writing: true });
+
+    await store().sendForReview(null);
+
+    expect(send).not.toHaveBeenCalled();
+    expect(store().sending).toBe(false);
+  });
+
   it('starts the send with the note and the open flow path', async () => {
     const send = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
     window.conductor.publishSend = send;
@@ -197,6 +304,7 @@ describe('sending', () => {
 
   it('drives the steps off publish:event pushes', async () => {
     window.conductor.publishSend = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
+    usePublishStore.setState({ note: 'The words.' });
     await store().sendForReview(null);
 
     store().applyEvent(ok({ kind: 'send-step' as const, sendId: 3, step: 'sending' as const }));
@@ -220,9 +328,30 @@ describe('sending', () => {
     expect(selectSheetPhase(store())).toBe('sent');
   });
 
+  /** Criterion 23's UI clause — a subsequent send's changes joined the review
+   * already open; the sheet reads that fact from here. */
+  it('remembers whether the sent changes joined an open review', async () => {
+    window.conductor.publishSend = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
+    usePublishStore.setState({ note: 'The words.' });
+    await store().sendForReview(null);
+
+    store().applyEvent(ok({ kind: 'sent' as const, sendId: 3, joined: true }));
+
+    expect(store().sentJoined).toBe(true);
+  });
+
+  it('forgets the joined mark when the sheet reopens', () => {
+    usePublishStore.setState({ sentJoined: true });
+
+    store().openSheet();
+
+    expect(store().sentJoined).toBe(false);
+  });
+
   /** Criterion 26 — the failure lands with its stable code and message. */
   it('surfaces a send failure', async () => {
     window.conductor.publishSend = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
+    usePublishStore.setState({ note: 'The words.' });
     await store().sendForReview(null);
 
     store().applyEvent(
@@ -247,9 +376,11 @@ describe('sending', () => {
     window.conductor.publishSend = vi.fn(() =>
       Promise.resolve(refusal('publish/nothing-to-send', 'There is nothing new to send.')),
     );
-    const status = vi.fn(() => Promise.resolve(ok({ changes: [], reviewOpen: false })));
+    const status = vi.fn(() =>
+      Promise.resolve(ok({ repo: 'loja-verde-pnp-1a2b3c4d', changes: [], reviewOpen: false })),
+    );
     window.conductor.publishStatus = status;
-    usePublishStore.setState({ changes: [CHANGE] });
+    usePublishStore.setState({ changes: [CHANGE], note: 'The words.' });
 
     await store().sendForReview(null);
 
@@ -262,6 +393,7 @@ describe('sending', () => {
     window.conductor.publishSend = vi.fn(() =>
       Promise.resolve(refusal('publish/send-active', 'Your changes are already being sent.')),
     );
+    usePublishStore.setState({ note: 'The words.' });
 
     await store().sendForReview(null);
 
