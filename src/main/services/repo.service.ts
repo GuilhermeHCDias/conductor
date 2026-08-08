@@ -30,6 +30,17 @@ export type RepoWorkspace = {
   readonly appId: string | null;
 };
 
+/** What the publish domain needs to know about the active repo: the clone
+ * itself and its identity. The branch is deliberately absent — §8.3's
+ * amendment reads it off the clone at publish time, never from a snapshot. */
+export type ActiveClone = {
+  readonly slug: string;
+  readonly org: string;
+  readonly name: string;
+  /** The clone's root directory — not `conductor/`, the whole checkout. */
+  readonly root: string;
+};
+
 export type RepoServiceDeps = {
   /** `userData/repos` — one clone per slug (§7). */
   readonly reposDir: string;
@@ -134,6 +145,21 @@ export class RepoService {
     return {
       root: join(this.deps.reposDir, repo.slug, this.deps.flowsDir),
       appId: headerAppId(repo.appId),
+    };
+  }
+
+  /** The active clone, for the composition root to hand `PublishService` —
+   * `null` before the first connect. */
+  activeClone(): ActiveClone | null {
+    const repo = this.repos.find((entry) => entry.slug === this.active);
+    if (repo === undefined) {
+      return null;
+    }
+    return {
+      slug: repo.slug,
+      org: repo.org,
+      name: repo.name,
+      root: join(this.deps.reposDir, repo.slug),
     };
   }
 

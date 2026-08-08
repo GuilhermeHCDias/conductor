@@ -4,6 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENVIRONMENT } from '../../fixtures/flows';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
+import { resetPublishStore, usePublishStore } from '../../stores/publish.store';
 import { resetRunStore, useRunStore } from '../../stores/run.store';
 import {
   APPEARANCE_KEY,
@@ -35,6 +36,7 @@ beforeEach(() => {
   resetDeviceStore();
   resetFlowStore();
   resetRunStore();
+  resetPublishStore();
   useFlowStore.setState({ openPath: 'teste.yaml', yaml: FLOW_YAML });
 });
 
@@ -150,6 +152,81 @@ describe('Toolbar', () => {
 
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Run' })).not.toBeInTheDocument();
+  });
+});
+
+/** Publish criteria 1–4 — the control sits between the separator and the
+ * appearance toggle, one slot, three states. */
+describe('the send control', () => {
+  it('shows nothing before the publish truth arrives', () => {
+    render(<Toolbar />);
+
+    expect(screen.queryByText('Everything sent')).not.toBeInTheDocument();
+    expect(screen.queryByText('Send changes')).not.toBeInTheDocument();
+  });
+
+  /** Criterion 1 — quiet, non-interactive: the button row is untouched. */
+  it('shows the quiet Everything sent state over a clean workspace', () => {
+    usePublishStore.setState({ loaded: true });
+    render(<Toolbar />);
+
+    expect(screen.getByText('Everything sent')).toBeInTheDocument();
+    const names = within(screen.getByRole('toolbar'))
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent);
+    expect(names).toEqual(['Toggle sidebar', ENVIRONMENT, 'Run', 'Dark appearance']);
+  });
+
+  /** Criterion 2 — the filled action with the count, before the appearance
+   * toggle. */
+  it('shows Send changes with the count while changes are unsent', () => {
+    usePublishStore.setState({
+      loaded: true,
+      changes: [
+        { path: 'checkout/pix.yml', kind: 'changed' },
+        { path: 'login.yml', kind: 'added' },
+      ],
+    });
+    render(<Toolbar />);
+
+    const names = within(screen.getByRole('toolbar'))
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent);
+    expect(names).toEqual([
+      'Toggle sidebar',
+      ENVIRONMENT,
+      'Run',
+      'Send changes2',
+      'Dark appearance',
+    ]);
+  });
+
+  /** Criterion 3 — the neutral pill, +N when changes piled on top. */
+  it('shows Waiting for review with +N while a review is open', () => {
+    usePublishStore.setState({
+      loaded: true,
+      reviewOpen: true,
+      changes: [{ path: 'login.yml', kind: 'changed' }],
+    });
+    render(<Toolbar />);
+
+    expect(screen.getByRole('button', { name: /Waiting for review/ })).toHaveTextContent('+1');
+  });
+
+  /** Criterion 4 — any interactive state opens the publish sheet. */
+  it('opens the publish sheet on click', async () => {
+    window.conductor.publishDescribe = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { describeId: 1 } }),
+    );
+    usePublishStore.setState({
+      loaded: true,
+      changes: [{ path: 'login.yml', kind: 'changed' }],
+    });
+    render(<Toolbar />);
+
+    await userEvent.click(screen.getByRole('button', { name: /Send changes/ }));
+
+    expect(usePublishStore.getState().sheetOpen).toBe(true);
   });
 });
 

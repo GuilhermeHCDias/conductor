@@ -119,6 +119,36 @@ describe('the workspace root', () => {
     expect(existsSync(root)).toBe(true);
   });
 
+  /** Decision (2026-08-08) — Git ships no empty folder (§7.2), so a repo
+   * that never had `conductor/` gets the folder seeded with `.gitkeep`: the
+   * file counts as an unsent change like any non-flow file, and the folder
+   * itself rides the next publication's PR (§7.1). */
+  it('seeds .gitkeep when it creates the folder', async () => {
+    const { service, root } = harness();
+
+    await service.start();
+
+    expect(readFileSync(join(root, '.gitkeep'), 'utf8')).toBe('');
+  });
+
+  it('seeds .gitkeep into a workspace that exists but is empty', async () => {
+    const { service, root } = harness();
+    mkdirSync(root, { recursive: true });
+
+    await service.start();
+
+    expect(existsSync(join(root, '.gitkeep'))).toBe(true);
+  });
+
+  it('leaves a workspace with content alone', async () => {
+    const { service, root } = harness();
+    seed(root, 'login.yml');
+
+    await service.start();
+
+    expect(existsSync(join(root, '.gitkeep'))).toBe(false);
+  });
+
   /** Criterion 36's retry is just asking again: the root is re-ensured per
    * list, so a workspace that recovers answers without a restart. */
   it('is recreated by list when it went missing', async () => {
@@ -305,7 +335,7 @@ describe('saving', () => {
 
     await service.save('pix.yml', FLOW);
 
-    expect(readdirSync(root)).toEqual(['pix.yml']);
+    expect(readdirSync(root).sort()).toEqual(['.gitkeep', 'pix.yml']);
   });
 
   /** Criterion 6 — no keystroke is ever lost: a save racing an external

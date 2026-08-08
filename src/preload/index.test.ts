@@ -78,9 +78,16 @@ describe('the bridge', () => {
       'onDeviceChanged',
       'onFlowChanged',
       'onMirrorEvent',
+      'onPublishChanged',
+      'onPublishEvent',
       'onRepoChanged',
       'onRepoResolveEvent',
       'onRunEvent',
+      'publishCancel',
+      'publishDescribe',
+      'publishOpenPr',
+      'publishSend',
+      'publishStatus',
       'repoConnect',
       'repoList',
       'repoResolve',
@@ -131,6 +138,11 @@ describe('the bridge', () => {
     await api.repoSwitch('loja-verde-pnp-fast-mode-1a2b3c4d');
     await api.appReadClipboard();
     await api.appWriteClipboard('gh auth login');
+    await api.publishStatus();
+    await api.publishDescribe();
+    await api.publishSend('Fixed the checkout test', 'checkout/pix.yml');
+    await api.publishCancel(1);
+    await api.publishOpenPr();
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
@@ -157,6 +169,11 @@ describe('the bridge', () => {
       { channel: CHANNELS.repoSwitch, args: ['loja-verde-pnp-fast-mode-1a2b3c4d'] },
       { channel: CHANNELS.appReadClipboard, args: [] },
       { channel: CHANNELS.appWriteClipboard, args: ['gh auth login'] },
+      { channel: CHANNELS.publishStatus, args: [] },
+      { channel: CHANNELS.publishDescribe, args: [] },
+      { channel: CHANNELS.publishSend, args: ['Fixed the checkout test', 'checkout/pix.yml'] },
+      { channel: CHANNELS.publishCancel, args: [1] },
+      { channel: CHANNELS.publishOpenPr, args: [] },
     ]);
   });
 
@@ -183,6 +200,8 @@ describe('a subscription', () => {
     ['onFlowChanged', PUSH_CHANNELS.flowChanged],
     ['onRepoChanged', PUSH_CHANNELS.repoChanged],
     ['onRepoResolveEvent', PUSH_CHANNELS.repoResolveEvent],
+    ['onPublishChanged', PUSH_CHANNELS.publishChanged],
+    ['onPublishEvent', PUSH_CHANNELS.publishEvent],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
@@ -196,6 +215,8 @@ describe('a subscription', () => {
     'onFlowChanged',
     'onRepoChanged',
     'onRepoResolveEvent',
+    'onPublishChanged',
+    'onPublishEvent',
   ] as const)('%s returns the unsubscribe that removes exactly its own listener', (name) => {
     const unsubscribe = api[name](() => {});
 

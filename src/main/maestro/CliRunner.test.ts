@@ -1,7 +1,7 @@
 import { join } from 'node:path';
 import { ERROR_CODES } from '@shared/ipc';
-import { describe, expect, it } from 'vitest';
-import type { SpawnOptions, StreamingProcess } from '../process/run';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import type { ExitReason, SpawnOptions, StreamingProcess } from '../process/run';
 import { CliRunner, MaestroNotInstalledError } from './CliRunner';
 
 /**
@@ -125,5 +125,137 @@ describe('CliRunner.test', () => {
     expect(thrown).toBeInstanceOf(MaestroNotInstalledError);
     expect((thrown as MaestroNotInstalledError).code).toBe(ERROR_CODES.runMaestroNotFound);
     expect(spawned).toEqual([]);
+  });
+});
+
+/**
+ * §4.2's other invocation — the publication gate (publish criterion 19). A
+ * scripted child rather than the inert one above, because the verdict derives
+ * from the exit the test drives by hand.
+ */
+describe('CliRunner.checkSyntax', () => {
+  afterEach(() => {
+    vi.useRealTimers();
+  });
+
+  function scripted(overrides: Parameters<typeof runner>[0] = {}): {
+    cli: CliRunner;
+    spawned: Spawned[];
+    emitStdout: (chunk: string) => void;
+    emitStderr: (chunk: string) => void;
+    emitExit: (reason: ExitReason) => void;
+    killed: () => boolean;
+  } {
+    const spawned: Spawned[] = [];
+    const executables = overrides.executables ?? ['/opt/maestro/bin/maestro'];
+    let stdout: (chunk: string) => void = () => {};
+    let stderr: (chunk: string) => void = () => {};
+    let exit: (reason: ExitReason) => void = () => {};
+    let killed = false;
+    const cli = new CliRunner({
+      spawn: (command, args, options) => {
+        spawned.push({ command, args, options });
+        return {
+          write: () => {},
+          onStdout: (listener) => {
+            stdout = listener;
+          },
+          onStderr: (listener) => {
+            stderr = listener;
+          },
+          onExit: (listener) => {
+            exit = listener;
+          },
+          kill: () => {
+            killed = true;
+          },
+        };
+      },
+      isExecutable: (path) => executables.includes(path),
+      env: overrides.env ?? { PATH: '/usr/bin:/opt/maestro/bin' },
+      home: '/Users/someone',
+      configuredPath: overrides.configuredPath ?? '',
+    });
+    return {
+      cli,
+      spawned,
+      emitStdout: (chunk) => stdout(chunk),
+      emitStderr: (chunk) => stderr(chunk),
+      emitExit: (reason) => exit(reason),
+      killed: () => killed,
+    };
+  }
+
+  /** §12 rule 10 scopes `--no-reinstall-driver` to `hierarchy`/`test` — the
+   * subcommand takes the file and nothing else (verified against 2.8.0). No
+   * device either: the check is a parse, not a run. */
+  it('spawns check-syntax on the file alone — no device, no driver flag', () => {
+    const { cli, spawned, emitExit } = scripted();
+
+    const verdict = cli.checkSyntax('/repos/slug/conductor/checkout/pix.yml');
+    emitExit({ code: 0, error: null });
+
+    expect(spawned).toEqual([
+      {
+        command: '/opt/maestro/bin/maestro',
+        args: ['check-syntax', '/repos/slug/conductor/checkout/pix.yml'],
+        options: expect.anything(),
+      },
+    ]);
+    expect(spawned[0]?.options.env).toMatchObject({ MAESTRO_CLI_NO_ANALYTICS: '1' });
+    return expect(verdict).resolves.toEqual({ ok: true });
+  });
+
+  /** The gate's verdict carries the child's own words — the service translates
+   * them to product language and keeps the raw text in the console. */
+  it('answers the child’s output on a failing exit', async () => {
+    const { cli, emitStdout, emitStderr, emitExit } = scripted();
+
+    const verdict = cli.checkSyntax('/repos/slug/conductor/pix.yml');
+    emitStdout('Syntax error at line 3: unknown command "tapp"\n');
+    emitStderr('');
+    emitExit({ code: 1, error: null });
+
+    await expect(verdict).resolves.toEqual({
+      ok: false,
+      message: 'Syntax error at line 3: unknown command "tapp"',
+    });
+  });
+
+  it('answers a child that never started as a failure', async () => {
+    const { cli, emitExit } = scripted();
+
+    const verdict = cli.checkSyntax('/repos/slug/conductor/pix.yml');
+    emitExit({ code: null, error: new Error('spawn maestro EACCES') });
+
+    await expect(verdict).resolves.toEqual({ ok: false, message: 'spawn maestro EACCES' });
+  });
+
+  /** Publish criterion 19 — the missing binary is the caller's refusal, with
+   * its own message; the same error class the run path throws. */
+  it('rejects with MaestroNotInstalledError when nothing resolves', async () => {
+    const { cli, spawned } = scripted({ executables: [] });
+
+    await expect(cli.checkSyntax('/repos/slug/conductor/pix.yml')).rejects.toBeInstanceOf(
+      MaestroNotInstalledError,
+    );
+    expect(spawned).toEqual([]);
+  });
+
+  /** Every gate step is deadline-guarded (publish constraint): a JVM that
+   * hangs becomes a visible failure, never an eternal "checking". */
+  it('kills a check that outlives its deadline and answers a failure', async () => {
+    vi.useFakeTimers();
+    const { cli, emitExit, killed } = scripted();
+
+    const verdict = cli.checkSyntax('/repos/slug/conductor/pix.yml');
+    vi.advanceTimersByTime(30_000);
+
+    expect(killed()).toBe(true);
+    emitExit({ code: 143, error: null });
+    await expect(verdict).resolves.toEqual({
+      ok: false,
+      message: 'maestro check-syntax did not finish within 30 seconds.',
+    });
   });
 });

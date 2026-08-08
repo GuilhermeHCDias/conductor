@@ -41,6 +41,11 @@
   --glass-1: oklch(100% 0 0 / 0.09);
   --glass-2: oklch(100% 0 0 / 0.12);
   --glass-3: oklch(100% 0 0 / 0.17);
+  /* The dialog's fill: near-opaque, and dark rather than white-frost —
+     17% white over a busy wash left the modal unreadable (decision
+     2026-08-08). Slightly lighter than the window ground so it still
+     reads as the elevated layer. */
+  --glass-dialog: oklch(26% 0.016 242 / 0.94);
   --glass-sunken: oklch(0% 0 0 / 0.20);
   --material-vibrant: oklch(100% 0 0 / 0.10);
   --material-content: oklch(24% 0.026 240 / 0.76);

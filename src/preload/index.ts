@@ -36,6 +36,11 @@ const api: ConductorApi = {
   flowDuplicate: (path) => ipcRenderer.invoke(CHANNELS.flowDuplicate, path),
   flowDelete: (path) => ipcRenderer.invoke(CHANNELS.flowDelete, path),
   flowDeleteFolder: (folder) => ipcRenderer.invoke(CHANNELS.flowDeleteFolder, folder),
+  publishStatus: () => ipcRenderer.invoke(CHANNELS.publishStatus),
+  publishDescribe: () => ipcRenderer.invoke(CHANNELS.publishDescribe),
+  publishSend: (note, openFlowPath) => ipcRenderer.invoke(CHANNELS.publishSend, note, openFlowPath),
+  publishCancel: (jobId) => ipcRenderer.invoke(CHANNELS.publishCancel, jobId),
+  publishOpenPr: () => ipcRenderer.invoke(CHANNELS.publishOpenPr),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -105,6 +110,28 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.repoResolveEvent, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.repoResolveEvent, forward);
+    };
+  },
+
+  // Same shape — the unsent set and the review state are main's truth (§8.3).
+  onPublishChanged: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'publish:changed'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.publishChanged, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.publishChanged, forward);
+    };
+  },
+
+  // And the publish jobs' progress — describe notes and send steps.
+  onPublishEvent: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'publish:event'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.publishEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.publishEvent, forward);
     };
   },
 };

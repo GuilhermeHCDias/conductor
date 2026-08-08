@@ -1,0 +1,5 @@
+{
+  "name": "conductor",
+  "description": "Conductor's embedded assistant configuration — the skills its headless claude invocations load. Ships with the app via extraResources and enters every session through --plugin-dir (.context.md §6.0, §8.4); nothing here is user-installable.",
+  "version": "0.1.0"
+}

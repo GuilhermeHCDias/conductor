@@ -2,6 +2,7 @@ import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
 import { useElementWidth } from './hooks/useElementWidth';
 import { useFlowIndex } from './hooks/useFlowIndex';
+import { usePublishEvents } from './hooks/usePublishEvents';
 import { useRepoEvents } from './hooks/useRepoEvents';
 import { useRunEvents } from './hooks/useRunEvents';
 import { useWindowShortcuts } from './hooks/useWindowShortcuts';
@@ -15,6 +16,7 @@ import { Connect } from './views/Connect/Connect';
 import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
 import { FlowEditor } from './views/FlowEditor/FlowEditor';
 import { FlowList } from './views/FlowList/FlowList';
+import { PublishSheet } from './views/PublishSheet/PublishSheet';
 import { RepoBar } from './views/RepoBar/RepoBar';
 import { Toolbar } from './views/Toolbar/Toolbar';
 
@@ -55,6 +57,9 @@ export function App(): JSX.Element {
   // And for the repo state — the switcher and the connect screen both read
   // what this loads and keeps fresh.
   useRepoEvents();
+  // And for the publish domain: the unsent set and the review state feed the
+  // toolbar's send control whether or not the sheet is open.
+  usePublishEvents();
 
   // A layout effect, not a plain one: the appearance has to be on the document
   // before the first paint, or the window flashes light and then goes dark
@@ -114,6 +119,7 @@ export function App(): JSX.Element {
             </div>
 
             <AddRepoDialog />
+            <PublishSheet />
           </>
         ) : null}
       </div>

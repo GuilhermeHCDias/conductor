@@ -77,6 +77,7 @@ function fakeGateway(tree: TreeNode = parseHierarchy(CAPTURE)): Gateway {
     runFlow: () => {
       throw new Error('SnapshotService does not run flows.');
     },
+    checkSyntax: () => Promise.reject(new Error('SnapshotService does not check syntax.')),
     hierarchy: (deviceId) => {
       gateway.hierarchyCalls.push(deviceId);
       return gateway.hierarchyFailure === null
