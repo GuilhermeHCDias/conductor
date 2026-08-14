@@ -42,6 +42,10 @@ export const CHANNELS = {
   publishSend: 'publish:send',
   publishCancel: 'publish:cancel',
   publishOpenPr: 'publish:open-pr',
+  aiSend: 'ai:send',
+  aiCancel: 'ai:cancel',
+  aiReset: 'ai:reset',
+  aiStatus: 'ai:status',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -56,6 +60,7 @@ export const PUSH_CHANNELS = {
   repoResolveEvent: 'repo:resolve-event',
   publishChanged: 'publish:changed',
   publishEvent: 'publish:event',
+  aiEvent: 'ai:event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -527,6 +532,42 @@ const publishEvent = z.discriminatedUnion('kind', [
   }),
 ]);
 
+/** Names the assistant turn an answer or an event is about. What `ai:send`
+ * gives back is deliberately only this — everything after it arrives as
+ * `ai:event` pushes, never here (criterion 8's start → push → cancel shape). */
+const aiTurnRef = z.object({ turnId: z.string() });
+
+/** How a turn ended (criterion 8): the child finished, the person stopped it,
+ * or it failed — timeout included. */
+const aiOutcome = z.enum(['done', 'canceled', 'failed']);
+
+/**
+ * The assistant stream (criterion 8). Every turn-scoped event names its turn,
+ * so a late event from a killed turn never decorates a live one — the run
+ * stream's rule. `activity` carries an app-authored, product-language line
+ * (criterion 9): tool names never cross this boundary. `file-edited` carries
+ * the §7.2 flow identity — the path relative to `conductor/`, the vocabulary
+ * of `flow:changed` and `flow:save` — so the renderer can open it (criterion
+ * 26). Spend is deliberately not in any payload: the number stops at
+ * `AiService` (§6.4 as amended; criterion 25).
+ */
+const aiEvent = z.discriminatedUnion('kind', [
+  z.object({ kind: z.literal('turn-started'), turnId: z.string() }),
+  z.object({ kind: z.literal('text-delta'), turnId: z.string(), text: z.string() }),
+  z.object({ kind: z.literal('activity'), turnId: z.string(), label: z.string() }),
+  z.object({ kind: z.literal('file-edited'), turnId: z.string(), path: z.string() }),
+  z.object({
+    kind: z.literal('turn-ended'),
+    turnId: z.string(),
+    outcome: aiOutcome,
+    /** Product language when the turn failed; `null` on a quiet end. */
+    message: z.string().nullable(),
+  }),
+  /** Criterion 12 — pushed so the renderer empties the thread, whether the
+   * reset was asked for or implied by a repo switch. */
+  z.object({ kind: z.literal('reset') }),
+]);
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   // Clipboard crosses through main because the sandboxed renderer's permission
@@ -638,6 +679,38 @@ export const IPC = {
   // No arguments by design (criterion 27): main validates and opens the URL
   // it stored, and answers with what it opened. The renderer never sends one.
   [CHANNELS.publishOpenPr]: { request: noArguments, response: z.object({ url: z.string() }) },
+  // The person's message — bounded, non-empty once trimmed (criterion 14) —
+  // and the flow open in the editor, the volatile fact only the renderer
+  // holds (criterion 19; `publish:send` set the shape). The answer is the
+  // turn id, immediately: the stream arrives on `ai:event`.
+  [CHANNELS.aiSend]: {
+    request: z.tuple([
+      z
+        .string()
+        .max(10_000)
+        .refine((message) => message.trim() !== ''),
+      z.string().nullable(),
+    ]),
+    response: aiTurnRef,
+  },
+  // No arguments: there is at most one turn in flight, and naming it would
+  // let a stale click cancel a newer turn. The answer says which turn was
+  // put down — or that none was, which is a state, not a failure.
+  [CHANNELS.aiCancel]: {
+    request: noArguments,
+    response: z.object({ turnId: z.string().nullable() }),
+  },
+  [CHANNELS.aiReset]: {
+    request: noArguments,
+    response: z.object({ turnId: z.string().nullable() }),
+  },
+  // Criteria 6, 25 — the availability question the panel and the status line
+  // read. Blocked states answer as the `Result` error with their stable code
+  // (`ai/no-repo`, `ai/claude-missing`); ready is the only data shape.
+  [CHANNELS.aiStatus]: {
+    request: noArguments,
+    response: z.object({ ready: z.literal(true) }),
+  },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
@@ -650,6 +723,7 @@ export const PUSH = {
   [PUSH_CHANNELS.repoResolveEvent]: repoResolveEvent,
   [PUSH_CHANNELS.publishChanged]: publishState,
   [PUSH_CHANNELS.publishEvent]: publishEvent,
+  [PUSH_CHANNELS.aiEvent]: aiEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -682,6 +756,8 @@ export type PublishChangeKind = z.infer<typeof publishChangeKind>;
 export type PublishChange = z.infer<typeof publishChange>;
 export type PublishState = z.infer<typeof publishState>;
 export type PublishEvent = z.infer<typeof publishEvent>;
+export type AiOutcome = z.infer<typeof aiOutcome>;
+export type AiEvent = z.infer<typeof aiEvent>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -861,6 +937,32 @@ export const ERROR_CODES = {
   /** View on GitHub with no open review, or with a stored URL that does not
    * parse as a GitHub PR (criterion 27) — refused, nothing opens. */
   publishNoReview: 'publish/no-review',
+  /** An `ai:send` before any repo is connected — the assistant works on one
+   * clone's flows, and there is none to work on yet. */
+  aiNoRepo: 'ai/no-repo',
+  /**
+   * `resolveClaude` found no binary. The panel explains what Claude Code is
+   * and that installing it enables the assistant (criterion 6) — the same
+   * install-vs-broken distinction `repo/gh-missing` draws for `gh`.
+   */
+  aiClaudeMissing: 'ai/claude-missing',
+  /**
+   * An assistant turn is in flight. Both faces of §4.3.2's exclusion wear it,
+   * exactly as `run/active` does for runs: a second `ai:send` is refused, and
+   * a snapshot capture asked for mid-turn reads as "the assistant is looking
+   * at the screen" — distinct from `run/active` so each surface names its own
+   * cause (criterion 16).
+   */
+  aiActive: 'ai/active',
+  /** The conversation reached `CONFIG.AI_BUDGET_USD`. The message names a
+   * limit, never an amount — no surface of the app shows a cost (§6.4 as
+   * amended, criterion 25). */
+  aiBudgetExceeded: 'ai/budget-exceeded',
+  /** The honest fallback for a turn that ended wrong — the child exited
+   * non-zero, or would not start. Auth failures keep this code but carry
+   * their own message: the person's Claude sign-in is what fixes them
+   * (criterion 7). */
+  aiTurnFailed: 'ai/turn-failed',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -964,6 +1066,19 @@ export interface ConductorApi {
   publishOpenPr: (
     ...args: Request<'publish:open-pr'>
   ) => Promise<Result<Response<'publish:open-pr'>>>;
+  /** Starts an assistant turn and answers with its id the moment the child is
+   * spawned — the reply streams in on `onAiEvent`, never here (criterion 8). */
+  aiSend: (...args: Request<'ai:send'>) => Promise<Result<Response<'ai:send'>>>;
+  /** Criterion 11 — kills the in-flight child and rolls nothing back: an edit
+   * already on disk stays, exactly as saving works everywhere else. Its own
+   * channel, so a child that hangs never stands between the person and Stop. */
+  aiCancel: (...args: Request<'ai:cancel'>) => Promise<Result<Response<'ai:cancel'>>>;
+  /** Criterion 12 — ends any turn, clears the remembered session and the
+   * accumulated spend; the renderer empties the thread on the pushed reset. */
+  aiReset: (...args: Request<'ai:reset'>) => Promise<Result<Response<'ai:reset'>>>;
+  /** The availability question (criteria 6, 25): ready, or the blocking
+   * reason as the error's stable code and product-language message. */
+  aiStatus: (...args: Request<'ai:status'>) => Promise<Result<Response<'ai:status'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
@@ -990,4 +1105,8 @@ export interface ConductorApi {
   /** Describe results and send progress, each event naming its job — a late
    * event from a superseded job must never decorate a live one. */
   onPublishEvent: (listener: (payload: PushPayload<'publish:event'>) => void) => () => void;
+  /** The assistant stream — text deltas, activity, edits, turn ends, resets.
+   * Mounted app-wide (criterion 24): events keep landing while the Run tab
+   * is selected, and the unsubscribe is consumed in effect cleanup. */
+  onAiEvent: (listener: (payload: PushPayload<'ai:event'>) => void) => () => void;
 }

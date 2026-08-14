@@ -1,6 +1,6 @@
 # AI assistant session — wire the AI window to a real `claude`
 
-status: todo
+status: done
 created: 2026-08-14
 
 ## Goal
@@ -86,6 +86,8 @@ Turn the AI window from a fixture into the product's differentiator (§6): the p
     (e) opening the inspector mid-turn — the refusal reads as "the assistant is looking at the screen", and the mirror keeps moving;
     (f) the criterion 17 contention measurement.
 
+⏸️ **Criteria 17 and 30 are outstanding — the only ones.** Criteria 1–16 and 18–29 are delivered and green (2 593 tests, lint and both typechecks clean), and an independent verification pass graded every automatable criterion against the code. 17 and 30 need a real device, a real `claude` and a hand at the keyboard, which is why they assign themselves to the author and route their results to the PR. `status: done` marks the implementation, not the evaluation — the `flow-authoring-skills` precedent: **run the six before merging.** Everything needed is on this branch; the CLI-behaviour verification (the Constraints' other pre-merge obligation) is already done and recorded under *Decisions & assumptions*.
+
 ## Constraints
 
 - **The `claude` CLI child is the only AI door** (§12.17): no model SDK, no API key, no new dependency for the stream — stream-json is parsed by us. Process creation stays behind the existing `process/run.ts` seams (§10.1); `AiService` receives `spawnStreaming` by injection and creates nothing itself.
@@ -121,3 +123,19 @@ Turn the AI window from a fixture into the product's differentiator (§6): the p
 - **Each `file-edited` event selects its flow** → turns realistically touch one file; if a person switches away mid-turn the next edit event pulls them back, accepted as the lesser evil versus missing the write entirely.
 - **Suggestion pills are app-authored English generics** → the fixtures' app-specific Portuguese lines were review props; the real pills invite the headline journeys and stay in the UI's own language, while replies follow the person's.
 - (Assumed, flagged for review) `--resume` reads the session store regardless of `--setting-sources ""` — sessions are state, not settings; the constraint's CLI verification proves it before any code depends on it.
+
+### Resolved at implementation (verified against claude 2.1.232, the installed CLI — probes, not `--help`)
+
+- **The assumption above held**: `--resume <id>` under `--setting-sources ""` recalled a fact planted one process earlier, and the session id stays the *same* across resumes.
+- **`-p` + `--output-format stream-json` requires `--verbose`** — hard error without it. The shipped argv carries it.
+- **Criterion 3's mechanism: path-scoped allow rules on `--allowedTools`, patterns resolved against the child's cwd.** `Edit(conductor/**)` + `Write(conductor/**)`: the inside write landed, the clone-root write auto-denied (headless has no prompt), the turn continued, the model was told why, and `result.permission_denials` recorded it — evaluation 30d's exact shape. No `--settings` file needed. **`Read` is spelled `Read(**)`**: a bare `Read` reaches the whole disk (verified against `/etc/hosts`), while the scoped form allows the clone and blocks above it — which is what makes §12.18's "whole clone read-side" literally true. `Glob`/`Grep` stay bare per criterion 1; with no `Bash` and no network the exposure is nil.
+- **`--tools 'Read,Edit,Write,Glob,Grep,Skill'` rides alongside the allowlist**: it restricts the *available* builtin set (Bash/WebFetch/Task are not even announced — "no Bash" by construction) and leaves MCP tools untouched. `Skill` must be in it or the plugin's skills can never load — they load through the Skill tool (announced as `conductor:<name>`), and it needs **no** allowlist entry (invoked with zero denials), so `--allowedTools` stays exactly the spec's nine.
+- **`--mcp-config` accepts inline JSON and needs the `{"mcpServers":{…}}` wrapper** (§6.2's sketch lacks it); the server connected and `mcp__maestro__cheat_sheet` was called live — §4.3.4's name format confirmed, all ten tools announced unconditionally, Cloud included.
+- **The message rides after `--`** — a message beginning with a dash cannot parse as a flag, and the variadic allowlist cannot swallow it (verified).
+- **Stream shapes**: `assistant` events carry one completed content block each (`tool_use` input whole — the `file-edited` source); with `--include-partial-messages`, visible text is `stream_event`/`content_block_delta`/`text_delta` *only* (assistant events would double it; thinking deltas never shown); `result` carries `total_cost_usd` + `session_id` + `permission_denials`. Unknown kinds occur in practice (`rate_limit_event`, `system/thinking_tokens`) — criterion 8's ignore-unknown is load-bearing.
+- **`file-edited` carries the §7.2 flow identity** (the path relative to `conductor/`) — criterion 8 says "repo-relative", but the app has exactly one flow-identity vocabulary (`flow:changed`, `flow:save`, the sidebar, `openFlow`) and inventing a second spelling for the same file would put a translation at every consumer. The context block, being for the model, names the file as `conductor/<path>`.
+- **The auth failure keeps the `ai/turn-failed` code and gets its own message** — the Context's ERROR_CODES list is closed at five, so criterion 7's distinctness lives in the surfaced message (detected from the child's output), not in a sixth code.
+- **`ai:cancel` and `ai:reset` take no turn id** — there is at most one turn in flight, and a stale Stop click naming yesterday's turn must not be able to kill today's; the answer says which turn was put down, or that none was.
+- **The snapshot lease grew owners** (`suspend('run' | 'ai')`, default `'run'`): a suspend against the other owner's hold *rejects* carrying the holder's code, which is criterion 5 + 16's mutual exclusion with `RunService` completely untouched — its plain `suspend()`/`resume()` calls keep their meaning, and its failure-path `resume()` can no longer lift an AI hold.
+- **The composer's placeholder says "write a test…"** (was "…a step…") — the deliverable this spec wires is the whole test.
+- **Three findings from the independent verification pass, fixed before commit**: `config:get` used to answer `CONFIG` wholesale, which would have carried `AI_BUDGET_USD` over a channel — the handler now returns exactly the three declared fields; a reset racing a not-yet-spawned send used to let the turn spawn anyway and repopulate the emptied thread — the reset now frees the slot and the send answers a refusal; and a turn killed by reset whose `result` had already landed used to charge the *fresh* conversation's ledger — turns are stamped with their conversation and a late cost only lands on its own era.

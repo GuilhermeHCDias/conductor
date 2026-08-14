@@ -84,11 +84,21 @@ describe('registerAppIpc', () => {
     expect(result).toEqual({ ok: true, data: { text: 'gh auth login' } });
   });
 
-  /** §12.6 — what crosses as CONFIG carries no appId and no repo URL. */
-  it('exposes only true constants over config:get', async () => {
+  /**
+   * §12.6 — what crosses as CONFIG carries no appId and no repo URL. And
+   * §6.4 as amended — the wire carries exactly the three fields the response
+   * schema declares: budgets and binary paths are main's business, and the
+   * AI conversation's ceiling in particular crosses no channel at all
+   * (ai-assistant-session constraint).
+   */
+  it('exposes exactly the declared constants over config:get', async () => {
     const result = await invoke('config:get');
 
-    expect(result.ok && 'APP_ID' in (result.data as Record<string, unknown>)).toBe(false);
-    expect(result.ok && 'REPO_URL' in (result.data as Record<string, unknown>)).toBe(false);
+    expect(result.ok).toBe(true);
+    expect(Object.keys((result as { data: Record<string, unknown> }).data).sort()).toEqual([
+      'FLOWS_DIR',
+      'FLOW_EXTENSIONS',
+      'REPO_BASE_BRANCH',
+    ]);
   });
 });

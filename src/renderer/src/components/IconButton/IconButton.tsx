@@ -16,6 +16,7 @@ export type IconButtonProps = {
   readonly variant?: 'ghost' | 'ai';
   /** A toggle that is currently on. Renders as `aria-pressed`. */
   readonly selected?: boolean;
+  readonly disabled?: boolean;
   readonly onClick?: (event: MouseEvent<HTMLButtonElement>) => void;
   readonly className?: string;
 };
@@ -31,6 +32,7 @@ export function IconButton({
   glyph,
   variant = 'ghost',
   selected,
+  disabled,
   onClick,
   className,
 }: IconButtonProps): JSX.Element {
@@ -42,6 +44,7 @@ export function IconButton({
       data-selected={selected === true ? 'true' : undefined}
       data-size={size}
       data-variant={variant}
+      disabled={disabled}
       onClick={onClick}
       type="button"
     >

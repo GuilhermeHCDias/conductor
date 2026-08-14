@@ -50,4 +50,15 @@ export const CONFIG = {
   /** Teto de gasto de uma invocação de describe (§8.4): perfil apertado,
    * bem abaixo do teto da conversa do AIPanel. */
   AI_DESCRIBE_BUDGET_USD: 0.25,
+
+  /**
+   * Teto de gasto de uma conversa do AIPanel (§6.4). O resto rideia em cada
+   * spawn como `--max-budget-usd`; o número morre no `AiService` — não cruza
+   * canal, não entra em store, não chega a tela nenhuma (§6.4 como emendada).
+   * Um override inválido ou não-positivo cai no padrão.
+   */
+  AI_BUDGET_USD:
+    Number.parseFloat(process.env.CONDUCTOR_AI_BUDGET_USD ?? '') > 0
+      ? Number.parseFloat(process.env.CONDUCTOR_AI_BUDGET_USD ?? '')
+      : 0.5,
 } as const;
