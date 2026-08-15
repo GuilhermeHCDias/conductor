@@ -1,6 +1,6 @@
 # Aurora layout adherence
 
-status: todo
+status: done
 created: 2026-08-15
 
 ## Goal
@@ -82,64 +82,64 @@ All under `src/renderer/src/` unless noted:
 
 ### The audit rule
 
-1. The system shall render every surface listed in Context with the kit's current values for
+1. [x] The system shall render every surface listed in Context with the kit's current values for
    geometry (heights, widths, paddings, gaps, grid tracks), radii, typography tokens and colour
    tokens — where "kit's current values" means the inline styles of `CShell.jsx`,
    `CRegions.jsx` and `CRepo.jsx` and the contract in the kit `README.md`, read from the main
    checkout.
-2. If the audit finds a divergence from the kit, then the implementation shall either change
+2. [x] If the audit finds a divergence from the kit, then the implementation shall either change
    the app to the kit's value, or match the divergence to the recorded spec decision that
    justifies it — and shall append every kept divergence, with its justifying spec, to this
    spec's *Kept divergences* section. No divergence survives silently, and the reference is
    never edited to match the app.
-3. While auditing, the system shall treat the recorded structural decisions as binding: one
+3. [x] While auditing, the system shall treat the recorded structural decisions as binding: one
    document at a time with no tab strip; edge-to-edge window (no 22px drawn desktop, no drawn
    traffic lights, `.desktop` carries no padding and `.window` no radius); the 70px
    traffic-light inset; meta-only shortcuts. The kit's `activeTab`/tab-strip mechanics map onto
    the app's single `openPath`.
-4. The system shall keep `styles/tokens/` and `styles/utilities/` byte-identical to the DS
+4. [x] The system shall keep `styles/tokens/` and `styles/utilities/` byte-identical to the DS
    sources, except the two recorded deviations: the dropped Google-Fonts `@import` in
    `fonts.css`, and the app-side `--glass-dialog` declarations in `theme-aurora.css` /
    `theme-aurora-dark.css`.
 
 ### Behaviour delta 1 — editor empty state (kit change of 2026-08-15)
 
-5. While no flow is open (`openPath === null`), the editor column shall render, in the YAML
+5. [x] While no flow is open (`openPath === null`), the editor column shall render, in the YAML
    row, a centred empty state composed exactly as the kit's: a `file-code` glyph at 18px in
    `var(--text-disabled)` (the kit draws 20; the app's EmptyState scale decides — record which,
    per criterion 2), the caption `No flow open. Pick one in the sidebar, or create the first
    one.` in `--type-caption` / `var(--text-tertiary)`, and a `New flow` button — 26px tall,
    `0 11px` padding, `var(--a-well)` fill, hairline border, `var(--a-radius-field)`, `plus`
    glyph at 12px in `var(--accent)`, label in `--type-caption` / `var(--text-primary)`.
-6. While no flow is open, the editor column shall render no YAML body, no gutter and no caret —
+6. [x] While no flow is open, the editor column shall render no YAML body, no gutter and no caret —
    an empty state is not a file.
-7. When the empty state's `New flow` button is activated, the system shall start a new flow
+7. [x] When the empty state's `New flow` button is activated, the system shall start a new flow
    through the same action as the sidebar's new-flow button — same store action, no parallel
    path.
 
 ### Behaviour delta 2 — toolbar title fallback (kit change of 2026-08-15)
 
-8. While a flow is open, the toolbar shall title the window with the flow's name in
+8. [x] While a flow is open, the toolbar shall title the window with the flow's name in
    `--type-body-strong` and the subtitle `<n> command · ` / `<n> commands · ` followed by
    `running` or `saved on this Mac` in `--type-mono-label` — unchanged from today.
-9. While no flow is open and a repo is active, the toolbar shall title the window with the
+9. [x] While no flow is open and a repo is active, the toolbar shall title the window with the
    repo's name in `--type-body-strong` and the subtitle `<org>/<name> · <branch>` in
    `--type-mono-label`; the `—` placeholder subtitle shall no longer render in any state.
-10. If the repo fields needed by criterion 9 are not yet exposed by a store selector, the
+10. [x] If the repo fields needed by criterion 9 are not yet exposed by a store selector, the
     system shall expose them by selector from the existing repo state — no new IPC, no new
     store.
 
 ### Verification
 
-11. The system shall pass `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`,
+11. [x] The system shall pass `npm run lint`, `npm run typecheck`, `npm test` and `npm run build`,
     with every `styles.test.ts` pin matching the corrected declarations and no vacuous
     assertion (a pin that no longer matches any rule fails, it does not silently pass).
-12. The implementation shall capture the running app via `webContents.capturePage()` at
+12. [x] The implementation shall capture the running app via `webContents.capturePage()` at
     1440px light, 1440px dark and 1000px light, in each of: workspace with a flow open,
     workspace with no flow open, Connect, and the publish sheet open — and compare each
     against its kit page and the `screenshots/`; every visible delta is fixed or lands in
     *Kept divergences* per criterion 2.
-13. The system shall keep the window free of horizontal overflow at every width from 960px up,
+13. [x] The system shall keep the window free of horizontal overflow at every width from 960px up,
     and the breakpoint behaviour per the kit README (sidebar shown ≥1120px; mirror 300 / 268 /
     250) shall still hold after every correction.
 
@@ -198,7 +198,213 @@ All under `src/renderer/src/` unless noted:
   app's module CSS, then the visual pass — is octo-implement's to organise; this spec fixes
   only what must be true when it's done.
 
+### Resolved during implementation, 2026-08-15
+
+- **Criterion 10 needed no new selector.** `selectActiveRepo` in `repo.store.ts` already
+  projects `org`, `name` and `branch` off the existing repo state — the sidebar's own `RepoBar`
+  reads it. The toolbar reads the same one. No new store, no new IPC, as the constraint asks.
+- **A repo with no branch** reports `branch: null` in `ConnectedRepo`, so criterion 9's
+  subtitle degrades to `<org>/<name>` — the same shape `RepoBar` already uses for its own
+  `branch · bundle` line.
+- **The toolbar with no repo at all** renders empty title and subtitle strings. It is
+  unreachable in the app — no active repo means the connect window, which draws no toolbar —
+  and the empty strings exist only so the component is total.
+- **`ContextMenu` gained a `width` prop** (default 232, the DS's own) and the fixed `width` left
+  `.menu` in the CSS module. A per-instance width is a computed value, which is what the
+  "CSS Modules only" constraint reserves inline `style` for — the menu already positions itself
+  inline for the same reason.
+- **The visual pass (criterion 12)** was run against the built app with a seeded `userData` —
+  a real git clone with three flows under `conductor/`, one dirty so the Send control is live —
+  driven by a temporary `webContents.capturePage()` hook in `src/main/index.ts`, guarded by an
+  env var and **reverted before the commit**: the "renderer-only" constraint holds for what
+  ships. Twelve captures — workspace with and without a flow, and the publish sheet, at 1440 and
+  1000 in both themes — plus the connect window in both. Criterion 13 was measured rather than
+  eyeballed: `scrollWidth - clientWidth` was 0 at every width from 960 to 1440 in 20px steps,
+  with the sidebar appearing at 1120 and the mirror stepping 250 → 268 → 300 at the kit
+  README's breakpoints.
+- **The connect window's two captures share one theme mechanism.** It carries no appearance
+  toggle, so the capture set the root `data-theme` the way the ui store's own layout effect
+  does.
+
 ## Kept divergences
 
-*Filled during implementation, per criterion 2. Format: `<surface> — <app value> vs
-<kit value> → kept because <spec + decision>`.*
+*Per criterion 2. Format: `<surface> — <app value> vs <kit value> → kept because <spec +
+decision>`. Everything the audit found that is **not** on this list was changed to the kit's
+value — see *What the audit corrected* below.*
+
+### Window and shell
+
+- **The window** — edge to edge, no drawn 22px desktop, no drawn traffic lights, no window
+  radius, and a 70px toolbar inset vs the kit's fake desktop and its own drawn lights → kept
+  because `aurora-layout-shell.md`: *"Real. The kit draws its own traffic lights inside 22px of
+  fake desktop because it is a web mock; in a real Electron window that would be a frame inside
+  a frame."*
+- **Shortcuts** — ⌘B / ⌘J / ⌘N meta-only vs the kit's meta-or-Ctrl → kept because
+  `aurora-layout-shell.md`: *"The kit also accepts Ctrl because it is a web mock."*
+- **`Tooltip`** — no `backdrop-filter` vs the DS `core/Tooltip`'s own frost → kept because the
+  single-blur rule (`aurora-layout-shell.md` criterion 1) allows exactly four declaring
+  modules, and `styles.test.ts` holds that line.
+
+### Tokens
+
+- **`styles/tokens/fonts.css`** — the leading Google-Fonts `@import` dropped → kept because
+  `aurora-layout-shell.md`: *"`style-src 'self'` blocks it and no `font-src` is granted; the CSP
+  is not to be widened for this."*
+- **`--glass-dialog`** (both themes) — added app-side vs the kit's `--glass-3` → kept because
+  `publish-send-changes.md`: *"the kit's `--glass-3` frost let the app behind the modal fight
+  the sheet's own text."* These are the two deviations criterion 4 names, and `diff -r` against
+  the DS `tokens/` and `utilities/` reports nothing else.
+
+### Working area
+
+- **The document bar** — one named document, no tab fill, no tab border, no close and no "+"
+  vs the kit's `CTabStrip` → kept because `aurora-layout-shell.md` criterion 23 and, again,
+  `aurora-rehue-toolbar-publish.md`: *"This session's explicit decision is to keep one open
+  document and no tab strip."* The kit's `activeTab` maps onto the app's single `openPath`
+  (criterion 3).
+- **The document bar's `—` with nothing open** — the kit renders no tab at all → kept because
+  `local-flow-workspace.md`: *"with nothing open the Toolbar reads … and the DocumentBar goes
+  quiet ("—")."* Criterion 9 supersedes only the **toolbar** half of that record; the document
+  bar's own placeholder is untouched by this spec.
+- **The composer** — one send action vs the kit's `ChatComposer` attachment/regenerate row →
+  kept because `aurora-layout-shell.md` lists the DS's studio components as unbuilt.
+
+### Sidebar
+
+- **The header line** — `conductor/ · N flows` vs the kit's `<folder> · N failing` → kept
+  because `local-flow-workspace.md` criterion 37: *"a truthful "conductor/ · N flows" — run-result
+  dots render as `never` until a future spec persists run history."*
+- **The zero-state** — the DS `surface/EmptyState` (44px chip, `--type-title-3` title, its own
+  copy, accent-filled action) vs the kit's bare 20px glyph over one caption over a well button
+  → kept because `local-flow-workspace.md` wrote it against the DS component rather than the kit:
+  *"The kit has no sidebar zero-state, so criterion 35's copy is written fresh in the DS voice."*
+  The **editor's** zero-state is not covered by that record — criteria 5–7 replace it, and it is
+  now the kit's composition exactly.
+- **No change dot on a flow row, and no unsent count on the bottom bar** — the kit draws both →
+  reported here rather than fixed, per *Out of scope*: this is behaviour beyond criteria 5–10.
+  The unsent set reaches the person through the toolbar's Send control instead
+  (`publish-send-changes.md`).
+- **Ordering and deep folders** — alphabetical, with a directory nested deeper than one level
+  as a compact `a/b` row → kept because `local-flow-workspace.md`: *"the mock's explicit
+  `FOLDERS` order has no home on a plain filesystem."*
+
+### Inspector
+
+- **The header's controls** — Back · Refresh · Refresh snapshot · Inspect vs the kit's Reload ·
+  Screenshot · Inspect → kept because `device-hierarchy-capture.md` criterion 21 put the
+  snapshot's manual refresh beside the mode it serves, and the control socket added Back.
+- **A third `auto` row on `.panel`** — the control-failure note under the bay, which the kit has
+  no counterpart for → kept because `scrcpy-control-socket.md` criterion 16: a control failure
+  is said beside the phone, never over it.
+- **The phone draws no app content, status bar or nav bar; the canvas is sized from the stream**
+  → kept because `android-device-mirror.md` criterion 37, which *"supersedes criteria 42 and 43
+  of `aurora-layout-shell`"*; the bezel, the drop shadow and the fixed `--phone-*` palette stay.
+
+### Sheets and first run
+
+- **The publish sheet** — the app's `Dialog` (520px via its `width` prop, `--radius-lg`, 32px
+  badge, DS header padding) vs the kit's bespoke panel (520px, `--a-radius-window`, 30px badge)
+  → kept because `publish-send-changes.md` builds *"the kit's `CSendSheet` over the app's
+  `Dialog`"*: the design system has one modal treatment, and the app's is the DS's own.
+- **The sheet's words** — "your team" not the fixture's reviewer name, "Cancel" not "Not yet",
+  and a *Required* note → kept because `publish-send-changes.md` records all three.
+- **The connect mark** — `build/icon.png` vs the kit's gradient "C" → kept because
+  `repo-connect-workspace.md`: *"The connect screen shall use `build/icon.png` as its mark."*
+- **The connect window** — the whole OS window at a fixed 560×520 vs the kit's 560px card on a
+  drawn desktop → kept because `repo-connect-workspace.md`: *"Single BrowserWindow, resized."*
+- **No Doctor badge in the toolbar** — the kit's `CToolbar` carries one → kept because the app
+  has no Doctor UI (this spec's *Out of scope*).
+- **The repo switcher's edge** — a 1px `--a-hair` border and `--material-content` fill vs the
+  kit's `.a-rim` utility over a white-tinted `--a-content` → kept because
+  `repo-connect-workspace.md` builds it as *"the third floating layer, same family as the
+  command menu"*, and that menu is the DS's own, which draws a hairline border. The app uses no
+  `.a-*` utility class anywhere; the window's rim is its own pseudo-element for the same reason.
+
+### Where the app draws a DS component the kit composes
+
+Criterion 1 binds to *"the inline styles of `CShell.jsx`, `CRegions.jsx` and `CRepo.jsx`"*. Where
+the kit reaches for a design-system component instead of drawing inline, the app's own port of
+that component is what renders, and several of those ports are smaller than the DS original.
+They are listed here rather than fixed, because normalising them is a design decision about the
+app's control scale, not an alignment fix — and `aurora-layout-shell.md` records the DS's
+`Button`, `Input`, `Select`, `Checkbox`, `Switch`, `Badge`, `Kbd`, `GlassPanel`, `PanelHeader`,
+`TabStrip`, `Divider` and `EmptyState` as deliberately unbuilt.
+
+- **Every `RButton`** — `core/Button`'s `md` is 36px / `0 14px` / `--type-body-strong` /
+  `--radius-md` / an inset specular. The app draws each one inline instead, and at three
+  different heights: `Connect .open` 28, `RepoResolver .connect` 34, `AddRepoDialog .open` and
+  `.cancel` 26, `PublishSheet .ghost`/`.primary` 28. Worth a follow-up spec that picks one
+  scale; not this one's to choose.
+- **`StatusDot`** — the DS gives every non-idle state a `0 0 0 3px` colour-mixed halo. The app's
+  has none. Kept as-is deliberately: the kit's own flow rows draw a **bare** 6px span, not a
+  `StatusDot` (`CRegions.jsx:48`), so adding the halo to the shared component would put one on
+  rows the kit draws without.
+- **The inspect highlight's label** — `studio/DeviceMirror` sets `--type-mono-label` at 17px
+  high, `0 5px`, anchored `left: -1 / top: -19`; the app uses `--type-code-sm` at 19px high,
+  `0 6px`, anchored to the box's own corner. The anchoring is `element-inspect-command-menu.md`'s
+  (it counter-scales by `--fit-scale`); the type and box were not recorded, and are now.
+- **The publish sheet's badge** — `CSendSheet` swaps it to `--a-well` / `--text-tertiary` once
+  sent; the app's `Dialog` hardwires `--accent-quiet` / `--accent`, so "Waiting for review"
+  keeps a live-action badge. Follows from the recorded "kit's `CSendSheet` over the app's
+  `Dialog`" decision — the badge belongs to the `Dialog` — but the resulting delta is recorded
+  here. The sheet's `.required` hint is likewise `--text-tertiary` where the kit's optional hint
+  is `--text-disabled`; the copy is a recorded change (`publish-send-changes.md`), the colour
+  follows it.
+- **The folder row's trailing cell** — the kit fixes a 22×22 cell and cross-fades the count into
+  a single "+" *from the count's own centre*, with a comment saying this is so hovering never
+  nudges the row. The app swaps the count for two side-by-side `IconButton`s ("+" and the
+  ellipsis), so the row does move on hover. The second control is
+  `local-flow-workspace.md`'s; the no-nudge mechanic it cost is recorded here.
+
+### Recorded elsewhere, restated here
+
+Two divergences were already written down in `styles.test.ts` rather than in a spec. Criterion 2
+wants them in a spec, so:
+
+- **`ContextMenu` fills with `--material-content`, not the DS's `--glass-3`** → the menu floats
+  over the mirror's screenshot, and the dark theme's 17%-alpha frost cannot carry text over it.
+  This is the same substitution the switcher popover makes, for the same reason.
+- **`.display` fills with `--device-screen`, which is themed** → pinned by
+  `aurora-layout-shell.md` criterion 43. The *bezel* is what the "fixed device palette" rule
+  covers, and `styles.test.ts` proves nothing `.phone` paints reaches a theme token.
+
+### Found and left for another spec
+
+- **`DeviceMirror .panel` declares one `auto` note row, but three `.controlNote`s can render at
+  once** — the second and third land in implicit grid rows, which is the failure the kit README
+  warns about. It needs a real state at least two control failures deep to appear, and it
+  belongs to `scrcpy-control-socket.md`'s surface rather than to this audit.
+- **`Icon.tsx`'s `package` path data** differs from the DS's vendored Lucide revision. Path data
+  is not geometry, typography or colour, so it is outside criterion 1 — but it is drift.
+
+### Resolved by this spec
+
+- **The editor empty state's glyph is 20px**, not criterion 5's stated 18 → criterion 5 defers
+  the number (*"the kit draws 20; the app's EmptyState scale decides"*), and both authorities
+  agree on 20: it is the kit's own value and the `md` size of the app's `EmptyState`. 18 was
+  the only number neither of them names.
+
+---
+
+## What the audit corrected
+
+Everything below diverged from the kit with no spec decision behind it, so criterion 2 made it
+a fix rather than a record. Each is pinned in `styles.test.ts` or in a view test.
+
+| Surface | Was | Now (the kit's value) |
+|---|---|---|
+| Toolbar title, no flow open | `No flow open` / `—` | repo name / `<org>/<name> · <branch>` (criteria 8–10) |
+| Editor empty state | DS `EmptyState`: chip, title, accent-filled action | glyph 20 `--text-disabled` · one `--type-caption` caption · 26px well button with an accent `plus` (criteria 5–7) |
+| Environment chip's glyphs | inherited `--text-secondary` | `--text-tertiary` |
+| Sidebar "Run whole suite" glyph | inherited `--text-secondary` | `--text-tertiary` |
+| Connect's top strip | bare drag region | `--a-chrome` with a hairline under it |
+| Connect's body | `padding: 14px 30px 24px` | `padding: 26px 30px 24px` |
+| Context-menu widths | 232 everywhere | 188 new-flow · 196 flow row · 206 folder row · 232 command menu |
+| Repo switcher popover | `padding: 4px`, `cd-menu-in var(--dur-base)` | `padding: 6px`, `cd-menu-in var(--dur-fast)` — `CRepoPopover`'s own two numbers, not the DS menu's |
+| Repo tiles, both of them | `color: var(--text-inverse)` | `color: oklch(100% 0 0)` — the kit's own literal. `--text-inverse` goes near-black in Aurora dark, and `--grad-aurora` does not theme, so the initial was turning dark on a light mint field |
+| Connect mark | `box-shadow: var(--shadow-2)` | `box-shadow: var(--shadow-2), var(--a-refract)` |
+| Folder row's trailing inset | `padding-right: 5px` | `padding-right: 6px`, the same as a flow row's |
+
+`styles.test.ts`'s motion guard gained `--dur-fast` as an allowed entrance clock for the last
+of those. What that guard protects is untouched: the clock is still a token, so reduced motion
+zeroes it like every other.

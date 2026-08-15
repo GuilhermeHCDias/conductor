@@ -10,8 +10,10 @@
 /* The switcher floats over the sidebar the way the command menu floats over
    the mirror, and it reads its depth the same way: the content material with
    its own blur — the third floating layer `styles.test.ts` allows. */
+/* `CRepoPopover`'s own numbers, not the command menu's: a 6px inset and the
+   faster of the two entrance clocks. */
 .menu {
-  animation: cd-menu-in var(--dur-base) var(--ease-out);
+  animation: cd-menu-in var(--dur-fast) var(--ease-out);
   backdrop-filter: blur(var(--a-blur)) saturate(var(--a-saturate));
   background: var(--material-content);
   border: 1px solid var(--a-hair);
@@ -19,7 +21,7 @@
   box-shadow: var(--a-refract), var(--shadow-window);
   display: grid;
   gap: 2px;
-  padding: var(--space-2);
+  padding: 6px;
   position: fixed;
   width: 282px;
   z-index: 71;
@@ -69,11 +71,13 @@
   width: 24px;
 }
 
-/* The active project wears the aurora — the one brand surface in the list. */
+/* The active project wears the aurora — the one brand surface in the list.
+   Its initial is a fixed white, not `--text-inverse`: the gradient does not
+   theme, so a token that does would go near-black on it after dark. */
 .row[data-active="true"] .tile {
   background: var(--grad-aurora);
   border-color: transparent;
-  color: var(--text-inverse);
+  color: oklch(100% 0 0);
 }
 
 .names {

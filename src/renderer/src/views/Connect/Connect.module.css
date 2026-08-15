@@ -6,8 +6,12 @@
 }
 
 /* The connect window renders no toolbar, so this strip is what the person
-   drags the frameless window by — the traffic lights sit over it. */
+   drags the frameless window by — the traffic lights sit over it. It takes
+   the chrome material and the hairline the kit's `CConnectWindow` gives it,
+   which is what makes it read as a title bar rather than as dead space. */
 .drag {
+  background: var(--a-chrome);
+  border-bottom: 1px solid var(--a-hair);
   -webkit-app-region: drag;
 }
 
@@ -17,7 +21,7 @@
   gap: var(--space-6);
   min-height: 0;
   overflow: hidden;
-  padding: 14px 30px 24px;
+  padding: 26px 30px 24px;
 }
 
 .heading {
@@ -28,7 +32,7 @@
 /* The real Conductor icon, not the kit's gradient "C" (spec decision). */
 .mark {
   border-radius: 11px;
-  box-shadow: var(--shadow-2);
+  box-shadow: var(--shadow-2), var(--a-refract);
   height: 38px;
   margin-bottom: 6px;
   width: 38px;

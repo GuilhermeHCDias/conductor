@@ -255,6 +255,32 @@ describe('the draft row', () => {
 });
 
 describe('the context menus', () => {
+  /**
+   * Adherence criterion 1 — the kit sizes each of the sidebar's three menus
+   * to what it holds rather than letting them all take the DS default.
+   */
+  it.each([
+    [
+      'the new-flow-or-folder menu',
+      188,
+      async () => screen.getByRole('button', { name: /^New flow or folder/ }),
+    ],
+    ['a flow row’s menu', 196, async () => screen.getByRole('button', { name: /pix\.yaml/ })],
+    ['a folder row’s menu', 206, async () => screen.getByRole('button', { name: /^checkout/ })],
+  ])('opens %s at %ipx', async (_label, width, target) => {
+    seedIndex(['checkout/pix.yaml'], ['checkout']);
+    render(<FlowList />);
+
+    const element = await target();
+    if (width === 188) {
+      await userEvent.click(element);
+    } else {
+      await userEvent.pointer({ keys: '[MouseRight]', target: element });
+    }
+
+    expect(screen.getByRole('menu')).toHaveStyle({ width: `${width}px` });
+  });
+
   /** Criterion 25 — the flow row's menu, exactly, with Run now gated. */
   it('offers the flow commands, Run now disabled with no device', async () => {
     seedIndex(['pix.yaml']);

@@ -8,6 +8,7 @@ import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
 import { selectOpenName, selectYaml, useFlowStore } from '../../stores/flow.store';
 import { selectControlPhase, selectUnsentCount, usePublishStore } from '../../stores/publish.store';
+import { selectActiveRepo, useRepoStore } from '../../stores/repo.store';
 import { selectRunning, useRunStore } from '../../stores/run.store';
 import { selectSidebarVisible, useUiStore } from '../../stores/ui.store';
 import styles from './Toolbar.module.css';
@@ -35,6 +36,9 @@ export function Toolbar(): JSX.Element {
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
   const sidebarVisible = useUiStore(selectSidebarVisible);
   const openName = useFlowStore(selectOpenName);
+  // Criterion 10 — the title's fallback reads the repo the window is pointed
+  // at, through the selector the sidebar's own bar already uses.
+  const repo = useRepoStore(selectActiveRepo);
   const publishLoaded = usePublishStore((state) => state.loaded);
   const controlPhase = usePublishStore(selectControlPhase);
   const unsentCount = usePublishStore(selectUnsentCount);
@@ -47,6 +51,25 @@ export function Toolbar(): JSX.Element {
   // Criterion 17. While running the button is Stop, and Stop is always live —
   // a device that dropped mid-run must not lock the person out of canceling.
   const runDisabled = !running && (deviceId === null || yaml.trim() === '');
+
+  /**
+   * Criteria 8–9. A document names itself and reports its own state; with
+   * nothing open the window falls back to the project, exactly as the kit's
+   * `CToolbar` does — never a bare "—", which said nothing about anything.
+   * The repo is always there in the app (no repo means the connect window,
+   * which draws no toolbar); the empty strings only exist so the component
+   * is total.
+   */
+  const title = openName ?? repo?.name ?? '';
+  const address = repo === null ? '' : `${repo.org}/${repo.name}`;
+  const subtitle =
+    openName !== null
+      ? `${commandCount} ${commandCount === 1 ? 'command' : 'commands'} · ${
+          running ? 'running' : 'saved on this Mac'
+        }`
+      : repo?.branch == null
+        ? address
+        : `${address} · ${repo.branch}`;
 
   const onRunClick = (): void => {
     if (running) {
@@ -78,22 +101,16 @@ export function Toolbar(): JSX.Element {
 
       {/* macOS document title: the name plus a quiet subtitle, left of centre. */}
       <span className={styles.document}>
-        <span className={styles.title}>{openName ?? 'No flow open'}</span>
-        <span className={styles.subtitle}>
-          {openName === null
-            ? '—'
-            : `${commandCount} ${commandCount === 1 ? 'command' : 'commands'} · ${
-                running ? 'running' : 'saved on this Mac'
-              }`}
-        </span>
+        <span className={styles.title}>{title}</span>
+        <span className={styles.subtitle}>{subtitle}</span>
       </span>
 
       <span className={styles.spacer} />
 
       <button className={styles.environment} type="button">
-        <Icon name="variable" size={12} />
+        <Icon className={styles.environmentGlyph} name="variable" size={12} />
         {ENVIRONMENT}
-        <Icon name="chevron-down" size={12} />
+        <Icon className={styles.environmentGlyph} name="chevron-down" size={12} />
       </button>
 
       <button

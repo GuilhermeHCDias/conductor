@@ -30,8 +30,14 @@ const INDENT_PER_LEVEL = 14;
 const ROW_BASE_PADDING = 9;
 const DRAFT_BASE_PADDING = 7;
 
-/** `.menu` in ContextMenu.module.css — the header "+" anchors right-aligned. */
-const MENU_WIDTH = 232;
+/**
+ * The kit sizes each of these to what it holds (`CFlows`, `CFlowMenu`): the
+ * new-flow menu at 188 — which is also what the header "+" right-aligns
+ * against — a flow row's at 196, a folder row's at 206.
+ */
+const NEW_MENU_WIDTH = 188;
+const FLOW_MENU_WIDTH = 196;
+const FOLDER_MENU_WIDTH = 206;
 
 function parentOf(path: string): string {
   const slash = path.lastIndexOf('/');
@@ -541,7 +547,7 @@ export function FlowList(): JSX.Element {
           onClick={(event) => {
             const rect = event.currentTarget.getBoundingClientRect();
             setPlusMenu({
-              x: Math.round(Math.max(8, rect.right - MENU_WIDTH)),
+              x: Math.round(Math.max(8, rect.right - NEW_MENU_WIDTH)),
               y: Math.round(rect.bottom + 5),
             });
           }}
@@ -694,7 +700,7 @@ export function FlowList(): JSX.Element {
 
       <div className={styles.bottomBar}>
         <button className={styles.suiteRun} type="button">
-          <Icon name="play" size={12} />
+          <Icon className={styles.suiteRunGlyph} name="play" size={12} />
           Run whole suite
         </button>
         <IconButton icon="settings" label="Settings" size="sm" />
@@ -720,6 +726,7 @@ export function FlowList(): JSX.Element {
             setPlusMenu(null);
             startDraft(id === 'folder' ? 'folder' : 'flow', '');
           }}
+          width={NEW_MENU_WIDTH}
           x={plusMenu.x}
           y={plusMenu.y}
         />
@@ -730,6 +737,7 @@ export function FlowList(): JSX.Element {
           items={flowMenuItems}
           onClose={closeMenu}
           onSelect={onFlowMenuSelect}
+          width={FLOW_MENU_WIDTH}
           x={menu.x}
           y={menu.y}
         />
@@ -741,6 +749,7 @@ export function FlowList(): JSX.Element {
           onClose={closeMenu}
           onSelect={onFolderMenuSelect}
           title={`${menu.identity}/`}
+          width={FOLDER_MENU_WIDTH}
           x={menu.x}
           y={menu.y}
         />

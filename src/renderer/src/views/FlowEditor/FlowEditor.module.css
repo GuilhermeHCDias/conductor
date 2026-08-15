@@ -197,23 +197,52 @@
   overflow: auto;
 }
 
-/* Criterion 35 — the New flow action inside the editor's zero-state. */
+/* Criteria 5–7 — the editor column's empty state, as the kit's
+   `CEditorColumn` draws it: a bare glyph over one caption over one quiet
+   action. No chip and no title — the sentence is the whole message. */
+.empty {
+  align-content: center;
+  display: grid;
+  gap: 10px;
+  min-height: 0;
+  padding: var(--space-9);
+  place-items: center;
+}
+
+.emptyGlyph {
+  color: var(--text-disabled);
+}
+
+.emptyText {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  text-align: center;
+  text-wrap: pretty;
+}
+
+/* Recessed, not filled: the window keeps one saturated control, and it is
+   Run. The accent survives here as the glyph alone. */
 .emptyAction {
   align-items: center;
-  background: var(--accent);
-  border: none;
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
   border-radius: var(--a-radius-field);
-  color: var(--accent-on);
+  color: var(--text-primary);
   cursor: pointer;
   display: flex;
   font: var(--type-caption);
   gap: var(--space-3);
   height: 26px;
-  padding: 0 var(--space-5);
+  padding: 0 11px;
+  transition: var(--t-hover);
+}
+
+.emptyActionGlyph {
+  color: var(--accent);
 }
 
 .emptyAction:hover {
-  background: var(--accent-strong);
+  background: var(--glass-hover);
 }
 
 .emptyAction:focus-visible {

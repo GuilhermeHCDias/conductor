@@ -12,10 +12,11 @@
   cursor: default;
 }
 
+/* The width is inline: the kit sizes each menu to what it holds, and 232 —
+   `surface/ContextMenu`'s own default — is the component's fallback. */
 .menu {
   position: fixed;
   z-index: 80;
-  width: 232px;
   /* Taller than the window, the menu scrolls itself — the clamp pins it to the
      top margin, and this is what keeps the far commands reachable there. */
   max-height: calc(100vh - 16px);
