@@ -54,6 +54,10 @@ describe('the bridge', () => {
   /** Criterion 26 — one named function per channel, and nothing beyond them. */
   it('exposes exactly one function per channel, and no primitive', () => {
     expect(Object.keys(api).sort()).toEqual([
+      'aiCancel',
+      'aiReset',
+      'aiSend',
+      'aiStatus',
       'appInfo',
       'appReadClipboard',
       'appWriteClipboard',
@@ -75,6 +79,7 @@ describe('the bridge', () => {
       'mirrorInput',
       'mirrorStart',
       'mirrorStop',
+      'onAiEvent',
       'onDeviceChanged',
       'onFlowChanged',
       'onMirrorEvent',
@@ -143,6 +148,10 @@ describe('the bridge', () => {
     await api.publishSend('Fixed the checkout test', 'checkout/pix.yml');
     await api.publishCancel(1);
     await api.publishOpenPr();
+    await api.aiSend('Quero um teste do login', 'checkout/pix.yml');
+    await api.aiCancel();
+    await api.aiReset();
+    await api.aiStatus();
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
@@ -174,6 +183,10 @@ describe('the bridge', () => {
       { channel: CHANNELS.publishSend, args: ['Fixed the checkout test', 'checkout/pix.yml'] },
       { channel: CHANNELS.publishCancel, args: [1] },
       { channel: CHANNELS.publishOpenPr, args: [] },
+      { channel: CHANNELS.aiSend, args: ['Quero um teste do login', 'checkout/pix.yml'] },
+      { channel: CHANNELS.aiCancel, args: [] },
+      { channel: CHANNELS.aiReset, args: [] },
+      { channel: CHANNELS.aiStatus, args: [] },
     ]);
   });
 
@@ -202,6 +215,7 @@ describe('a subscription', () => {
     ['onRepoResolveEvent', PUSH_CHANNELS.repoResolveEvent],
     ['onPublishChanged', PUSH_CHANNELS.publishChanged],
     ['onPublishEvent', PUSH_CHANNELS.publishEvent],
+    ['onAiEvent', PUSH_CHANNELS.aiEvent],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
@@ -217,6 +231,7 @@ describe('a subscription', () => {
     'onRepoResolveEvent',
     'onPublishChanged',
     'onPublishEvent',
+    'onAiEvent',
   ] as const)('%s returns the unsubscribe that removes exactly its own listener', (name) => {
     const unsubscribe = api[name](() => {});
 

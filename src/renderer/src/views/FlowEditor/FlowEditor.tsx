@@ -1,10 +1,19 @@
 import { type JSX, type KeyboardEvent, useEffect, useRef, useState } from 'react';
 import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { Icon } from '../../components/Icon/Icon';
+import { IconButton } from '../../components/IconButton/IconButton';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
-import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
+import { RUN_STATUS_LINE } from '../../fixtures/flows';
 import { type EditorKey, indentEdit } from '../../lib/yaml-indent';
 import { tokenizeYamlLine } from '../../lib/yaml-tokens';
+import {
+  type AiAvailability,
+  selectAvailability,
+  selectStreaming,
+  selectWashLines,
+  selectWashPath,
+  useAiStore,
+} from '../../stores/ai.store';
 import {
   selectOpenName,
   selectOpenPath,
@@ -22,6 +31,24 @@ import styles from './FlowEditor.module.css';
 
 /** The one panel the segmented control swaps, named once. */
 const PANEL_ID = 'lower-panel';
+
+/**
+ * Criterion 25 — the assistant's side of the status line: empty while it is
+ * idle and ready, the blocking reason while it is not. Short, product
+ * language, and never a cost, a token count or a budget (§6.4 as amended).
+ */
+function assistantStatusLine(availability: AiAvailability | null): string {
+  if (availability === null || availability.ready) {
+    return '';
+  }
+  if (availability.code === 'ai/no-repo') {
+    return 'No repository connected';
+  }
+  if (availability.code === 'ai/claude-missing') {
+    return 'Claude Code not installed';
+  }
+  return availability.message;
+}
 
 /**
  * What the working area is showing, named (criterion 23). There is no tab
@@ -106,11 +133,17 @@ function YamlLine({ text, number, gutterWidth, wash }: YamlLineProps): JSX.Eleme
  * the next command would go.
  */
 function YamlBody(): JSX.Element {
-  const aiLines = useUiStore((state) => state.aiLines);
+  // Criterion 27 — the assistant's wash comes from the ai store, computed by
+  // `diff-lines` when its edit landed through the watcher; it paints only on
+  // the flow it belongs to.
+  const washPath = useAiStore(selectWashPath);
+  const washLines = useAiStore(selectWashLines);
   const errorLines = useUiStore((state) => state.errorLines);
   const yaml = useFlowStore(selectYaml);
+  const openPath = useFlowStore(selectOpenPath);
   const revision = useFlowStore(selectRevision);
   const edit = useFlowStore((state) => state.edit);
+  const aiLines = washPath !== null && washPath === openPath ? washLines : [];
   const end = useRef<HTMLDivElement>(null);
   // 1-based line under the real caret, or null while the editor is blurred.
   const [caretLine, setCaretLine] = useState<number | null>(null);
@@ -237,6 +270,9 @@ export function FlowEditor(): JSX.Element {
   const running = useRunStore(selectRunning);
   const openPath = useFlowStore(selectOpenPath);
   const startDraft = useFlowStore((state) => state.startDraft);
+  const availability = useAiStore(selectAvailability);
+  const streaming = useAiStore(selectStreaming);
+  const resetConversation = useAiStore((state) => state.reset);
 
   return (
     <section aria-label="Editor" className={styles.column}>
@@ -283,9 +319,21 @@ export function FlowEditor(): JSX.Element {
           value={lowerPanel}
         />
         <span className={styles.spacer} />
-        <span className={styles.status}>
-          {lowerPanel === 'run' ? RUN_STATUS_LINE : ASSISTANT_STATUS_LINE}
+        <span className={styles.status} data-testid="panel-status">
+          {lowerPanel === 'run' ? RUN_STATUS_LINE : assistantStatusLine(availability)}
         </span>
+        {lowerPanel === 'assistant' ? (
+          /* Criterion 25 — a fresh conversation, disabled while one streams. */
+          <IconButton
+            disabled={streaming}
+            icon="plus"
+            label="New conversation"
+            onClick={() => {
+              void resetConversation();
+            }}
+            size="sm"
+          />
+        ) : null}
       </div>
 
       <div

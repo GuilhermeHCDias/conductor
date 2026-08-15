@@ -48,6 +48,10 @@ describe('the channels', () => {
       'publish:send',
       'publish:cancel',
       'publish:open-pr',
+      'ai:send',
+      'ai:cancel',
+      'ai:reset',
+      'ai:status',
     ]);
   });
 
@@ -73,6 +77,7 @@ describe('the channels', () => {
       'repo:resolve-event',
       'publish:changed',
       'publish:event',
+      'ai:event',
     ]);
   });
 
@@ -1382,6 +1387,150 @@ describe('the failure codes', () => {
       'snapshot/no-bounds',
       'selector/node-missing',
       'selector/no-match',
+    ]);
+  });
+});
+
+/**
+ * The AI window's own channels (ai-assistant-session criteria 5, 14): the
+ * message bounded, refusals as values, and the turn id answered immediately —
+ * everything after it arrives on `ai:event`, never here.
+ */
+describe('ai:send', () => {
+  const schema = IPC[CHANNELS.aiSend];
+
+  it('takes the message and the open flow path, which may be null', () => {
+    expect(schema.request.safeParse(['Write a login test', 'checkout/pix.yml']).success).toBe(true);
+    expect(schema.request.safeParse(['Write a login test', null]).success).toBe(true);
+    expect(schema.request.safeParse(['Write a login test']).success).toBe(false);
+    expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  /** Criterion 14 — non-empty once trimmed, and bounded at 10 000 chars. */
+  it('refuses an empty or whitespace-only message', () => {
+    expect(schema.request.safeParse(['', null]).success).toBe(false);
+    expect(schema.request.safeParse(['   \n', null]).success).toBe(false);
+  });
+
+  it('refuses a message past the bound', () => {
+    expect(schema.request.safeParse(['x'.repeat(10_000), null]).success).toBe(true);
+    expect(schema.request.safeParse(['x'.repeat(10_001), null]).success).toBe(false);
+  });
+
+  it('answers with the turn id alone', () => {
+    expect(schema.response.safeParse({ turnId: 'turn-1' }).success).toBe(true);
+    expect(schema.response.safeParse({}).success).toBe(false);
+  });
+});
+
+/** Cancel and reset name no turn: there is at most one in flight, and the
+ * answer says which one was put down — or that none was. */
+describe('ai:cancel and ai:reset', () => {
+  it('take no arguments', () => {
+    expect(IPC[CHANNELS.aiCancel].request.safeParse([]).success).toBe(true);
+    expect(IPC[CHANNELS.aiCancel].request.safeParse(['turn-1']).success).toBe(false);
+    expect(IPC[CHANNELS.aiReset].request.safeParse([]).success).toBe(true);
+    expect(IPC[CHANNELS.aiReset].request.safeParse(['turn-1']).success).toBe(false);
+  });
+
+  it('answer with the turn they ended, or null when none was in flight', () => {
+    expect(IPC[CHANNELS.aiCancel].response.safeParse({ turnId: 'turn-1' }).success).toBe(true);
+    expect(IPC[CHANNELS.aiCancel].response.safeParse({ turnId: null }).success).toBe(true);
+    expect(IPC[CHANNELS.aiReset].response.safeParse({ turnId: null }).success).toBe(true);
+  });
+});
+
+/** Criteria 6, 25 — the availability question. Blocked states cross as the
+ * `Result` error with their stable code; ready is the only data shape. */
+describe('ai:status', () => {
+  it('takes nothing and answers ready', () => {
+    expect(IPC[CHANNELS.aiStatus].request.safeParse([]).success).toBe(true);
+    expect(IPC[CHANNELS.aiStatus].response.safeParse({ ready: true }).success).toBe(true);
+    expect(IPC[CHANNELS.aiStatus].response.safeParse({ ready: false }).success).toBe(false);
+  });
+});
+
+/**
+ * Criterion 8 — the typed stream. Every turn-scoped event names its turn, so
+ * a late event from a killed turn can never decorate a live one; spend is
+ * deliberately not in any payload (§6.4 as amended — no surface shows a cost).
+ */
+describe('ai:event', () => {
+  const schema = PUSH[PUSH_CHANNELS.aiEvent];
+
+  it('carries the turn lifecycle', () => {
+    expect(schema.safeParse({ kind: 'turn-started', turnId: 'turn-1' }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'text-delta', turnId: 'turn-1', text: 'Vou ' }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({ kind: 'activity', turnId: 'turn-1', label: 'Looking at the screen…' })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ kind: 'file-edited', turnId: 'turn-1', path: 'checkout/pix.yml' }).success,
+    ).toBe(true);
+  });
+
+  it('ends a turn with its outcome and an optional message', () => {
+    expect(
+      schema.safeParse({ kind: 'turn-ended', turnId: 'turn-1', outcome: 'done', message: null })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        kind: 'turn-ended',
+        turnId: 'turn-1',
+        outcome: 'failed',
+        message: 'The assistant hit a problem and stopped.',
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ kind: 'turn-ended', turnId: 'turn-1', outcome: 'exploded', message: null })
+        .success,
+    ).toBe(false);
+  });
+
+  /** Criterion 12 — the reset is pushed so the renderer empties the thread. */
+  it('carries the reset, which names no turn', () => {
+    expect(schema.safeParse({ kind: 'reset' }).success).toBe(true);
+  });
+
+  it('refuses an unknown kind and a payload with no kind', () => {
+    expect(schema.safeParse({ kind: 'spend', turnId: 'turn-1' }).success).toBe(false);
+    expect(schema.safeParse({ turnId: 'turn-1' }).success).toBe(false);
+  });
+
+  /** §6.4 as amended: no cost field exists to forget to hide. */
+  it('has no event shape that could carry a cost', () => {
+    expect(
+      schema.safeParse({ kind: 'turn-ended', turnId: 'turn-1', outcome: 'done', message: null })
+        .success,
+    ).toBe(true);
+    for (const kind of ['turn-started', 'text-delta', 'activity', 'file-edited', 'turn-ended']) {
+      expect(JSON.stringify(schema.safeParse({ kind }).error?.issues ?? '')).not.toMatch(
+        /cost|usd|budget|spend/i,
+      );
+    }
+  });
+});
+
+/** The five refusals the AI window declares (Context) — the doctor's future
+ * vocabulary, and the panel's present one. */
+describe('the ai error codes', () => {
+  it('tell the ai refusals apart', () => {
+    expect([
+      ERROR_CODES.aiNoRepo,
+      ERROR_CODES.aiClaudeMissing,
+      ERROR_CODES.aiActive,
+      ERROR_CODES.aiBudgetExceeded,
+      ERROR_CODES.aiTurnFailed,
+    ]).toEqual([
+      'ai/no-repo',
+      'ai/claude-missing',
+      'ai/active',
+      'ai/budget-exceeded',
+      'ai/turn-failed',
     ]);
   });
 });

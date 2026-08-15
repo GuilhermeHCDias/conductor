@@ -19,7 +19,15 @@ export function registerAppIpc(): void {
     platform: process.platform,
   }));
 
-  handle(CHANNELS.configGet, IPC[CHANNELS.configGet].request, () => CONFIG);
+  // The declared fields, spelled out — never `CONFIG` wholesale: the response
+  // schema is not enforced on the way out, and the config also holds values
+  // that are main's business alone (binary paths, and the AI budget, which
+  // crosses no channel at all — §6.4 as amended).
+  handle(CHANNELS.configGet, IPC[CHANNELS.configGet].request, () => ({
+    REPO_BASE_BRANCH: CONFIG.REPO_BASE_BRANCH,
+    FLOWS_DIR: CONFIG.FLOWS_DIR,
+    FLOW_EXTENSIONS: CONFIG.FLOW_EXTENSIONS,
+  }));
 
   handle(CHANNELS.appReadClipboard, IPC[CHANNELS.appReadClipboard].request, () => ({
     text: clipboard.readText(),

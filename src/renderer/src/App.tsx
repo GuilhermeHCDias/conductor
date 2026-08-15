@@ -1,5 +1,6 @@
 import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
+import { useAiEvents } from './hooks/useAiEvents';
 import { useElementWidth } from './hooks/useElementWidth';
 import { useFlowIndex } from './hooks/useFlowIndex';
 import { usePublishEvents } from './hooks/usePublishEvents';
@@ -60,6 +61,9 @@ export function App(): JSX.Element {
   // And for the publish domain: the unsent set and the review state feed the
   // toolbar's send control whether or not the sheet is open.
   usePublishEvents();
+  // And for the assistant: its stream keeps landing while the Run tab is
+  // selected, and its edits open flows whichever panel is showing.
+  useAiEvents();
 
   // A layout effect, not a plain one: the appearance has to be on the document
   // before the first paint, or the window flashes light and then goes dark

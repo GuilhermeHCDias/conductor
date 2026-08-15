@@ -24,6 +24,35 @@ export type SnapshotServiceDeps = {
   readonly gateway: MaestroGateway;
 };
 
+/**
+ * Who holds the device while the snapshot path is suspended (§4.3.2, both
+ * faces): a flow run's CLI child, or the AI turn's own `maestro mcp`. The
+ * holder decides the refusal each surface shows — `run/active` and
+ * `ai/active` are different causes with different words (ai-assistant-session
+ * criterion 16) — and the two exclude each other: `suspend` for one owner
+ * while the other holds is *rejected*, carrying the holder's code, which is
+ * how `run:start` into an AI turn and `ai:send` into a run both refuse
+ * without either service knowing the other exists.
+ */
+export type SnapshotLeaseOwner = 'run' | 'ai';
+
+/** The rejection `suspend` answers when the lease is already held by the
+ * other owner. Carries the holder's stable code, so `RunService.start`'s
+ * catch path and `AiService.send`'s surface it untranslated. */
+class SnapshotLeaseHeldError extends Error {
+  readonly code: ErrorCode;
+
+  constructor(holder: SnapshotLeaseOwner) {
+    super(
+      holder === 'run'
+        ? 'A flow is running on the device. Try again when it ends.'
+        : 'The assistant is looking at the screen. Try again when it finishes.',
+    );
+    this.name = 'SnapshotLeaseHeldError';
+    this.code = holder === 'run' ? ERROR_CODES.runActive : ERROR_CODES.aiActive;
+  }
+}
+
 /** One device's current snapshot: the view the renderer holds, plus the screen
  * frame `point:` percentages are computed against. */
 type HeldSnapshot = {
@@ -37,8 +66,9 @@ export class SnapshotService {
   private readonly held = new Map<string, HeldSnapshot>();
   /** Monotonic, so an id is never reused within a run (criterion 5). */
   private nextSnapshot = 1;
-  /** §4.3.2 (run criteria 11–12): true while a flow runs on the device. */
-  private suspended = false;
+  /** §4.3.2 (run criteria 11–12, ai criteria 15–16): who holds the device
+   * while the snapshot path is off — `null` when nobody does. */
+  private heldBy: SnapshotLeaseOwner | null = null;
   /** Captures currently talking to the device, and who is waiting them out. */
   private inFlight = 0;
   private idleWaiters: Array<() => void> = [];
@@ -51,10 +81,16 @@ export class SnapshotService {
    * Run criterion 12: holds new captures off and waits the in-flight one out.
    * `RunService` awaits this before spawning the CLI — a raw `maestro test`
    * racing a live `inspect_screen` silently loses hierarchy nodes and calls
-   * it success, which is worse than either failing (§4.3.2's amendment).
+   * it success, which is worse than either failing (§4.3.2's amendment). The
+   * AI turn holds the same lease as `'ai'` (ai criterion 15), and a suspend
+   * against the *other* owner's hold rejects with that holder's code — the
+   * mutual exclusion both `run:start` and `ai:send` ride.
    */
-  suspend(): Promise<void> {
-    this.suspended = true;
+  suspend(owner: SnapshotLeaseOwner = 'run'): Promise<void> {
+    if (this.heldBy !== null && this.heldBy !== owner) {
+      return Promise.reject(new SnapshotLeaseHeldError(this.heldBy));
+    }
+    this.heldBy = owner;
     if (this.inFlight === 0) {
       return Promise.resolve();
     }
@@ -63,9 +99,13 @@ export class SnapshotService {
     });
   }
 
-  /** The run settled — whatever the outcome, the device is ours again. */
-  resume(): void {
-    this.suspended = false;
+  /** The run or turn settled — the device is ours again. Only the holder can
+   * lift its own hold: `RunService`'s failure-path resume must never open the
+   * gate under a live AI turn. */
+  resume(owner: SnapshotLeaseOwner = 'run'): void {
+    if (this.heldBy === owner) {
+      this.heldBy = null;
+    }
   }
 
   /**
@@ -80,11 +120,19 @@ export class SnapshotService {
   async capture(deviceId: string): Promise<Result<SnapshotView>> {
     // Run criterion 11: while a flow runs, the mcp child is not called at all.
     // The renderer reads this code as "stale until the run ends" and recovers
-    // through the end-of-run recapture, never by retrying into the run.
-    if (this.suspended) {
+    // through the end-of-run recapture, never by retrying into the run. An AI
+    // turn holds the same gate under its own name (ai criterion 16): each
+    // surface tells the person which of the two is on the device.
+    if (this.heldBy === 'run') {
       return refuse(
         ERROR_CODES.runActive,
         'A flow is running on the device. The screen inspector resumes when it ends.',
+      );
+    }
+    if (this.heldBy === 'ai') {
+      return refuse(
+        ERROR_CODES.aiActive,
+        'The assistant is looking at the screen. The inspector resumes when it finishes.',
       );
     }
 

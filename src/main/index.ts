@@ -4,6 +4,7 @@ import { optimizer } from '@electron-toolkit/utils';
 import { CONFIG } from '@shared/config';
 import { PUSH_CHANNELS, type PushChannel, type PushPayload } from '@shared/ipc';
 import { app, BrowserWindow, shell } from 'electron';
+import { registerAiIpc } from './ipc/ai';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
 import { registerFlowIpc } from './ipc/flow';
@@ -14,10 +15,12 @@ import { registerRunIpc } from './ipc/run';
 import { AdbBridge } from './maestro/AdbBridge';
 import { CliRunner } from './maestro/CliRunner';
 import { LocalGateway } from './maestro/LocalGateway';
+import { resolveMaestro } from './maestro/resolve-maestro';
 import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
 import { ScreenCapture } from './maestro/ScreenCapture';
 import { isExecutable } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
+import { AiService } from './services/ai.service';
 import { DeviceService } from './services/device.service';
 import { FlowService } from './services/flow.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
@@ -167,6 +170,9 @@ if (!app.requestSingleInstanceLock()) {
       // The publish domain follows the same switch: the control reflects the
       // new repo's own unsent set and review state (criteria 9, 28).
       await publishService.activeRepoChanged();
+      // And the assistant's conversation resets implicitly — it is about one
+      // repo's flows and one clone's cwd (ai criterion 12).
+      aiService.activeRepoChanged();
       if (connectWindow && next !== null) {
         connectWindow = false;
         for (const window of BrowserWindow.getAllWindows()) {
@@ -288,6 +294,51 @@ if (!app.requestSingleInstanceLock()) {
       },
       runsDir: join(app.getPath('userData'), 'runs'),
     });
+    // The AI window's engine (§6): one `claude -p` child per message, the
+    // conversation carried by `--resume`, the device held through the same
+    // snapshot lease the run path uses (§4.3.2). Every capability arrives by
+    // injection; the service creates nothing itself (§10.1).
+    const aiService = new AiService({
+      model: CONFIG.AI_MODEL,
+      budgetUsd: CONFIG.AI_BUDGET_USD,
+      pluginDir: conductorPluginDir({
+        packaged: app.isPackaged,
+        resourcesPath: process.resourcesPath,
+        appPath: app.getAppPath(),
+      }),
+      flowsDir: CONFIG.FLOWS_DIR,
+      activeClone: () => repoService.activeClone(),
+      appId: () => repoService.activeWorkspace()?.appId ?? null,
+      // The selected device, read fresh — one `adb devices` per send is noise
+      // next to the child it precedes.
+      device: async () => {
+        const snap = await device.snapshot();
+        if (!snap.ok || snap.data.selectedId === null) {
+          return null;
+        }
+        return { id: snap.data.selectedId, model: snap.data.properties?.model ?? null };
+      },
+      resolveClaude: () =>
+        resolveClaude({
+          configuredPath: CONFIG.CLAUDE_PATH,
+          env: process.env,
+          home,
+          isExecutable,
+        }),
+      resolveMaestro: () =>
+        resolveMaestro({
+          configuredPath: CONFIG.MAESTRO_PATH,
+          env: process.env,
+          home,
+          isExecutable,
+        }),
+      snapshots: snapshot,
+      spawn: spawnStreaming,
+      env: process.env,
+      emit: (payload) => {
+        broadcast(PUSH_CHANNELS.aiEvent, payload);
+      },
+    });
     // The flow workspace is the active repo's `conductor/` (§2.1, §7) — or
     // nothing at all before the first connect. Confirming or switching a
     // repo re-points it through `applyWorkspace`, never a restart.
@@ -302,7 +353,7 @@ if (!app.requestSingleInstanceLock()) {
         publishService.notifyFlowChanged();
       },
     });
-    services.push(device, mcp, runService, flowService, repoService, publishService);
+    services.push(device, mcp, runService, flowService, repoService, publishService, aiService);
 
     registerAppIpc();
     registerDeviceIpc({ device });
@@ -311,6 +362,7 @@ if (!app.requestSingleInstanceLock()) {
     registerFlowIpc({ flow: flowService });
     registerRepoIpc({ repo: repoService });
     registerPublishIpc({ publish: publishService });
+    registerAiIpc({ ai: aiService });
 
     watchRenderer(openWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.

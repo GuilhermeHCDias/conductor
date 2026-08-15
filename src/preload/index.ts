@@ -41,6 +41,10 @@ const api: ConductorApi = {
   publishSend: (note, openFlowPath) => ipcRenderer.invoke(CHANNELS.publishSend, note, openFlowPath),
   publishCancel: (jobId) => ipcRenderer.invoke(CHANNELS.publishCancel, jobId),
   publishOpenPr: () => ipcRenderer.invoke(CHANNELS.publishOpenPr),
+  aiSend: (message, openFlowPath) => ipcRenderer.invoke(CHANNELS.aiSend, message, openFlowPath),
+  aiCancel: () => ipcRenderer.invoke(CHANNELS.aiCancel),
+  aiReset: () => ipcRenderer.invoke(CHANNELS.aiReset),
+  aiStatus: () => ipcRenderer.invoke(CHANNELS.aiStatus),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -132,6 +136,18 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.publishEvent, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.publishEvent, forward);
+    };
+  },
+
+  // And the assistant stream — a turn's text arrives token by token, so the
+  // unsubscribe matters the way the mirror's does.
+  onAiEvent: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'ai:event'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.aiEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.aiEvent, forward);
     };
   },
 };

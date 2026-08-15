@@ -81,6 +81,12 @@ function idleConductor(): ConductorApi {
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     publishOpenPr: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    aiSend: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    aiCancel: () => Promise.resolve({ ok: true, data: { turnId: null } }),
+    aiReset: () => Promise.resolve({ ok: true, data: { turnId: null } }),
+    // Ready is the quiet default — the assistant available, the composer
+    // enabled — the way `deviceList` answers no devices rather than failing.
+    aiStatus: () => Promise.resolve({ ok: true, data: { ready: true } }),
     onDeviceChanged: () => () => {},
     onMirrorEvent: () => () => {},
     onRunEvent: () => () => {},
@@ -89,6 +95,7 @@ function idleConductor(): ConductorApi {
     onRepoResolveEvent: () => () => {},
     onPublishChanged: () => () => {},
     onPublishEvent: () => () => {},
+    onAiEvent: () => () => {},
   };
 }
 

@@ -1,6 +1,14 @@
 // src/shared/config.ts — fonte única do que é de fato constante (.context.md §2).
 // `appId`, nome do app e URL do repo NÃO moram aqui: são estado em runtime,
 // derivados do repositório ativo que o usuário colou (§2.1, §12.6).
+
+/** Um override numérico vindo do ambiente: só um finito > 0 vale — vazio,
+ * lixo, zero, negativo e `Infinity` caem no padrão. */
+export function positiveOverride(raw: string | undefined, fallback: number): number {
+  const value = Number.parseFloat(raw ?? '');
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
 export const CONFIG = {
   /**
    * Override explícito da branch base de um PR. Vazio = usar a branch com que
@@ -50,4 +58,12 @@ export const CONFIG = {
   /** Teto de gasto de uma invocação de describe (§8.4): perfil apertado,
    * bem abaixo do teto da conversa do AIPanel. */
   AI_DESCRIBE_BUDGET_USD: 0.25,
+
+  /**
+   * Teto de gasto de uma conversa do AIPanel (§6.4). O resto rideia em cada
+   * spawn como `--max-budget-usd`; o número morre no `AiService` — não cruza
+   * canal, não entra em store, não chega a tela nenhuma (§6.4 como emendada).
+   * Um override inválido ou não-positivo cai no padrão.
+   */
+  AI_BUDGET_USD: positiveOverride(process.env.CONDUCTOR_AI_BUDGET_USD, 0.5),
 } as const;

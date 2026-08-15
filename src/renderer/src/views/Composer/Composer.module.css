@@ -4,6 +4,14 @@
   padding: 10px;
 }
 
+/* Criterion 23 — the reason the composer is off, right where it is off. */
+.reason {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  padding-bottom: var(--space-3);
+  text-wrap: pretty;
+}
+
 .surface {
   background: var(--a-well);
   border: 1px solid var(--a-hair);

@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { AI_LINES, type ChatTurn, ERROR_LINES, THREAD } from '../fixtures/flows';
+import { ERROR_LINES } from '../fixtures/flows';
 import { layoutForWidth } from '../lib/breakpoints';
 
 /**
@@ -54,10 +54,9 @@ export type UiData = {
   readonly sidebarPreference: SidebarPreference;
   readonly lowerPanel: LowerPanel;
   readonly query: string;
-  /** 1-based line numbers the assistant wrote, and ones Maestro reported failing. */
-  readonly aiLines: readonly number[];
+  /** 1-based line numbers Maestro reported as failing — still a fixture; the
+   * assistant's wash is real state and lives in `ai.store`. */
   readonly errorLines: readonly number[];
-  readonly thread: readonly ChatTurn[];
 };
 
 /** What can change it. None of these crosses IPC. */
@@ -82,9 +81,7 @@ function createUiData(): UiData {
     sidebarPreference: 'auto',
     lowerPanel: 'assistant',
     query: '',
-    aiLines: AI_LINES,
     errorLines: ERROR_LINES,
-    thread: THREAD,
   };
 }
 

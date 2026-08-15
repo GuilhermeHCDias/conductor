@@ -399,3 +399,70 @@ describe('suspension during a run', () => {
     expect(service.synthesize(snapshot.snapshotId, [0]).ok).toBe(true);
   });
 });
+
+/**
+ * §4.3.2's exclusion, AI side (ai-assistant-session criteria 15–16): the
+ * lease learned who holds it. The AI turn suspends as `'ai'`, the refusal
+ * names the assistant rather than a run, and the two owners exclude each
+ * other — a run cannot start into an AI turn, an AI turn cannot start into a
+ * run, and neither can lift the other's hold.
+ */
+describe('the lease owner', () => {
+  it('refuses a capture during an AI turn with ai/active, naming the assistant', async () => {
+    const gateway = fakeGateway();
+    const service = new SnapshotService({ gateway });
+
+    await service.suspend('ai');
+    const result = await service.capture('device');
+
+    expect(code(result)).toBe(ERROR_CODES.aiActive);
+    if (!(await service.capture('device')).ok) {
+      const failed = (await service.capture('device')) as { ok: false; error: { message: string } };
+      expect(failed.error.message).toMatch(/assistant/i);
+    }
+    expect(gateway.hierarchyCalls).toEqual([]);
+  });
+
+  it('refuses to suspend for a run while the assistant holds the lease', async () => {
+    const service = new SnapshotService({ gateway: fakeGateway() });
+    await service.suspend('ai');
+
+    await expect(service.suspend()).rejects.toMatchObject({ code: ERROR_CODES.aiActive });
+  });
+
+  it('refuses to suspend for the assistant while a run holds the lease', async () => {
+    const service = new SnapshotService({ gateway: fakeGateway() });
+    await service.suspend();
+
+    await expect(service.suspend('ai')).rejects.toMatchObject({ code: ERROR_CODES.runActive });
+  });
+
+  /** RunService's failure path calls a plain `resume()`; when its own suspend
+   * was the one that was refused, that resume must not lift the AI's hold. */
+  it('ignores a resume from an owner that does not hold the lease', async () => {
+    const service = new SnapshotService({ gateway: fakeGateway() });
+    await service.suspend('ai');
+
+    service.resume();
+
+    expect(code(await service.capture('device'))).toBe(ERROR_CODES.aiActive);
+  });
+
+  it('captures again once the assistant releases its own hold', async () => {
+    const gateway = fakeGateway();
+    const service = new SnapshotService({ gateway });
+    await service.suspend('ai');
+
+    service.resume('ai');
+
+    expect((await service.capture('device')).ok).toBe(true);
+  });
+
+  /** The default stays `'run'`, so `RunService` and its tests are untouched. */
+  it('keeps the run refusal for a plain suspend', async () => {
+    const service = new SnapshotService({ gateway: fakeGateway() });
+    await service.suspend();
+
+    expect(code(await service.capture('device'))).toBe(ERROR_CODES.runActive);
+  });
+});

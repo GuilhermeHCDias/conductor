@@ -1,7 +1,8 @@
 import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ASSISTANT_STATUS_LINE, RUN_STATUS_LINE } from '../../fixtures/flows';
+import { RUN_STATUS_LINE } from '../../fixtures/flows';
+import { resetAiStore, useAiStore } from '../../stores/ai.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetRunStore, useRunStore } from '../../stores/run.store';
 import { resetUiStore, useUiStore } from '../../stores/ui.store';
@@ -33,6 +34,7 @@ beforeEach(() => {
   resetUiStore();
   resetFlowStore();
   resetRunStore();
+  resetAiStore();
   openSeed();
 });
 
@@ -195,12 +197,21 @@ describe('FlowEditor', () => {
       }
     });
 
-    /** Criterion 27 — error beats AI, and both beat the active line. */
+    /** Criterion 27 — error beats AI, and both beat the active line. The AI
+     * wash now comes from the ai store, computed by `diff-lines` when the
+     * assistant's edit lands (`useAiEvents`); the editor only paints it. */
     it('washes a line the assistant wrote', () => {
-      useUiStore.setState({ aiLines: [3] });
+      useAiStore.getState().setWash('teste.yaml', [3]);
       render(<FlowEditor />);
 
       expect(lineOf(3)).toHaveAttribute('data-line', 'ai');
+    });
+
+    it('paints no wash that belongs to another flow', () => {
+      useAiStore.getState().setWash('outro.yaml', [3]);
+      render(<FlowEditor />);
+
+      expect(lineOf(3)).not.toHaveAttribute('data-line', 'ai');
     });
 
     it('washes a line Maestro reported as failing', () => {
@@ -211,14 +222,15 @@ describe('FlowEditor', () => {
     });
 
     it('lets an error line win over an AI line', () => {
-      useUiStore.setState({ aiLines: [3], errorLines: [3] });
+      useAiStore.getState().setWash('teste.yaml', [3]);
+      useUiStore.setState({ errorLines: [3] });
       render(<FlowEditor />);
 
       expect(lineOf(3)).toHaveAttribute('data-line', 'error');
     });
 
     it('lets an AI line win over the active line', () => {
-      useUiStore.setState({ aiLines: [1] });
+      useAiStore.getState().setWash('teste.yaml', [1]);
       render(<FlowEditor />);
 
       act(() => {
@@ -457,8 +469,9 @@ describe('FlowEditor', () => {
     it('starts on the assistant thread', () => {
       render(<FlowEditor />);
 
-      expect(within(screen.getByRole('tabpanel')).getByText(/Right-click anything/)).toBeVisible();
-      expect(screen.getByText(ASSISTANT_STATUS_LINE)).toBeInTheDocument();
+      expect(
+        within(screen.getByRole('tabpanel')).getByText(/tell me what the test should do/i),
+      ).toBeVisible();
     });
 
     it('swaps to the run report when the Run segment is activated', async () => {
@@ -493,6 +506,75 @@ describe('FlowEditor', () => {
   it('carries the composer on its footer', () => {
     render(<FlowEditor />);
 
-    expect(screen.getByPlaceholderText('Ask Conductor to write a step…')).toBeInTheDocument();
+    expect(screen.getByPlaceholderText('Ask Conductor to write a test…')).toBeInTheDocument();
+  });
+
+  /**
+   * Criterion 25 — the status line carries the assistant's state in product
+   * language: empty while it is idle and ready, the blocking reason while it
+   * is not. No cost, no token count, no budget, anywhere (§6.4 as amended).
+   */
+  describe('the assistant status line', () => {
+    it('stays empty while the assistant is ready', () => {
+      useAiStore.setState({ availability: { ready: true } });
+      render(<FlowEditor />);
+
+      expect(screen.getByTestId('panel-status')).toHaveTextContent('');
+    });
+
+    it('names the missing repository', () => {
+      useAiStore.setState({
+        availability: { ready: false, code: 'ai/no-repo', message: 'Connect a project.' },
+      });
+      render(<FlowEditor />);
+
+      expect(screen.getByTestId('panel-status')).toHaveTextContent('No repository connected');
+    });
+
+    it('names the missing Claude Code', () => {
+      useAiStore.setState({
+        availability: { ready: false, code: 'ai/claude-missing', message: 'Install it.' },
+      });
+      render(<FlowEditor />);
+
+      expect(screen.getByTestId('panel-status')).toHaveTextContent('Claude Code not installed');
+    });
+
+    it('keeps the run status line on the run tab', async () => {
+      render(<FlowEditor />);
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Run' }));
+
+      expect(screen.getByTestId('panel-status')).toHaveTextContent(RUN_STATUS_LINE);
+    });
+  });
+
+  /** Criterion 25 — the "new conversation" affordance, wired to `ai:reset`,
+   * disabled while a turn streams. */
+  describe('new conversation', () => {
+    it('asks main to reset when clicked', async () => {
+      const aiReset = vi.fn(() => Promise.resolve({ ok: true as const, data: { turnId: null } }));
+      window.conductor.aiReset = aiReset;
+      render(<FlowEditor />);
+
+      await userEvent.click(screen.getByRole('button', { name: 'New conversation' }));
+
+      expect(aiReset).toHaveBeenCalledOnce();
+    });
+
+    it('is disabled while a turn streams', () => {
+      useAiStore.setState({ activeTurnId: 'turn-1' });
+      render(<FlowEditor />);
+
+      expect(screen.getByRole('button', { name: 'New conversation' })).toBeDisabled();
+    });
+
+    it('leaves the run tab without it', async () => {
+      render(<FlowEditor />);
+
+      await userEvent.click(screen.getByRole('tab', { name: 'Run' }));
+
+      expect(screen.queryByRole('button', { name: 'New conversation' })).not.toBeInTheDocument();
+    });
   });
 });

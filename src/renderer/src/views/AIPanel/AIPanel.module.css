@@ -57,71 +57,36 @@
   padding: var(--space-4) 11px;
 }
 
-/* A YAML block is a recessed surface, so it reads as the flow rather than as
-   more prose. */
-.code {
-  background: var(--a-well);
-  border: var(--border-hair) solid var(--ai-edge);
-  border-radius: var(--a-radius-region);
-  overflow: hidden;
-}
-
-.codeHeader {
-  align-items: center;
-  border-bottom: var(--border-hair) solid var(--edge-1);
-  display: flex;
-  gap: var(--space-4);
-  height: 26px;
-  padding: 0 var(--space-4);
-}
-
-.codeGlyph {
-  color: var(--text-ai);
-}
-
-.codeLabel {
+/* Criterion 11: a stopped turn keeps its partial words, marked quietly. */
+.stopped {
   color: var(--text-tertiary);
-  flex: 1;
-  font: var(--type-mono-label);
+  font: var(--type-caption);
+  font-style: italic;
 }
 
-.codeBody {
-  color: var(--text-primary);
-  font: var(--type-code-sm);
-  margin: 0;
-  padding: var(--space-4) var(--space-5);
-  white-space: pre-wrap;
-  word-break: break-word;
+/* Criterion 21: an error is a quiet in-thread notice, never a dialog. */
+.notice {
+  border-left: 2px solid var(--edge-2);
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  padding-left: var(--space-4);
+  text-wrap: pretty;
 }
 
-.codeActions {
-  padding: 0 var(--space-4) var(--space-4);
-}
-
-.insert {
+/* Criterion 8's activity line — present tense, product language, gone the
+   moment text streams again. */
+.activity {
   align-items: center;
-  background: var(--ai-quiet);
-  border: var(--border-hair) solid var(--ai-edge);
-  border-radius: var(--a-radius-field);
   color: var(--text-ai);
-  cursor: pointer;
   display: flex;
   font: var(--type-caption);
   gap: var(--space-3);
-  height: 26px;
-  justify-content: center;
-  padding: 0 11px;
-  transition: var(--t-hover);
-  width: 100%;
 }
 
-.insert:hover {
-  background: var(--ai-quiet-hover);
-}
-
-.insert:focus-visible {
-  box-shadow: var(--glow-ai);
-  outline: none;
+.activityMark {
+  animation: cd-spin var(--dur-lazy) linear infinite;
+  display: grid;
+  place-items: center;
 }
 
 .pills {
@@ -145,6 +110,12 @@
 .pill:hover {
   background: var(--glass-hover);
   color: var(--text-primary);
+}
+
+.pill:disabled {
+  cursor: default;
+  opacity: 0.4;
+  pointer-events: none;
 }
 
 .pill:focus-visible {
