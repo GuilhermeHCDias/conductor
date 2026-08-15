@@ -575,6 +575,32 @@ describe('the stream', () => {
     ]);
   });
 
+  /** The stream rule (`ipc.ts`): a late event from a killed turn never
+   * decorates a live one — and steering the editor is the strongest
+   * decoration there is. After a stop, a write that still lands stays on
+   * disk (criterion 11), but it must not pull the editor anywhere. */
+  it('pushes no file-edited after the person stopped the turn', async () => {
+    const h = harness();
+    const spawned = await startTurn(h);
+
+    h.service.cancel();
+    spawned.child.emitStdout(toolUse('Write', { file_path: 'conductor/login.yml' }));
+
+    expect(h.events.some((event) => event.kind === 'file-edited')).toBe(false);
+  });
+
+  it('pushes nothing for a chunk arriving after the exit', async () => {
+    const h = harness();
+    const spawned = await startTurn(h);
+    spawned.child.emitExit({ code: 0, error: null });
+    const settled = h.events.length;
+
+    spawned.child.emitStdout(toolUse('Write', { file_path: 'conductor/login.yml' }));
+    spawned.child.emitStdout(textDelta('tarde demais'));
+
+    expect(h.events).toHaveLength(settled);
+  });
+
   /** The real stream carries kinds this app never asked for
    * (`rate_limit_event`, `system/thinking_tokens`) — and whatever the next
    * CLI adds. None of it may kill a turn. */
@@ -784,6 +810,84 @@ describe('reset and dispose', () => {
     expect(h.lease.resumes).toEqual(['ai']);
   });
 
+  /** §4.3.2 — the lease belongs to the turn it was taken for: the abandoned
+   * half of a reset race, waking after a successor took the slot, must not
+   * open the snapshot gate under the successor's live `maestro mcp`. */
+  it('an abandoned send never lifts the lease its successor holds', async () => {
+    const gates: Array<(device: { id: string; model: string | null } | null) => void> = [];
+    let parked: (() => void) | null = null;
+    const h = harness({
+      device: () =>
+        new Promise((resolvePromise) => {
+          gates.push(resolvePromise);
+          parked?.();
+          parked = null;
+        }),
+    });
+
+    const atDevice = new Promise<void>((resolvePromise) => {
+      parked = resolvePromise;
+    });
+    const abandoned = h.service.send('primeiro', null);
+    await atDevice;
+
+    h.service.reset();
+    const atDeviceAgain = new Promise<void>((resolvePromise) => {
+      parked = resolvePromise;
+    });
+    const successor = h.service.send('segundo', null);
+    await atDeviceAgain;
+    gates[1]?.(null);
+    await successor;
+    expect(h.spawns).toHaveLength(1);
+
+    gates[0]?.(null);
+    expect(refusalCode(await abandoned)).toBe(ERROR_CODES.aiActive);
+    // The successor still holds the device — nothing may have been resumed.
+    expect(h.lease.resumes).toEqual([]);
+
+    h.spawns[0]?.child.emitExit({ code: 0, error: null });
+    expect(h.lease.resumes).toEqual(['ai']);
+  });
+
+  /** The same race parked one await earlier — inside the suspend itself,
+   * waiting out a capture. The wake must neither resume under the successor
+   * nor disturb its slot. */
+  it('a send abandoned inside the suspend leaves its successor untouched', async () => {
+    const suspendGates: Array<() => void> = [];
+    const resumes: string[] = [];
+    const h = harness({
+      snapshots: {
+        suspend: () =>
+          new Promise((resolvePromise) => {
+            suspendGates.push(resolvePromise);
+          }),
+        resume: (owner) => {
+          resumes.push(owner);
+        },
+      },
+    });
+
+    const abandoned = h.service.send('primeiro', null);
+    h.service.reset();
+    const successor = h.service.send('segundo', null);
+
+    suspendGates[1]?.();
+    await successor;
+    expect(h.spawns).toHaveLength(1);
+
+    suspendGates[0]?.();
+    expect(refusalCode(await abandoned)).toBe(ERROR_CODES.aiActive);
+    // The successor still owns the slot and the lease: a third send is
+    // refused, and nothing has been resumed under the live child.
+    expect(refusalCode(await h.service.send('terceiro', null))).toBe(ERROR_CODES.aiActive);
+    expect(h.spawns).toHaveLength(1);
+    expect(resumes).toEqual([]);
+
+    h.spawns[0]?.child.emitExit({ code: 0, error: null });
+    expect(resumes).toEqual(['ai']);
+  });
+
   /** A turn the reset killed belongs to the conversation the reset ended —
    * its reported cost must not charge the fresh ledger. */
   it('a turn killed by reset never charges the fresh conversation', async () => {
@@ -844,5 +948,18 @@ describe('status', () => {
     const h = harness({ resolveClaude: () => null });
 
     expect(refusalCode(h.service.status())).toBe(ERROR_CODES.aiClaudeMissing);
+  });
+
+  /** Criterion 6 — the panel says what Claude Code is and where it comes
+   * from: one string, carrying the install pointer, identical on both
+   * surfaces so the two answers can never drift apart. */
+  it('points at the install when claude is missing, identically on send and status', async () => {
+    const h = harness({ resolveClaude: () => null });
+
+    const status = refusalMessage(h.service.status());
+    const sent = refusalMessage(await h.service.send('oi', null));
+
+    expect(status).toContain('claude.com/claude-code');
+    expect(sent).toBe(status);
   });
 });

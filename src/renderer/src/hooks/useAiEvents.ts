@@ -34,6 +34,12 @@ export function useAiEvents(): void {
         return;
       }
       if (payload.data.kind === 'file-edited') {
+        // The store's stale-turn rule reaches the editor too (`ipc.ts`: a
+        // late event from a killed turn never decorates a live one) — only
+        // the turn the store holds may steer what is open.
+        if (payload.data.turnId !== useAiStore.getState().activeTurnId) {
+          return;
+        }
         const { path } = payload.data;
         if (useFlowStore.getState().openPath !== path) {
           void useFlowStore.getState().openFlow(path);

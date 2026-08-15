@@ -42,6 +42,23 @@ describe('the empty thread', () => {
     );
   });
 
+  /** Criterion 23's gate reaches the pills too: while the assistant is not
+   * available, a pill click must not convert the greeting into a refusal
+   * notice — which would hide the suggestions for good. */
+  it('disables the pills while the assistant is unavailable', () => {
+    useAiStore.setState({
+      availability: {
+        ready: false,
+        code: 'ai/claude-missing',
+        message: 'Install Claude Code to turn the assistant on.',
+      },
+    });
+    render(<AIPanel />);
+
+    expect(screen.getByRole('button', { name: 'Write a test for the login flow' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: 'Test the checkout journey' })).toBeDisabled();
+  });
+
   it('drops the greeting and the pills once the conversation starts', () => {
     useAiStore.setState({
       thread: [{ id: 'person-turn-1', role: 'person', text: 'oi' }],

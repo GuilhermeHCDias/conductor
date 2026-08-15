@@ -140,6 +140,23 @@ describe('useAiEvents', () => {
 });
 
 describe('the assistant edits a flow', () => {
+  /** The stream's own rule — a late event from a killed turn never decorates
+   * a live one (`ipc.ts`) — reaches the editor too: after a reset emptied
+   * the thread, a dying turn's edit must not yank a flow open. */
+  it('leaves the editor alone when the edit wears a stale turn id', async () => {
+    const { emit } = wire();
+    window.conductor.flowRead = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { yaml: 'appId: x\n' } }),
+    );
+    renderHook(() => useAiEvents());
+
+    await act(async () => {
+      emit({ ok: true, data: { kind: 'file-edited', turnId: 'turn-9', path: 'login.yml' } });
+    });
+
+    expect(useFlowStore.getState().openPath).toBeNull();
+  });
+
   /** Criterion 26 — the person watches the test being written: an edit to a
    * flow that is not open pulls it into the editor and the sidebar. */
   it('opens a flow the assistant edited that was not open', async () => {

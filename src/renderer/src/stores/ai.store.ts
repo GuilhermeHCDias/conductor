@@ -82,6 +82,12 @@ function createAiData(): AiData {
 /** The in-flight send guard — beside the store, because nothing renders it. */
 let sendInFlight = false;
 
+/** Bumped by every pushed reset: a send whose answer lands after the reset
+ * emptied the thread belongs to the ended conversation and must not
+ * repopulate it — main already killed that turn (the spec's reset race,
+ * renderer half). */
+let resetEra = 0;
+
 export const useAiStore = create<AiState>((set, get) => ({
   ...createAiData(),
 
@@ -92,8 +98,12 @@ export const useAiStore = create<AiState>((set, get) => ({
       return false;
     }
     sendInFlight = true;
+    const era = resetEra;
     try {
       const result = await window.conductor.aiSend(message, openFlowPath);
+      if (era !== resetEra) {
+        return false;
+      }
       if (!result.ok) {
         // Criterion 21 — a quiet in-thread notice; the person's words stay in
         // the composer, which only clears its draft on a successful send.
@@ -152,6 +162,7 @@ export const useAiStore = create<AiState>((set, get) => ({
     if (event.kind === 'reset') {
       // Criterion 12 — one path whether the person asked or a repo switch
       // implied it. Availability is re-read by the hook, not assumed here.
+      resetEra += 1;
       set((state) => ({ ...createAiData(), availability: state.availability }));
       return;
     }
@@ -165,7 +176,9 @@ export const useAiStore = create<AiState>((set, get) => ({
       case 'turn-started':
         // Informational: the invoke's answer already opened the turn, and
         // arriving-order between a push and an invoke's resolution is not
-        // worth depending on.
+        // worth depending on. A delta racing that resolution is dropped by
+        // the turn guard above — a one-IPC-hop window, before the child has
+        // said anything real. Accepted.
         return;
       case 'text-delta':
         set({
@@ -211,9 +224,10 @@ export const useAiStore = create<AiState>((set, get) => ({
   },
 }));
 
-/** Restores the blank state and disarms the guard. Tests share one module. */
+/** Restores the blank state and disarms the guards. Tests share one module. */
 export function resetAiStore(): void {
   sendInFlight = false;
+  resetEra = 0;
   useAiStore.setState(createAiData());
 }
 

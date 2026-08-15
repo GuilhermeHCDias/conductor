@@ -55,6 +55,14 @@ function allowedTools(flowsDir: string): string[] {
  * could never load (verified: `--tools` leaves MCP tools untouched). */
 const BUILTIN_TOOLS = 'Read,Edit,Write,Glob,Grep,Skill';
 
+/** Criterion 6 — what Claude Code is, that installing it turns the assistant
+ * on, and the one pointer (§8.0: no terminal jargon beyond it). One string
+ * for both surfaces: `ai:send` and `ai:status` must never drift apart. */
+const CLAUDE_MISSING_MESSAGE =
+  'The assistant runs on Claude Code, which is not installed on this Mac. Install it from claude.com/claude-code and sign in with a Claude account to turn the assistant on.';
+
+const NO_REPO_MESSAGE = 'Connect a project to use the assistant.';
+
 /** The device fact the context block carries (criterion 19). */
 export type AiDeviceFact = {
   readonly id: string;
@@ -135,6 +143,11 @@ export class AiService {
   private spentUsd = 0;
   /** Bumped by every reset; the ledger only takes costs from its own era. */
   private conversation = 0;
+  /** The turn the `'ai'` lease was taken for. The snapshot lease is keyed by
+   * owner, not by turn — so an abandoned send waking after a reset must know
+   * whether the hold is still its own before lifting it, or it would open
+   * the gate under the successor's live `maestro mcp` (§4.3.2). */
+  private leaseHolder: ActiveTurn | null = null;
   private disposed = false;
 
   constructor(deps: AiServiceDeps) {
@@ -153,14 +166,11 @@ export class AiService {
     }
     const clone = this.deps.activeClone();
     if (clone === null) {
-      return refuse(ERROR_CODES.aiNoRepo, 'Connect a project to use the assistant.');
+      return refuse(ERROR_CODES.aiNoRepo, NO_REPO_MESSAGE);
     }
     const claude = this.deps.resolveClaude();
     if (claude === null) {
-      return refuse(
-        ERROR_CODES.aiClaudeMissing,
-        'The assistant runs on Claude Code, which is not installed on this Mac. Install Claude Code and sign in with a Claude account to turn the assistant on.',
-      );
+      return refuse(ERROR_CODES.aiClaudeMissing, CLAUDE_MISSING_MESSAGE);
     }
     if (this.turn !== null) {
       return refuse(
@@ -201,9 +211,21 @@ export class AiService {
     try {
       await this.deps.snapshots.suspend('ai');
     } catch (error) {
-      this.turn = null;
+      if (this.turn === turn) {
+        this.turn = null;
+      }
       return refuse(codeOf(error), messageOf(error, 'The assistant could not start.'));
     }
+    if (this.turn !== turn) {
+      // A reset landed while the suspend waited out a capture. A successor
+      // (or its own pending suspend) owns the gate now; only a hold nobody
+      // claimed closes here.
+      if (this.turn === null && this.leaseHolder === null) {
+        this.deps.snapshots.resume('ai');
+      }
+      return refuse(ERROR_CODES.aiActive, 'The assistant was reset. Try again.');
+    }
+    this.leaseHolder = turn;
 
     let systemPrompt: string;
     try {
@@ -212,8 +234,10 @@ export class AiService {
       // The skill file is packaged with the app; not finding it is a broken
       // install, not a state the panel can fix — honest failure, no spawn.
       console.error('The work-in-conductor skill could not be read:', error);
-      this.turn = null;
-      this.deps.snapshots.resume('ai');
+      if (this.turn === turn) {
+        this.turn = null;
+      }
+      this.releaseLease(turn);
       return refuse(
         ERROR_CODES.aiTurnFailed,
         'The assistant could not start. Reinstall Conductor if this keeps happening.',
@@ -223,7 +247,7 @@ export class AiService {
     const device = await this.deps.device().catch(() => null);
     if (this.turn !== turn) {
       // A reset or dispose landed while the device was being read.
-      this.deps.snapshots.resume('ai');
+      this.releaseLease(turn);
       return refuse(ERROR_CODES.aiActive, 'The assistant was reset. Try again.');
     }
 
@@ -297,13 +321,10 @@ export class AiService {
   /** Criteria 6, 25 — what the panel and the status line ask. */
   status(): Result<{ ready: true }> {
     if (this.deps.activeClone() === null) {
-      return refuse(ERROR_CODES.aiNoRepo, 'Connect a project to use the assistant.');
+      return refuse(ERROR_CODES.aiNoRepo, NO_REPO_MESSAGE);
     }
     if (this.deps.resolveClaude() === null) {
-      return refuse(
-        ERROR_CODES.aiClaudeMissing,
-        'The assistant runs on Claude Code, which is not installed on this Mac. Install Claude Code and sign in with a Claude account to turn the assistant on.',
-      );
+      return refuse(ERROR_CODES.aiClaudeMissing, CLAUDE_MISSING_MESSAGE);
     }
     return { ok: true, data: { ready: true } };
   }
@@ -316,7 +337,17 @@ export class AiService {
       this.turn.canceled = true;
       this.turn.child?.kill();
     }
+    this.leaseHolder = null;
     this.deps.snapshots.resume('ai');
+  }
+
+  /** Only the turn the lease was taken for may lift it — an abandoned send
+   * waking after a reset must not open the gate under its successor. */
+  private releaseLease(turn: ActiveTurn): void {
+    if (this.leaseHolder === turn) {
+      this.leaseHolder = null;
+      this.deps.snapshots.resume('ai');
+    }
   }
 
   private clearConversation(): string | null {
@@ -490,7 +521,10 @@ export class AiService {
             }
             const input = block.input as Record<string, unknown> | undefined;
             const path = this.editedFlowPath(turn, input?.file_path);
-            if (path !== null) {
+            // The same guard `flushText` and `pushActivity` wear, plus the
+            // stop: after a cancel the write stays on disk (criterion 11),
+            // but a dying turn must not steer the editor.
+            if (path !== null && this.turn === turn && !turn.canceled) {
               flushText();
               this.push({ kind: 'file-edited', turnId: turn.turnId, path });
             }
@@ -573,7 +607,7 @@ export class AiService {
       clearTimeout(turn.timer);
       turn.timer = null;
     }
-    this.deps.snapshots.resume('ai');
+    this.releaseLease(turn);
     if (turn.costUsd !== null && turn.conversation === this.conversation) {
       this.spentUsd += turn.costUsd;
     }

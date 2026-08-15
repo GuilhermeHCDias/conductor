@@ -3,6 +3,7 @@ import { Icon } from '../../components/Icon/Icon';
 import {
   type AiThreadEntry,
   selectActivity,
+  selectAvailability,
   selectThread,
   useAiStore,
 } from '../../stores/ai.store';
@@ -69,7 +70,13 @@ export function AIPanel(): JSX.Element {
   const thread = useAiStore(selectThread);
   const activity = useAiStore(selectActivity);
   const send = useAiStore((state) => state.send);
+  const availability = useAiStore(selectAvailability);
   const openPath = useFlowStore(selectOpenPath);
+
+  // The composer's gate (criterion 23) reaches the pills too: a click while
+  // the assistant is unavailable would paint a refusal notice over the
+  // greeting and hide the suggestions for good.
+  const blocked = availability !== null && !availability.ready;
 
   if (thread.length === 0) {
     return (
@@ -84,6 +91,7 @@ export function AIPanel(): JSX.Element {
           {SUGGESTIONS.map((suggestion) => (
             <button
               className={styles.pill}
+              disabled={blocked}
               key={suggestion}
               onClick={() => {
                 void send(suggestion, openPath);

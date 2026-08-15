@@ -93,6 +93,28 @@ describe('sending', () => {
 
     expect(vi.mocked(window.conductor.aiSend).mock.calls.length).toBe(calls);
   });
+
+  /** The renderer half of the spec's reset race (criterion 12): a send whose
+   * answer lands after a pushed reset emptied the thread must not repopulate
+   * it — main already killed that turn. */
+  it('drops a send that resolves after a reset emptied the thread', async () => {
+    type SendAnswer = Awaited<ReturnType<typeof window.conductor.aiSend>>;
+    let answer: (value: SendAnswer) => void = () => {};
+    window.conductor.aiSend = vi.fn(
+      () =>
+        new Promise<SendAnswer>((resolvePromise) => {
+          answer = resolvePromise;
+        }),
+    );
+
+    const pending = useAiStore.getState().send('oi', null);
+    push({ kind: 'reset' });
+    answer({ ok: true, data: { turnId: 'turn-1' } });
+
+    await expect(pending).resolves.toBe(false);
+    expect(selectThread(useAiStore.getState())).toEqual([]);
+    expect(selectStreaming(useAiStore.getState())).toBe(false);
+  });
 });
 
 describe('the stream', () => {
