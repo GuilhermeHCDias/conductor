@@ -200,7 +200,8 @@
   border-radius: var(--a-radius-surface);
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
-  padding-right: 5px;
+  /* The kit insets a folder's trailing cell exactly as it insets a flow's. */
+  padding-right: 6px;
   transition: background var(--dur-fast) var(--ease-out);
 }
 
@@ -530,6 +531,11 @@
   min-width: 0;
   padding: 0 var(--space-3);
   transition: var(--t-hover);
+}
+
+/* The kit sets it one step quieter than the label beside it. */
+.suiteRunGlyph {
+  color: var(--text-tertiary);
 }
 
 .suiteRun:hover {

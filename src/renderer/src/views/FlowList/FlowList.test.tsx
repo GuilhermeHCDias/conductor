@@ -255,6 +255,47 @@ describe('the draft row', () => {
 });
 
 describe('the context menus', () => {
+  /**
+   * Adherence criterion 1 — the kit sizes each of the sidebar's three menus
+   * to what it holds rather than letting them all take the DS default.
+   */
+  /** The header's "+" opens on a plain click; a row's menu on a right-click.
+   * Each case names its own gesture — the width is asserted, never consulted. */
+  const openByClick = async (element: HTMLElement): Promise<void> => {
+    await userEvent.click(element);
+  };
+  const openByRightClick = async (element: HTMLElement): Promise<void> => {
+    await userEvent.pointer({ keys: '[MouseRight]', target: element });
+  };
+
+  it.each([
+    [
+      'the new-flow-or-folder menu',
+      188,
+      () => screen.getByRole('button', { name: /^New flow or folder/ }),
+      openByClick,
+    ],
+    [
+      'a flow row’s menu',
+      196,
+      () => screen.getByRole('button', { name: /pix\.yaml/ }),
+      openByRightClick,
+    ],
+    [
+      'a folder row’s menu',
+      206,
+      () => screen.getByRole('button', { name: /^checkout/ }),
+      openByRightClick,
+    ],
+  ])('opens %s at %ipx', async (_label, width, target, open) => {
+    seedIndex(['checkout/pix.yaml'], ['checkout']);
+    render(<FlowList />);
+
+    await open(target());
+
+    expect(screen.getByRole('menu')).toHaveStyle({ width: `${width}px` });
+  });
+
   /** Criterion 25 — the flow row's menu, exactly, with Run now gated. */
   it('offers the flow commands, Run now disabled with no device', async () => {
     seedIndex(['pix.yaml']);

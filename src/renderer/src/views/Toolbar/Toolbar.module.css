@@ -76,6 +76,11 @@
   background: var(--glass-hover);
 }
 
+/* The kit sets these one step quieter than the label between them. */
+.environmentGlyph {
+  color: var(--text-tertiary);
+}
+
 .environment:focus-visible,
 .run:focus-visible {
   box-shadow: var(--glow-accent);

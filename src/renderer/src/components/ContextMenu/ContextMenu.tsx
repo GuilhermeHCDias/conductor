@@ -43,12 +43,18 @@ export type ContextMenuProps = {
   /** Criterion 27 — shown above the commands when the selector is fragile. */
   readonly warning?: string;
   readonly items: readonly ContextMenuItem[];
+  /** The kit sizes each menu to what it holds — the command menu takes the
+   * DS default, the sidebar's three take 188, 196 and 206. */
+  readonly width?: number;
   readonly onSelect: (id: string) => void;
   readonly onClose: () => void;
 };
 
 /** The breathing room the menu keeps from every window edge. */
 const EDGE_MARGIN = 8;
+
+/** `surface/ContextMenu`'s own `width = 232`, and what the command menu takes. */
+const MENU_WIDTH = 232;
 
 /** Where the menu actually opens: at the cursor while that fits, flipped to
  * the cursor's left when the right edge would clip it, slid up from the bottom
@@ -76,6 +82,7 @@ export function ContextMenu({
   title,
   warning,
   items,
+  width = MENU_WIDTH,
   onSelect,
   onClose,
 }: ContextMenuProps): JSX.Element {
@@ -168,6 +175,7 @@ export function ContextMenu({
         style={{
           left: placed?.x ?? x,
           top: placed?.y ?? y,
+          width,
           // The spring grows out of the corner the cursor is in, so a flipped
           // menu still reads as opening from the click.
           transformOrigin: placed?.flippedX === true ? 'top right' : undefined,

@@ -40,6 +40,24 @@ function renderMenu(over: Partial<Parameters<typeof ContextMenu>[0]> = {}): {
 }
 
 describe('ContextMenu', () => {
+  /**
+   * The kit sizes each menu to what it holds — `CCommandMenu` takes the DS
+   * default, the sidebar's three take 188, 196 and 206. Adherence criterion 1.
+   */
+  describe('width', () => {
+    it('takes the design system’s 232 when the caller names none', () => {
+      renderMenu();
+
+      expect(screen.getByRole('menu')).toHaveStyle({ width: '232px' });
+    });
+
+    it('takes the width the caller gives it', () => {
+      renderMenu({ width: 196 });
+
+      expect(screen.getByRole('menu')).toHaveStyle({ width: '196px' });
+    });
+  });
+
   it('opens at the cursor as a menu titled with the element', () => {
     renderMenu();
     const menu = screen.getByRole('menu');

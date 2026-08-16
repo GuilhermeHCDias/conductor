@@ -1,5 +1,4 @@
 import { type JSX, type KeyboardEvent, useEffect, useRef, useState } from 'react';
-import { EmptyState } from '../../components/EmptyState/EmptyState';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
@@ -280,24 +279,25 @@ export function FlowEditor(): JSX.Element {
 
       <div className={`${styles.body} a-scroll`}>
         {openPath === null ? (
-          /* Criterion 35 — the editor column's own zero-state. */
-          <EmptyState
-            action={
-              <button
-                className={styles.emptyAction}
-                onClick={() => {
-                  startDraft('flow', '');
-                }}
-                type="button"
-              >
-                <Icon name="plus" size={12} />
-                New flow
-              </button>
-            }
-            description="Pick a flow in the sidebar, or start a new one."
-            icon="file-code"
-            title="No flow open"
-          />
+          /* Criteria 5–7 — the kit's `CEditorColumn` empty state: one glyph,
+             one caption, one action. No body, no gutter and no caret behind
+             it — an empty state is not a file. */
+          <div className={styles.empty} data-testid="editor-empty">
+            <Icon className={styles.emptyGlyph} name="file-code" size={20} />
+            <span className={styles.emptyText}>
+              No flow open. Pick one in the sidebar, or create the first one.
+            </span>
+            <button
+              className={styles.emptyAction}
+              onClick={() => {
+                startDraft('flow', '');
+              }}
+              type="button"
+            >
+              <Icon className={styles.emptyActionGlyph} name="plus" size={12} />
+              New flow
+            </button>
+          </div>
         ) : (
           <YamlBody />
         )}

@@ -436,19 +436,55 @@ describe('FlowEditor', () => {
     });
   });
 
-  /** Criterion 35 — the editor column's own empty state. */
+  /**
+   * Criteria 5–7 of the adherence spec — the editor column's empty state,
+   * composed as the kit's `CEditorColumn` composes it: one glyph, one
+   * caption, one action.
+   */
   describe('with no flow open', () => {
     beforeEach(() => {
       useFlowStore.setState({ openPath: null, yaml: '' });
     });
 
-    it('shows the empty state with a New flow action instead of the editor', async () => {
+    /** Criterion 5 — the kit's caption, in one sentence. */
+    it('states what to do next in the kit’s words', () => {
+      render(<FlowEditor />);
+
+      expect(
+        screen.getByText('No flow open. Pick one in the sidebar, or create the first one.'),
+      ).toBeInTheDocument();
+    });
+
+    /**
+     * Criterion 5 resolved: the glyph is 20, not the 18 the criterion floated
+     * — 20 is both the kit's own value and the `md` step of the app's
+     * `EmptyState`. Pinned because it is a decision, not an accident.
+     */
+    it('draws the file glyph at the kit’s 20', () => {
+      render(<FlowEditor />);
+
+      const glyph = screen.getByTestId('editor-empty').querySelector('svg');
+
+      expect(glyph).toHaveAttribute('width', '20');
+      expect(glyph).toHaveAttribute('height', '20');
+    });
+
+    /** Criterion 6 — an empty state is not a file: no body, no gutter, no
+     * caret. */
+    it('draws no editor behind it', () => {
       render(<FlowEditor />);
 
       expect(screen.queryByRole('textbox', { name: 'Flow YAML' })).not.toBeInTheDocument();
-      expect(screen.getByText('No flow open')).toBeInTheDocument();
+      expect(screen.queryByTestId('yaml-gutter-1')).not.toBeInTheDocument();
+      expect(screen.queryByTestId('yaml-line-1')).not.toBeInTheDocument();
+    });
+
+    /** Criterion 7 — the same store action the sidebar's own button calls. */
+    it('starts a new flow through the sidebar’s own action', async () => {
+      render(<FlowEditor />);
 
       await userEvent.click(screen.getByRole('button', { name: 'New flow' }));
+
       expect(flow().draft).toMatchObject({ kind: 'flow', folder: '' });
     });
   });

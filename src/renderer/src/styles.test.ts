@@ -173,8 +173,14 @@ describe('motion', () => {
   // rule intends: no clock is a number, each is a multiple of `--dur-lazy`,
   // which reduced motion sets to 0ms — the animation is dead at the token
   // before the global `!important` is even consulted.
+  // ⏸️ Amended by the adherence audit: `--dur-fast` joins the entrance clocks
+  // for `cd-menu-in` alone, because `CRepoPopover` springs in on it. The other
+  // two keep the clocks they had, so a drift onto `--dur-fast` still fails
+  // here. The rule this guard protects is unchanged either way — the clock is
+  // a token, so reduced motion still zeroes it.
   const ANIMATIONS = [
-    /cd-(fade-in|menu-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)/,
+    /cd-menu-in var\(--dur-(fast|base)\) var\(--ease-(out|spring|glass)\)/,
+    /cd-(fade-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)/,
     /cd-spin var\(--dur-lazy\) linear infinite/,
     /(cd-pulse|cd-shimmer|note-sweep) calc\(var\(--dur-lazy\) \* \d+\) (linear|var\(--ease-in-out\)) infinite/,
   ];
@@ -551,6 +557,143 @@ describe('what the criteria name', () => {
       'transform: scale(calc(1 / var(--fit-scale, 1)))',
     );
     expect(rule(mirror, '.highlight')).toContain('calc(var(--border-thick) / var(--fit-scale, 1))');
+  });
+});
+
+/**
+ * The 2026-08-15 adherence audit. Each of these is a value the app had drifted
+ * from — the kit's `CShell.jsx` / `CRegions.jsx` / `CRepo.jsx` inline styles
+ * are the source for every one of them, and the pin is what stops the drift
+ * coming back.
+ */
+describe('what the kit fixes', () => {
+  const toolbar = cssOf('views/Toolbar/Toolbar.module.css');
+  const editor = cssOf('views/FlowEditor/FlowEditor.module.css');
+  const flowList = cssOf('views/FlowList/FlowList.module.css');
+  const connect = cssOf('views/Connect/Connect.module.css');
+
+  /**
+   * Criteria 5–7 — `CEditorColumn`'s empty state: a bare glyph over one
+   * caption over one recessed action. No chip and no title, so it cannot be
+   * the DS `EmptyState`; the glyph is 20 because that is what the kit draws
+   * *and* what the app's own `EmptyState` scale would have given.
+   */
+  describe('the editor’s empty state', () => {
+    it('centres a glyph, a caption and an action on the kit’s gap', () => {
+      const empty = rule(editor, '.empty');
+
+      expect(empty).toContain('gap: 10px');
+      expect(empty).toContain('padding: var(--space-9)');
+      expect(empty).toContain('place-items: center');
+      expect(empty).toContain('align-content: center');
+    });
+
+    it('greys the glyph and quiets the caption', () => {
+      expect(rule(editor, '.emptyGlyph')).toContain('color: var(--text-disabled)');
+
+      const text = rule(editor, '.emptyText');
+      expect(text).toContain('font: var(--type-caption)');
+      expect(text).toContain('color: var(--text-tertiary)');
+    });
+
+    /**
+     * The action is recessed, not filled: the window keeps exactly one
+     * saturated control and it is Run. The accent survives as the glyph.
+     */
+    it('recesses the New flow action into the well, accent only on its glyph', () => {
+      const action = rule(editor, '.emptyAction');
+
+      expect(action).toContain('background: var(--a-well)');
+      expect(action).toContain('border: 1px solid var(--a-hair)');
+      expect(action).toContain('border-radius: var(--a-radius-field)');
+      expect(action).toContain('color: var(--text-primary)');
+      expect(action).toContain('font: var(--type-caption)');
+      expect(action).toContain('height: 26px');
+      expect(action).toContain('padding: 0 11px');
+      expect(rule(editor, '.emptyActionGlyph')).toContain('color: var(--accent)');
+    });
+  });
+
+  /**
+   * The kit colours these glyphs one step quieter than the label beside them.
+   * Inheriting the control's own colour — which is what happens when an icon
+   * carries no class — made both a shade too loud.
+   */
+  it.each([
+    ['the environment chip’s glyphs', () => rule(toolbar, '.environmentGlyph')],
+    ['the suite-run glyph', () => rule(flowList, '.suiteRunGlyph')],
+  ])('quiets %s to --text-tertiary', (_label, declarations) => {
+    expect(declarations()).toContain('color: var(--text-tertiary)');
+  });
+
+  /**
+   * `CConnectWindow`'s top strip is chrome with a hairline under it, the same
+   * material the workspace's toolbar takes — not a bare, invisible drag
+   * handle. The body's 26px of head room is the kit's too.
+   */
+  describe('the connect window', () => {
+    it('paints its top strip in the chrome material, hairline beneath', () => {
+      const drag = rule(connect, '.drag');
+
+      expect(drag).toContain('background: var(--a-chrome)');
+      expect(drag).toContain('border-bottom: 1px solid var(--a-hair)');
+    });
+
+    it('opens the body on the kit’s head room', () => {
+      expect(rule(connect, '.body')).toContain('padding: 26px 30px 24px');
+    });
+  });
+
+  /**
+   * `--grad-aurora` is the one theme-independent surface in the window, so
+   * what sits on it cannot be a theme token: `--text-inverse` is white in
+   * Aurora and near-black in Aurora dark, which put a dark initial on a light
+   * mint gradient after dark. `CRepo.jsx` hardcodes white on both tiles for
+   * exactly this reason, the way `.phone` hardcodes its own palette.
+   */
+  it.each([
+    ['the sidebar’s repo tile', 'views/RepoBar/RepoBar.module.css', ['.tile']],
+    [
+      'the switcher’s active tile',
+      'components/RepoPopover/RepoPopover.module.css',
+      // The switcher paints the colour on the active row, not on the bare tile.
+      ['.tile', '.row[data-active="true"] .tile'],
+    ],
+  ])('paints %s initial a fixed white, never a theme token', (_label, file, selectors) => {
+    const css = cssOf(file);
+    const declarations = selectors.map((selector) => rule(css, selector)).join('');
+
+    expect(declarations).toContain('color: oklch(100% 0 0)');
+    expect(declarations).not.toContain('var(--text-inverse)');
+  });
+
+  /** `CRepo.jsx`'s mark carries the refract highlight over its drop shadow;
+   * only the glyph inside it was swapped for the real app icon. */
+  it('keeps the refract on the connect mark', () => {
+    expect(rule(connect, '.mark')).toContain('box-shadow: var(--shadow-2), var(--a-refract)');
+  });
+
+  /** `CFolderRow` insets its trailing cell by 6, the same as a flow row —
+   * the app had folders at 5 and flows at 6. */
+  it('insets a folder row’s trailing cell like a flow row’s', () => {
+    expect(rule(flowList, '.folderRow')).toContain('padding-right: 6px');
+    expect(rule(flowList, '.row')).toContain('padding-right: 6px');
+  });
+
+  /** `CRepoPopover`'s own two numbers — it is not the DS menu, and had been
+   * built to the DS menu's 4px inset and `--dur-base` entrance instead. */
+  describe('the repo switcher', () => {
+    const popover = rule(cssOf('components/RepoPopover/RepoPopover.module.css'), '.menu');
+
+    /** 6 is `--space-3`, so it is spelled as the token: the "no hardcoded
+     * design values" rule reserves pixel literals for off-scale numbers. */
+    it('insets its rows by 6, not by the command menu’s 4', () => {
+      expect(popover).toContain('padding: var(--space-3)');
+    });
+
+    it('springs in on the kit’s faster clock', () => {
+      expect(popover).toContain('animation: cd-menu-in var(--dur-fast) var(--ease-out)');
+    });
   });
 });
 

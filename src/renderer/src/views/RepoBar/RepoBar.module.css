@@ -39,12 +39,16 @@
   outline: none;
 }
 
-/* The app initial on the aurora tile — the criterion's own words. */
+/* The app initial on the aurora tile — the criterion's own words. The gradient
+   is theme-independent, so what sits on it cannot be a theme token:
+   `--text-inverse` goes near-black in Aurora dark, which would put a dark
+   letter on a light mint field. The kit hardcodes white here for that reason,
+   the way the phone hardcodes its own palette. */
 .tile {
   background: var(--grad-aurora);
   border-radius: 6px;
   box-shadow: var(--a-refract);
-  color: var(--text-inverse);
+  color: oklch(100% 0 0);
   display: grid;
   font: var(--type-body-strong);
   height: 22px;

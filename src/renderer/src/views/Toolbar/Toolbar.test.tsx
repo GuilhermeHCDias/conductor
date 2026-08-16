@@ -1,3 +1,4 @@
+import type { ConnectedRepo } from '@shared/ipc';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -5,6 +6,7 @@ import { ENVIRONMENT } from '../../fixtures/flows';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetPublishStore, usePublishStore } from '../../stores/publish.store';
+import { resetRepoStore, useRepoStore } from '../../stores/repo.store';
 import { resetRunStore, useRunStore } from '../../stores/run.store';
 import {
   APPEARANCE_KEY,
@@ -30,6 +32,24 @@ function connectDevice(): void {
 /** One command, like the flow the shell used to seed from the fixture. */
 const FLOW_YAML = 'appId: com.example.app\n---\n- launchApp:\n    clearState: true\n';
 
+/** The repo the toolbar names when no flow is open (criterion 9). The window
+ * only shows a toolbar once one is active, so every render here has one. */
+const REPO: ConnectedRepo = {
+  url: 'https://github.com/loja-verde/pnp-fast-mode',
+  org: 'loja-verde',
+  name: 'pnp-fast-mode',
+  slug: 'pnp-slug',
+  appName: 'PnP Fast Mode',
+  appId: { android: 'com.lojaverde.pnp', ios: null },
+  branch: 'main',
+  flowCount: 4,
+  connectedAt: '2026-08-06T12:00:00.000Z',
+};
+
+function connectRepo(repo: ConnectedRepo = REPO): void {
+  useRepoStore.setState({ repos: [repo], active: repo.slug, loaded: true });
+}
+
 beforeEach(() => {
   localStorage.clear();
   resetUiStore();
@@ -37,6 +57,8 @@ beforeEach(() => {
   resetFlowStore();
   resetRunStore();
   resetPublishStore();
+  resetRepoStore();
+  connectRepo();
   useFlowStore.setState({ openPath: 'teste.yaml', yaml: FLOW_YAML });
 });
 
@@ -100,17 +122,44 @@ describe('Toolbar', () => {
     expect(screen.queryByText('teste.yaml')).not.toBeInTheDocument();
   });
 
-  /** Criterion 35 — with nothing open the title says so, and Run stays
-   * disabled through its own empty-flow guard. */
-  it('goes quiet when no flow is open', () => {
-    connectDevice();
-    act(() => {
+  /**
+   * Criteria 9–10 of the adherence spec — with nothing open, the window is
+   * titled by the project it is pointed at, the way the kit's `CToolbar`
+   * titles it. Run stays disabled through its own empty-flow guard.
+   */
+  describe('with no flow open', () => {
+    beforeEach(() => {
       useFlowStore.setState({ openPath: null, yaml: '' });
     });
-    render(<Toolbar />);
 
-    expect(screen.getByText('No flow open')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+    it('titles the window with the active repo and its address', () => {
+      render(<Toolbar />);
+
+      expect(screen.getByText('pnp-fast-mode')).toBeInTheDocument();
+      expect(screen.getByText('loja-verde/pnp-fast-mode · main')).toBeInTheDocument();
+    });
+
+    it('says only the address when the repo reports no branch', () => {
+      connectRepo({ ...REPO, branch: null });
+      render(<Toolbar />);
+
+      expect(screen.getByText('loja-verde/pnp-fast-mode')).toBeInTheDocument();
+    });
+
+    /** Criterion 9 — the old placeholder is gone from every state. */
+    it('renders no “—” placeholder subtitle', () => {
+      render(<Toolbar />);
+
+      expect(screen.queryByText('—')).not.toBeInTheDocument();
+      expect(screen.queryByText('No flow open')).not.toBeInTheDocument();
+    });
+
+    it('leaves Run disabled', () => {
+      connectDevice();
+      render(<Toolbar />);
+
+      expect(screen.getByRole('button', { name: 'Run' })).toBeDisabled();
+    });
   });
 
   it('toggles the sidebar', async () => {
