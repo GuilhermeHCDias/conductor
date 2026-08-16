@@ -21,7 +21,7 @@
   box-shadow: var(--a-refract), var(--shadow-window);
   display: grid;
   gap: 2px;
-  padding: 6px;
+  padding: var(--space-3);
   position: fixed;
   width: 282px;
   z-index: 71;

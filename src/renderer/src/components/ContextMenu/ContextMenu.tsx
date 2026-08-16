@@ -54,7 +54,7 @@ export type ContextMenuProps = {
 const EDGE_MARGIN = 8;
 
 /** `surface/ContextMenu`'s own `width = 232`, and what the command menu takes. */
-export const MENU_WIDTH = 232;
+const MENU_WIDTH = 232;
 
 /** Where the menu actually opens: at the cursor while that fits, flipped to
  * the cursor's left when the right edge would clip it, slid up from the bottom

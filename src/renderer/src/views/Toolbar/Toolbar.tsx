@@ -4,6 +4,7 @@ import { IconButton } from '../../components/IconButton/IconButton';
 import { SendControl } from '../../components/SendControl/SendControl';
 import { Tooltip } from '../../components/Tooltip/Tooltip';
 import { ENVIRONMENT } from '../../fixtures/flows';
+import { documentTitle } from '../../lib/document-title';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
 import { selectOpenName, selectYaml, useFlowStore } from '../../stores/flow.store';
@@ -52,24 +53,9 @@ export function Toolbar(): JSX.Element {
   // a device that dropped mid-run must not lock the person out of canceling.
   const runDisabled = !running && (deviceId === null || yaml.trim() === '');
 
-  /**
-   * Criteria 8–9. A document names itself and reports its own state; with
-   * nothing open the window falls back to the project, exactly as the kit's
-   * `CToolbar` does — never a bare "—", which said nothing about anything.
-   * The repo is always there in the app (no repo means the connect window,
-   * which draws no toolbar); the empty strings only exist so the component
-   * is total.
-   */
-  const title = openName ?? repo?.name ?? '';
-  const address = repo === null ? '' : `${repo.org}/${repo.name}`;
-  const subtitle =
-    openName !== null
-      ? `${commandCount} ${commandCount === 1 ? 'command' : 'commands'} · ${
-          running ? 'running' : 'saved on this Mac'
-        }`
-      : repo?.branch == null
-        ? address
-        : `${address} · ${repo.branch}`;
+  // Criteria 8–9 — the whole title decision is `lib/document-title.ts`'s, so
+  // it can be read without mounting the toolbar.
+  const { title, subtitle } = documentTitle({ openName, commandCount, running, repo });
 
   const onRunClick = (): void => {
     if (running) {

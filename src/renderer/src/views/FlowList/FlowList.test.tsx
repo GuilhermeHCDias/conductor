@@ -259,24 +259,39 @@ describe('the context menus', () => {
    * Adherence criterion 1 — the kit sizes each of the sidebar's three menus
    * to what it holds rather than letting them all take the DS default.
    */
+  /** The header's "+" opens on a plain click; a row's menu on a right-click.
+   * Each case names its own gesture — the width is asserted, never consulted. */
+  const openByClick = async (element: HTMLElement): Promise<void> => {
+    await userEvent.click(element);
+  };
+  const openByRightClick = async (element: HTMLElement): Promise<void> => {
+    await userEvent.pointer({ keys: '[MouseRight]', target: element });
+  };
+
   it.each([
     [
       'the new-flow-or-folder menu',
       188,
-      async () => screen.getByRole('button', { name: /^New flow or folder/ }),
+      () => screen.getByRole('button', { name: /^New flow or folder/ }),
+      openByClick,
     ],
-    ['a flow row’s menu', 196, async () => screen.getByRole('button', { name: /pix\.yaml/ })],
-    ['a folder row’s menu', 206, async () => screen.getByRole('button', { name: /^checkout/ })],
-  ])('opens %s at %ipx', async (_label, width, target) => {
+    [
+      'a flow row’s menu',
+      196,
+      () => screen.getByRole('button', { name: /pix\.yaml/ }),
+      openByRightClick,
+    ],
+    [
+      'a folder row’s menu',
+      206,
+      () => screen.getByRole('button', { name: /^checkout/ }),
+      openByRightClick,
+    ],
+  ])('opens %s at %ipx', async (_label, width, target, open) => {
     seedIndex(['checkout/pix.yaml'], ['checkout']);
     render(<FlowList />);
 
-    const element = await target();
-    if (width === 188) {
-      await userEvent.click(element);
-    } else {
-      await userEvent.pointer({ keys: '[MouseRight]', target: element });
-    }
+    await open(target());
 
     expect(screen.getByRole('menu')).toHaveStyle({ width: `${width}px` });
   });

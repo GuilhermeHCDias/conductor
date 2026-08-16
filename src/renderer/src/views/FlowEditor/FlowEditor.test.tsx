@@ -443,6 +443,20 @@ describe('FlowEditor', () => {
       ).toBeInTheDocument();
     });
 
+    /**
+     * Criterion 5 resolved: the glyph is 20, not the 18 the criterion floated
+     * — 20 is both the kit's own value and the `md` step of the app's
+     * `EmptyState`. Pinned because it is a decision, not an accident.
+     */
+    it('draws the file glyph at the kit’s 20', () => {
+      render(<FlowEditor />);
+
+      const glyph = screen.getByTestId('editor-empty').querySelector('svg');
+
+      expect(glyph).toHaveAttribute('width', '20');
+      expect(glyph).toHaveAttribute('height', '20');
+    });
+
     /** Criterion 6 — an empty state is not a file: no body, no gutter, no
      * caret. */
     it('draws no editor behind it', () => {

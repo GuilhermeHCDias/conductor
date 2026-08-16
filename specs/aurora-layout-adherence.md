@@ -400,11 +400,16 @@ a fix rather than a record. Each is pinned in `styles.test.ts` or in a view test
 | Connect's top strip | bare drag region | `--a-chrome` with a hairline under it |
 | Connect's body | `padding: 14px 30px 24px` | `padding: 26px 30px 24px` |
 | Context-menu widths | 232 everywhere | 188 new-flow · 196 flow row · 206 folder row · 232 command menu |
-| Repo switcher popover | `padding: 4px`, `cd-menu-in var(--dur-base)` | `padding: 6px`, `cd-menu-in var(--dur-fast)` — `CRepoPopover`'s own two numbers, not the DS menu's |
+| Repo switcher popover | `var(--space-2)`, `cd-menu-in var(--dur-base)` | `var(--space-3)` (the kit's 6), `cd-menu-in var(--dur-fast)` — `CRepoPopover`'s own two numbers, not the DS menu's. 6 is on the spacing scale, so it is spelled as the token |
 | Repo tiles, both of them | `color: var(--text-inverse)` | `color: oklch(100% 0 0)` — the kit's own literal. `--text-inverse` goes near-black in Aurora dark, and `--grad-aurora` does not theme, so the initial was turning dark on a light mint field |
 | Connect mark | `box-shadow: var(--shadow-2)` | `box-shadow: var(--shadow-2), var(--a-refract)` |
 | Folder row's trailing inset | `padding-right: 5px` | `padding-right: 6px`, the same as a flow row's |
 
 `styles.test.ts`'s motion guard gained `--dur-fast` as an allowed entrance clock for the last
-of those. What that guard protects is untouched: the clock is still a token, so reduced motion
+of those — for `cd-menu-in` alone, so `cd-fade-in` and `cd-dialog-in` still fail if they drift
+onto it. What that guard protects is untouched: the clock is still a token, so reduced motion
 zeroes it like every other.
+
+The toolbar's title and subtitle are derived by `lib/document-title.ts` rather than inside the
+view, per AGENTS.md's renderer ladder — formatting is `lib/`'s row, and the decision is read
+without mounting a toolbar.

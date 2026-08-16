@@ -174,10 +174,13 @@ describe('motion', () => {
   // which reduced motion sets to 0ms — the animation is dead at the token
   // before the global `!important` is even consulted.
   // ⏸️ Amended by the adherence audit: `--dur-fast` joins the entrance clocks
-  // because `CRepoPopover` springs in on it. The rule this guard protects is
-  // unchanged — the clock is a token, so reduced motion still zeroes it.
+  // for `cd-menu-in` alone, because `CRepoPopover` springs in on it. The other
+  // two keep the clocks they had, so a drift onto `--dur-fast` still fails
+  // here. The rule this guard protects is unchanged either way — the clock is
+  // a token, so reduced motion still zeroes it.
   const ANIMATIONS = [
-    /cd-(fade-in|menu-in|dialog-in) var\(--dur-(fast|base|slow)\) var\(--ease-(out|spring|glass)\)/,
+    /cd-menu-in var\(--dur-(fast|base)\) var\(--ease-(out|spring|glass)\)/,
+    /cd-(fade-in|dialog-in) var\(--dur-(base|slow)\) var\(--ease-(out|spring|glass)\)/,
     /cd-spin var\(--dur-lazy\) linear infinite/,
     /(cd-pulse|cd-shimmer|note-sweep) calc\(var\(--dur-lazy\) \* \d+\) (linear|var\(--ease-in-out\)) infinite/,
   ];
@@ -649,11 +652,16 @@ describe('what the kit fixes', () => {
    * exactly this reason, the way `.phone` hardcodes its own palette.
    */
   it.each([
-    ['the sidebar’s repo tile', 'views/RepoBar/RepoBar.module.css', '.tile'],
-    ['the switcher’s active tile', 'components/RepoPopover/RepoPopover.module.css', '.tile'],
-  ])('paints %s initial a fixed white, never a theme token', (_label, file, selector) => {
+    ['the sidebar’s repo tile', 'views/RepoBar/RepoBar.module.css', ['.tile']],
+    [
+      'the switcher’s active tile',
+      'components/RepoPopover/RepoPopover.module.css',
+      // The switcher paints the colour on the active row, not on the bare tile.
+      ['.tile', '.row[data-active="true"] .tile'],
+    ],
+  ])('paints %s initial a fixed white, never a theme token', (_label, file, selectors) => {
     const css = cssOf(file);
-    const declarations = rule(css, selector) + rule(css, '.row[data-active="true"] .tile');
+    const declarations = selectors.map((selector) => rule(css, selector)).join('');
 
     expect(declarations).toContain('color: oklch(100% 0 0)');
     expect(declarations).not.toContain('var(--text-inverse)');
@@ -677,8 +685,10 @@ describe('what the kit fixes', () => {
   describe('the repo switcher', () => {
     const popover = rule(cssOf('components/RepoPopover/RepoPopover.module.css'), '.menu');
 
+    /** 6 is `--space-3`, so it is spelled as the token: the "no hardcoded
+     * design values" rule reserves pixel literals for off-scale numbers. */
     it('insets its rows by 6, not by the command menu’s 4', () => {
-      expect(popover).toContain('padding: 6px');
+      expect(popover).toContain('padding: var(--space-3)');
     });
 
     it('springs in on the kit’s faster clock', () => {
