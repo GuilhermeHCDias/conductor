@@ -88,6 +88,49 @@ export type FlowRun = {
 export type SyntaxCheck = { readonly ok: true } | { readonly ok: false; readonly message: string };
 
 /**
+ * Why there is no video (recording criteria 4, 14, 15). `record`: the
+ * device-side recorder died on its own before the run ended — there never
+ * was a usable file. `save`: there was, and it could not be handed over —
+ * the stop timed out, the pull failed, or a quit cut it short. The caller
+ * phrases each for the person; the detail is the OS's or the tool's own
+ * words. Part of the contract, so a `RemoteGateway` can throw the same class.
+ */
+export class RecordingFailedError extends Error {
+  readonly phase: 'record' | 'save';
+
+  constructor(phase: 'record' | 'save', detail: string) {
+    super(detail);
+    this.name = 'RecordingFailedError';
+    this.phase = phase;
+  }
+}
+
+/**
+ * A recording in progress, from above the Gateway. Two ways to end it and
+ * one emergency exit — each idempotent, and none of them names the device's
+ * filesystem: the caller only ever hands over a host path (§10.1 rules 2, 6).
+ */
+export type RecordingSession = {
+  /** When the device was asked to start — the zero of criterion 13's offset. */
+  readonly startedAt: number;
+  /**
+   * Stops the recorder, waits for its file to be finalised, pulls it into
+   * `hostPath` and removes the device-side copy. Answers when the recording
+   * stopped. Rejects with `RecordingFailedError`.
+   */
+  save: (hostPath: string) => Promise<{ stoppedAt: number }>;
+  /** Stops the recorder and removes its file, pulling nothing. Never rejects. */
+  discard: () => Promise<void>;
+  /**
+   * `before-quit`'s exit: kills the local shell at once — the device hangs
+   * the recorder up on its own — and cuts a pull in flight short, so nothing
+   * of ours outlives the app. What is on the device is removed by the
+   * `discard` that follows, best-effort.
+   */
+  abort: () => void;
+};
+
+/**
  * The one door to everything Conductor knows about a device (.context.md
  * §4.3.7). Services depend on this interface, never on the implementation, so
  * the day execution moves to a remote runner there is one seam to replace
@@ -151,6 +194,23 @@ export interface MaestroGateway {
    * holds the exclusion: `RunService` suspends captures before calling this.
    */
   runFlow(deviceId: string, flowPath: string, handlers: RunFlowHandlers): FlowRun;
+  /**
+   * Records the device's screen until the session is saved or discarded
+   * (recording criteria 2, 33). `name` is the caller's label for the
+   * recording — the run's id — and is opaque here like `deviceId` is. The
+   * video leaves the Gateway as a write into a host path the caller names
+   * on `save`, or as bytes one day — never as a device path (§10.1 rules 2,
+   * 6): the device may share no filesystem with us.
+   *
+   * ⚠️ Like the screenshot, it never goes through Maestro (§12 rule 13 as
+   * amended): Maestro's own recorder is 100 kbps and cloud-gated; the OS
+   * records at a bitrate we choose, with no edit to the flow.
+   *
+   * Rejects when the recorder cannot start — no adb — and the run proceeds
+   * regardless (recording criterion 1); a recorder the device refuses after
+   * the spawn reports through the session instead.
+   */
+  startRecording(deviceId: string, name: string): Promise<RecordingSession>;
   /**
    * §4.2's publication gate (publish criterion 19): validates one flow file's
    * syntax and answers the verdict. A parse, not a run — it touches no device,

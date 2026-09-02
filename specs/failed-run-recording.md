@@ -1,6 +1,6 @@
 # Failed-run screen recording
 
-status: todo
+status: done
 created: 2026-09-02
 
 ## Goal
@@ -281,3 +281,94 @@ Maestro's log, and the picture is gone.
   over USB; a device that takes longer is a device that is not answering.
 - **`error` codes**: two new ones, `run/recording-missing` and `run/recording-open-failed`;
   save failures travel as a value in the event, not a code, like every mid-run failure.
+- **`startRecording(deviceId, name)`** (implementation): the Gateway method takes the run id
+  as the recording's name, because the device-side file must carry it (criterion 2) and the
+  Gateway cannot invent one that matches the run. It is opaque there, like `deviceId`.
+- **The recorder resolves at spawn; an early death is kept as the cause** (implementation):
+  waiting to learn whether `screenrecord` refuses would delay every `maestro test` spawn.
+  The session records the child's exit and its stderr; a non-zero exit *before* the stop
+  was asked for is a `record`-phase failure ("This run wasn't recorded: <last stderr
+  line>."), reported when the failed run's save finds out (criteria 4, 15). An exit that
+  follows the stop is the stop, whatever code it carries — the device's shell may report
+  our own SIGINT as 130.
+- **The stop is `pkill -INT -f 'conductor-recording-<runId>[.]mp4'`** (implementation): the
+  `[.]` matches the literal dot in `screenrecord`'s command line and nothing in the command
+  line of the shell running `pkill` itself — the classic way to keep a `pkill -f` from
+  signalling itself. The signal is best effort; the wait for the shell's exit is what tells
+  the truth, and the deadline keeps it honest. No `killall` anywhere (the module test pins
+  it).
+- **One 20-second budget from the exit** (`RECORDING_SETTLE_TIMEOUT_MS`), spent across the
+  stop and the pull, with a 1-second floor for the pull; a device that does not stop the
+  recorder in time has its local `adb shell` killed (the device hangs the recorder up on
+  SIGHUP) and the save reports "did not stop the recording in time" (criteria 5, 14).
+- **`abort()` is the recorder's `before-quit` exit** (implementation): kills the local shell
+  at once and cancels a pull in flight through the `AbortSignal` `AdbBridge.pull` now
+  accepts, so `RunService.dispose()` — async now, awaited by the composition root's
+  `disposeServices` — settles in milliseconds and leaves no child and no `.partial`
+  (criterion 21). `AdbRunner` widened with optional `RunOptions` for the pull's deadline and
+  signal; `AdbBridge` grew `pull` and `apiLevel` (`ro.build.version.sdk`, `null` when unread).
+- **Keep/discard evidence**: "a step had started" counts any step event, a verdict without
+  its start included — the device did something either way (criteria 8–9).
+- **The store's shape** (implementation): `recording: { status: 'saving' } | { status:
+  'saved', fileName, fromSeconds } | null` plus `recordingNote: string | null` for criteria
+  25–26. An open refusal keeps the action (the OS may open it on the next try) and shows the
+  note; a refusal that lands after the next run started is dropped, like a late event.
+  `formatClock` moved to `lib/clock.ts`, shared by the step duration and the caption.
+- **The failed row's third column** (implementation): the kit's `auto` column holds
+  `[▶ Open video] from m:ss · duration`, the action styled as the DS ghost button at the
+  kit's pill height (26 px); the note takes `flex-basis: 100%` so it sits beneath the
+  outcome label in the message's own treatment.
+- **The sidebar's "Run now" passes the flow's path too** (implementation): criterion 31 names
+  the Toolbar, but `FlowList` also starts runs, and a video named `flow` for a run started
+  from the sidebar would be wrong.
+- **`run:open-recording` answers `{ runId }`** (implementation), like `run:cancel`; an
+  unknown run id gets the same code and message as a missing file (criterion 19 leaves the
+  wording open). The event's `fileName` schema refuses path separators — a name, never a
+  path.
+- **After a fresh-eyes verification pass** (implementation, 2026-09-02) — five findings fixed
+  and tested: (1) a quit landing while `start` was still awaiting the gate, the temp file or
+  the recorder could let a recorder come up under a `dispose` that had already resolved —
+  `start` now re-checks `disposed` after every await and refuses itself, `dispose` cuts the
+  active run synchronously, then waits for a start in flight, then aborts every settling
+  recording (a registry now also holds the discards behind a pass, a cancel or a refused
+  spawn); (2) the stop signal and the `rm` were untimed, so a device that stopped answering
+  could hang `adb shell pkill` before the deadline was even armed, or stall a quit behind the
+  cleanup — the signal is bounded by the remaining budget, the cleanup by a 5-second
+  `RECORDING_CLEANUP_TIMEOUT_MS`; (3) a failed pull reached the outcome bar with Conductor's
+  own command line (`adb -s … pull /sdcard/…`) — `AdbFailedError` now carries adb's words
+  alone as `detail`, and that is what the note quotes; "screenrecord exited N" became "the
+  device stopped recording (code N)"; (4) a failed run whose every parsed step passed (the
+  JVM died between steps) kept a video no row could show — the action now anchors on the
+  last row when no step reads as failed; (5) the API-level read sat untimed on the Run
+  button's path — bounded by `API_LEVEL_TIMEOUT_MS` (5 s). Also: `RecordingSession` and
+  `RecordingFailedError` moved into `MaestroGateway.ts`, the contract, so a `RemoteGateway`
+  throws the same class; `RunLog` is memoised so a recording event re-renders the failed row
+  and the bar, not the log. One deliberate exception to the no-jargon constraint: when adb is
+  missing, the note quotes the prerequisite's existing sentence ("No adb found. Install the
+  Android platform-tools, or set CONDUCTOR_ADB_PATH.") so the same condition reads the same
+  here and in the device panel.
+- **Verified in software (2026-09-02)**: `npm test` 104 files / 2770 tests (2639 before),
+  `npm run typecheck` and `npm run lint` clean. Criteria 1–6, 20–21 → `ScreenRecorder.test.ts`,
+  `run.service.test.ts`; 7–16, 22 → `run.service.test.ts`; 17–19 → `run.service.test.ts`,
+  `ipc/run.test.ts`; 23–29 → `RunPanel.test.tsx`, `run.store.test.ts`; 30–31 → `ipc.test.ts`,
+  `preload/index.test.ts`, `ipc/run.test.ts`, `Toolbar.test.tsx`, `FlowList.test.tsx`;
+  32–33 → `ScreenRecorder.test.ts` (module pins), `LocalGateway.test.ts`, Biome.
+- ⚠️ **Hardware verification is pending — do it on the Galaxy A07 before merge.** No device
+  was attached while this was implemented, so nothing below has run against a phone:
+  1. `--time-limit 0` is accepted on the A07 (Android 16, API 36) and the run records past
+     three minutes.
+  2. `adb -s <id> shell pkill -INT -f 'conductor-recording-run-1[.]mp4'` stops only our
+     `screenrecord` (a second, hand-started `screenrecord` survives), the local shell exits,
+     and the pulled MP4 plays in QuickTime — including when the device's shell reports the
+     exit as 130.
+  3. Legibility of on-screen text at 4 Mbps; adjust `RECORDING_BITRATE` if not.
+  4. Coexistence with the scrcpy mirror (two encoders on the device): the mirror keeps its
+     framerate while recording.
+  5. Stop → pull latency for a ~1-minute run stays well inside the 20-second budget.
+  6. The `[.]` pattern reaches `pkill` intact through the installed platform-tools' `adb
+     shell` argument escaping (the streaming shell already carries `CLASSPATH=` args, so
+     the same path is exercised by the mirror).
+  7. On an Android < 14 device, if one is at hand: `screenrecord` exits 0 at its 3-minute
+     cap — criterion 3 reads that exit as a clean stop, and a non-zero code there would
+     be reported as "This run wasn't recorded".
+  Record the numbers here, the way `flow-run-execution` did for the kill settle.

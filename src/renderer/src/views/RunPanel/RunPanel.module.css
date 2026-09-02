@@ -79,7 +79,62 @@
   white-space: nowrap;
 }
 
+/* The row's third column, as the kit draws it (`auto`): the duration, and on
+   the failed row the video's action and caption before it (recording
+   criteria 23–24). */
+.trail {
+  align-items: center;
+  display: inline-flex;
+  gap: var(--space-3);
+}
+
 .duration {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+}
+
+/* Recording criterion 23 — text in the action's place, nothing to click. */
+.saving {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+/* Recording criterion 24 — the DS ghost button, small, drawn inline the way
+   the kit draws its pills: transparent until hovered, the caption's type. */
+.action {
+  align-items: center;
+  background: transparent;
+  border: var(--border-hair) solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  display: inline-flex;
+  font: var(--type-caption);
+  gap: 6px;
+  height: 26px;
+  padding: 0 8px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.action:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.action:active {
+  background: var(--glass-active);
+  transform: scale(var(--press-scale));
+}
+
+/* Focus is the accent glow, never a suppressed outline. */
+.action:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+/* Recording criterion 24 — where in the video the step begins, in the
+   duration's own type. */
+.caption {
   color: var(--text-disabled);
   font: var(--type-mono-label);
 }
@@ -120,6 +175,14 @@
 
 .outcomeMessage {
   color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+/* Recording criteria 25–26 — the video's note, in the message's treatment,
+   on its own line beneath the label. */
+.outcomeNote {
+  color: var(--text-tertiary);
+  flex-basis: 100%;
   font: var(--type-caption);
 }
 
