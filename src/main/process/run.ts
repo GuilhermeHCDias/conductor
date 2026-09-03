@@ -79,6 +79,22 @@ export interface BinaryRunResult {
 }
 
 /**
+ * True for the rejection `run` produces when its `timeout` expired: execFile
+ * killed the child, which then had no exit code to report. An abort is not a
+ * timeout, nor is a binary that never started — and a process that ran and
+ * failed never rejects at all. The one place that knows execFile's shape for
+ * this, so a caller can name a deadline in plain words instead of quoting
+ * the command line the message carries.
+ */
+export function timedOut(error: unknown): boolean {
+  if (!(error instanceof Error) || error.name === 'AbortError') {
+    return false;
+  }
+  const { killed, code } = error as Error & { killed?: unknown; code?: unknown };
+  return killed === true && (code === null || code === undefined);
+}
+
+/**
  * `run`, for a child whose stdout is a payload rather than a message.
  *
  * It exists because `run` hardcodes `encoding: 'utf8'` — correct for every text

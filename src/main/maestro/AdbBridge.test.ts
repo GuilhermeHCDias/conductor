@@ -711,6 +711,25 @@ describe('reading the device’s API level', () => {
 
     await expect(bridge.apiLevel('R9QYC01EMXL')).resolves.toBeNull();
   });
+
+  /** A device that does not answer within the bound did not say either: the
+   * flag stays off and the cap stands, a video rather than a run that goes
+   * unrecorded with adb's command line as the reason. The runner's rejection
+   * is Node's, the command line in its message. */
+  it('reports null when the device does not answer in time', async () => {
+    const { bridge } = makeBridge(() =>
+      Promise.reject(
+        Object.assign(
+          new Error(
+            'Command failed: /opt/sdk/platform-tools/adb -s R9QYC01EMXL shell getprop ro.build.version.sdk',
+          ),
+          { killed: true, code: null, signal: 'SIGTERM' },
+        ),
+      ),
+    );
+
+    await expect(bridge.apiLevel('R9QYC01EMXL')).resolves.toBeNull();
+  });
 });
 
 describe('forwarding a port', () => {

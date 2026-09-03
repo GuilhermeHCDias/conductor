@@ -124,8 +124,9 @@ export type RunEvent =
        * Whether a video of this run is on its way (recording criterion 12):
        * `pending` if and only if one is being saved — a `recording` event
        * follows, the one documented exception to "the terminal event is
-       * terminal". `none` for a pass, a cancel, or a run that never reached a
-       * step.
+       * terminal". `none` for a pass, a cancel, a run that never reached a
+       * step — or a failure whose recorder never started, which is `none`
+       * followed by a `recording` event saying why (criterion 15).
        */
       readonly recording: 'pending' | 'none';
     }

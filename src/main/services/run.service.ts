@@ -147,6 +147,10 @@ export class RunService {
       failedStepStartedAt: null,
     };
     this.active = active;
+    // The report clears when the next run starts (recording criterion 28), and
+    // so does what this service would open for it: a video is reachable for
+    // one report, which keeps the registry bounded by construction.
+    this.savedRecordings.clear();
 
     const launching = this.launch(active, deviceId, yaml);
     this.starting = launching;
@@ -200,7 +204,7 @@ export class RunService {
         this.track(active.recording, active.recording.discard());
       }
       await removeFlow(active.flowPath);
-      return refuse(codeOf(error), messageOf(error));
+      return refuse(codeOf(error), messageOf(error, 'The run could not be started.'));
     }
 
     this.emit({ type: 'started', runId: active.runId });
@@ -252,7 +256,7 @@ export class RunService {
 
   /**
    * Criterion 10 — no orphaned JVM survives `before-quit`; recording
-   * criterion 21 — no `adb shell screenrecord` child and no `.partial` either.
+   * criterion 21 — no device-side recorder child and no `.partial` either.
    * The live recorder is cut at once and its device-side file removed; a save
    * in flight is cut short, and the disposal waits for both.
    */
@@ -264,12 +268,19 @@ export class RunService {
     // parking its recorder's discard in the registry cut below.
     await this.starting;
     this.cutActive();
-    const pending: Promise<void>[] = [];
     for (const entry of this.settling) {
       entry.session.abort();
-      pending.push(entry.done);
     }
-    await Promise.allSettled(pending);
+    await this.settled();
+  }
+
+  /**
+   * Resolves once nothing is settling — every save and discard in flight has
+   * run to its end, the follow-up event included. `dispose` waits on it after
+   * aborting them; a test waits on it instead of on the clock.
+   */
+  settled(): Promise<void> {
+    return Promise.all([...this.settling].map((entry) => entry.done)).then(() => undefined);
   }
 
   /** Kills the live run and cuts its recorder, idempotently. */
@@ -312,7 +323,7 @@ export class RunService {
     try {
       active.recording = await this.deps.gateway.startRecording(deviceId, active.runId);
     } catch (error) {
-      active.recordingFailure = messageOf(error);
+      active.recordingFailure = messageOf(error, 'the recorder could not be started');
       console.warn(`Run ${active.runId} is not recorded:`, active.recordingFailure);
     }
   }
@@ -411,18 +422,23 @@ export class RunService {
         fromSeconds: fromSeconds(active, session.startedAt, stoppedAt),
       });
     } catch (error) {
-      if (partial !== null) {
-        await rm(partial, { force: true }).catch(() => {});
-      }
+      // A save that reached the pull left the session stopped and the device
+      // clean; one refused before that — the folder, the name — left the
+      // recorder running, and nothing else would stop it (criteria 5, 21).
+      // The note goes out first either way; the settle waits for the cleanup,
+      // so a quit still finds it.
+      const cleanup =
+        partial === null ? session.discard() : rm(partial, { force: true }).catch(() => {});
       this.emitRecordingFailure(
         active,
         error instanceof RecordingFailedError ? error.phase : 'save',
-        messageOf(error),
+        messageOf(error, 'the video could not be saved'),
       );
+      await cleanup;
     }
   }
 
-  /** Criteria 14 and 15's two sentences, the reason in the OS's or adb's own
+  /** Criteria 14 and 15's two sentences, the reason in the OS's or the tool's own
    * words (spec constraint) — one full stop, whichever way the reason ends. */
   private emitRecordingFailure(active: ActiveRun, phase: 'record' | 'save', reason: string): void {
     const detail = reason.trim().replace(/\.$/, '');
@@ -588,6 +604,7 @@ function codeOf(error: unknown): ErrorCode {
     : ERROR_CODES.runStartFailed;
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : 'The run could not be started.';
+/** The error's own words, or the caller's sentence for a rejection without any. */
+function messageOf(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }

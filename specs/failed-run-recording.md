@@ -347,6 +347,35 @@ Maestro's log, and the picture is gone.
   missing, the note quotes the prerequisite's existing sentence ("No adb found. Install the
   Android platform-tools, or set CONDUCTOR_ADB_PATH.") so the same condition reads the same
   here and in the device panel.
+- **After the octo review (2026-09-03)** — six findings fixed, each test-first: (1)
+  `AdbBridge.pull` reached the recording as a bare method reference, so every real save threw a
+  `TypeError` that every closure fake hid — it is handed over as a call now, and
+  `ScreenRecorder.test.ts` drives the recorder over a real `AdbBridge`; (2) a save refused before
+  the pull (the folder, the name) reported the failure but never stopped the recorder, out of a
+  quit's reach — it is discarded inside the tracked settle (criteria 5, 21); (3) a pull or an
+  API-level read that hit its deadline put Node's `Command failed: adb …` line in the note —
+  `run.ts` exports `timedOut`, the recorder says "the device did not hand the video over in
+  time", any other non-adb copy failure gets a fixed sentence, and `AdbBridge.apiLevel` answers
+  `null` on a silent device; (4) the name reaches the device's shell twice and `adb shell`
+  re-parses its arguments there, so `ScreenRecorder.start` refuses a name outside
+  `[A-Za-z0-9_-]` — opaque in meaning, plain in form; (5–6) two comments (rule 1b's wording in
+  `run.service.ts`, `finished.recording` in `shared/types.ts`). Then the rest, on request: (7) the
+  service tests waited on real 2 ms sleeps for a tail doing real file I/O — `RunService.settled()`
+  resolves once nothing is settling, `dispose` waits on it after the aborts, and every test
+  waits on it (or on `vi.waitFor` to reach a held save) instead of on the clock; (8)
+  `recordingRowIndex` moved from the panel to `lib/recording-row.ts`, structural on its rows,
+  with its own tests; (9) the recorder's runner type is the bridge's `AdbRunner`; (10)
+  `messageOf` takes the caller's fallback sentence, so a rejection without words on the save
+  path says "the video could not be saved", never the run's own line; (11) the saved-video
+  registry clears when the next run starts (criterion 28), bounded by construction; (12) the
+  abort-then-discard sequence `dispose` performs is pinned in `ScreenRecorder.test.ts`; (13) the
+  action's spacing is `--space-3`/`--space-4`, its 26 px height stays as the kit's pill height;
+  (14) the bridge's `adb()` hands its options through instead of branching on them — `pull`'s
+  own branch stays, being what keeps a pull without bounds a two-argument call. Left alone,
+  with reasons: "your Movies folder" on Windows/Linux is the constraint's own copy and those
+  platforms are outside this spec; the name reservation's check-then-act has no realistic race
+  (one run at a time, a name to the second) and a fix would leave a placeholder or a link dance
+  in Movies. `npm test` 105 files / 2796 tests, `npm run typecheck` and `npm run lint` clean.
 - **Verified in software (2026-09-02)**: `npm test` 104 files / 2770 tests (2639 before),
   `npm run typecheck` and `npm run lint` clean. Criteria 1–6, 20–21 → `ScreenRecorder.test.ts`,
   `run.service.test.ts`; 7–16, 22 → `run.service.test.ts`; 17–19 → `run.service.test.ts`,

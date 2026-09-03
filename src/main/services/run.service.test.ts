@@ -46,7 +46,7 @@ class FakeRecording implements RecordingSession {
   constructor(
     private readonly options: {
       stoppedAt?: () => number;
-      saveError?: Error;
+      saveError?: unknown;
       holdSave?: boolean;
       /** A discard that takes its time — the stop's wait on the device. */
       holdDiscard?: boolean;
@@ -134,7 +134,12 @@ function harness(
     holdRecord?: boolean;
     recorder?:
       | 'refuses'
-      | { stoppedAt?: () => number; saveError?: Error; holdSave?: boolean; holdDiscard?: boolean };
+      | {
+          stoppedAt?: () => number;
+          saveError?: unknown;
+          holdSave?: boolean;
+          holdDiscard?: boolean;
+        };
     openAnswer?: string;
   } = {},
 ): Harness {
@@ -253,18 +258,6 @@ function code(result: Result<unknown>): string {
     throw new Error('Expected a refusal, got a success.');
   }
   return result.error.code;
-}
-
-/**
- * Lets the settle's asynchronous tail — the save, the follow-up — run. Real
- * timer ticks rather than microtask hops: the tail does real file I/O on the
- * scratch dir (`mkdir`, `access`, `rename`), and under a loaded suite that
- * takes longer than any number of immediates.
- */
-async function flush(): Promise<void> {
-  for (let index = 0; index < 10; index += 1) {
-    await new Promise((resolve) => setTimeout(resolve, 2));
-  }
 }
 
 const recordingEvents = (events: RunEvent[]): RunEvent[] =>
@@ -552,7 +545,7 @@ describe('recording the run', () => {
     const { service, recordings } = harness({ spawnError: missing });
 
     await service.start(DEVICE, YAML, 'login.yml');
-    await flush();
+    await service.settled();
 
     expect(recordings[0]?.discarded).toBe(1);
     expect(recordings[0]?.saved).toEqual([]);
@@ -574,7 +567,7 @@ describe('keeping or discarding the recording', () => {
     }
 
     bundle.runs[0]?.handlers.onExit(exit);
-    await flush();
+    await bundle.service.settled();
 
     expect(bundle.events.at(-1)).toMatchObject({ type: 'finished', recording: 'none' });
     expect(bundle.recordings[0]?.discarded).toBe(1);
@@ -590,7 +583,7 @@ describe('keeping or discarding the recording', () => {
     bundle.runs[0]?.handlers.onProgress({ type: 'log', lines: ['Invalid syntax'] });
 
     bundle.runs[0]?.handlers.onExit({ code: 1, error: null });
-    await flush();
+    await bundle.service.settled();
 
     expect(bundle.events.at(-1)).toMatchObject({
       type: 'finished',
@@ -614,7 +607,7 @@ describe('keeping or discarding the recording', () => {
     await failedRun(bundle, 'login.yml', exit);
     const finished = bundle.events.find((event) => event.type === 'finished');
     expect(finished).toMatchObject({ outcome: o, recording: 'pending' });
-    await flush();
+    await bundle.service.settled();
 
     const file = join(bundle.videosDir, 'Conductor', 'login-2026-09-02-143015.mp4');
     expect(existsSync(file)).toBe(true);
@@ -659,7 +652,7 @@ describe('the saved file', () => {
     const bundle = harness();
 
     await failedRun(bundle, identity);
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)[0]).toMatchObject({
       fileName: `${slug}-2026-09-02-143015.mp4`,
@@ -680,7 +673,7 @@ describe('the saved file', () => {
     writeFileSync(join(dir, 'login-2026-09-02-143015-2.mp4'), 'earlier still');
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)[0]).toMatchObject({
       fileName: 'login-2026-09-02-143015-3.mp4',
@@ -694,7 +687,7 @@ describe('the saved file', () => {
     expect(existsSync(bundle.videosDir)).toBe(false);
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     expect(existsSync(join(bundle.videosDir, 'Conductor'))).toBe(true);
   });
@@ -707,7 +700,7 @@ describe('the saved file', () => {
     const bundle = harness();
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     const dir = join(bundle.videosDir, 'Conductor');
     expect(bundle.recordings[0]?.saved).toEqual([join(dir, 'login-2026-09-02-143015.mp4.partial')]);
@@ -726,11 +719,11 @@ describe('the follow-up event', () => {
     await failedRun(bundle);
 
     expect(bundle.events.at(-1)).toMatchObject({ type: 'finished', recording: 'pending' });
-    await flush();
+    await vi.waitFor(() => expect(bundle.recordings[0]?.saved).toHaveLength(1));
     expect(recordingEvents(bundle.events)).toEqual([]);
 
     bundle.recordings[0]?.releaseSave();
-    await flush();
+    await bundle.service.settled();
     expect(recordingEvents(bundle.events)).toHaveLength(1);
   });
 
@@ -750,7 +743,7 @@ describe('the follow-up event', () => {
     vi.setSystemTime(RUN_STARTED.getTime() + 20_000);
     handlers?.onProgress({ type: 'step-failed', label: 'Tap on "Entrar"' });
     handlers?.onExit({ code: 1, error: null });
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)[0]).toMatchObject({ ok: true, fromSeconds: 12 });
   });
@@ -762,7 +755,7 @@ describe('the follow-up event', () => {
     bundle.runs[0]?.handlers.onProgress({ type: 'step-passed', label: 'Launch app "x"' });
 
     bundle.runs[0]?.handlers.onExit({ code: 1, error: null });
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)[0]).toMatchObject({ ok: true, fromSeconds: null });
   });
@@ -780,7 +773,7 @@ describe('the follow-up event', () => {
     bundle.runs[0]?.handlers.onProgress({ type: 'step-failed', label: 'Tap on "Entrar"' });
 
     bundle.runs[0]?.handlers.onExit({ code: 1, error: null });
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)[0]).toMatchObject({ ok: true, fromSeconds: null });
   });
@@ -793,7 +786,7 @@ describe('the follow-up event', () => {
     });
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     expect(bundle.events.find((event) => event.type === 'finished')).toMatchObject({
       outcome: 'failed',
@@ -810,16 +803,37 @@ describe('the follow-up event', () => {
     ]);
   });
 
+  /** A rejection without words — not an `Error` at all — gets the sentence
+   * for a save, never the run's own fallback. */
+  it('reports a save that failed without a word, in the save’s own words', async () => {
+    const bundle = harness({ recorder: { saveError: 'EACCES' } });
+
+    await failedRun(bundle);
+    await bundle.service.settled();
+
+    expect(recordingEvents(bundle.events)).toEqual([
+      {
+        type: 'recording',
+        runId: 'run-1',
+        ok: false,
+        message:
+          "The recording couldn't be saved to your Movies folder: the video could not be saved.",
+      },
+    ]);
+  });
+
   /** Criterion 14 — a folder that will not take the file is the same failure,
-   * and no `.partial` is left behind. */
-  it('reports a folder that refused the write', async () => {
+   * and no `.partial` is left behind. Criteria 5 and 21 — the recorder is
+   * stopped and its file removed all the same: a refused write must not leave
+   * a `screenrecord` running on the device, out of a quit's reach. */
+  it('reports a folder that refused the write, and still discards the recording', async () => {
     const bundle = harness();
     mkdirSync(bundle.videosDir, { recursive: true });
     // `Conductor`'s place is taken by a file, so nothing can be written there.
     writeFileSync(join(bundle.videosDir, 'Conductor'), 'not a folder');
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)[0]).toMatchObject({
       ok: false,
@@ -828,6 +842,7 @@ describe('the follow-up event', () => {
       ),
     });
     expect(bundle.recordings[0]?.saved).toEqual([]);
+    expect(bundle.recordings[0]?.discarded).toBe(1);
   });
 
   /** Criterion 15 — a recorder that never started, on a run that would have
@@ -837,7 +852,7 @@ describe('the follow-up event', () => {
     const bundle = harness({ recorder: 'refuses' });
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     expect(bundle.events.find((event) => event.type === 'finished')).toMatchObject({
       recording: 'none',
@@ -863,7 +878,7 @@ describe('the follow-up event', () => {
     });
 
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)).toEqual([
       {
@@ -883,7 +898,7 @@ describe('the follow-up event', () => {
     bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Launch app "x"' });
 
     bundle.runs[0]?.handlers.onExit({ code: 0, error: null });
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)).toEqual([]);
   });
@@ -893,8 +908,7 @@ describe('the follow-up event', () => {
     const bundle = harness();
 
     await failedRun(bundle);
-    await flush();
-    await flush();
+    await bundle.service.settled();
 
     expect(recordingEvents(bundle.events)).toHaveLength(1);
     expect(recordingEvents(bundle.events)[0]).toMatchObject({ runId: 'run-1' });
@@ -908,7 +922,7 @@ describe('opening the video', () => {
     vi.setSystemTime(RUN_STARTED);
     const bundle = harness();
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     const result = await bundle.service.openRecording('run-1');
 
@@ -918,12 +932,26 @@ describe('opening the video', () => {
     ]);
   });
 
+  /** The report clears when the next run starts (criterion 28), and so does
+   * what main would open for it: a run before the current one answers as a
+   * video that is gone, and the registry stays bounded by construction. */
+  it('forgets the previous run’s video once a new run starts', async () => {
+    const bundle = harness();
+    await failedRun(bundle);
+    await bundle.service.settled();
+
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+
+    expect(code(await bundle.service.openRecording('run-1'))).toBe(ERROR_CODES.runRecordingMissing);
+    expect(bundle.opened).toEqual([]);
+  });
+
   /** Criterion 19 — an id with no saved video opens nothing. */
   it('refuses a run that saved no video', async () => {
     const bundle = harness();
     await bundle.service.start(DEVICE, YAML, 'login.yml');
     bundle.runs[0]?.handlers.onExit({ code: 0, error: null });
-    await flush();
+    await bundle.service.settled();
 
     const result = await bundle.service.openRecording('run-1');
 
@@ -938,7 +966,7 @@ describe('opening the video', () => {
   it('refuses a video that has since left the Movies folder', async () => {
     const bundle = harness();
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
     rmSync(join(bundle.videosDir, 'Conductor'), { recursive: true, force: true });
 
     const result = await bundle.service.openRecording('run-1');
@@ -957,7 +985,7 @@ describe('opening the video', () => {
   it('reports a player that would not open it', async () => {
     const bundle = harness({ openAnswer: 'No application knows how to open this file.' });
     await failedRun(bundle);
-    await flush();
+    await bundle.service.settled();
 
     const result = await bundle.service.openRecording('run-1');
 
@@ -981,7 +1009,7 @@ describe('the recorder’s lifecycle', () => {
     bundle.service.cancel('run-1');
 
     bundle.runs[0]?.handlers.onExit({ code: 143, error: null });
-    await flush();
+    await bundle.service.settled();
 
     expect(bundle.recordings[0]?.discarded).toBe(1);
     expect(bundle.recordings[0]?.saved).toEqual([]);
@@ -1006,7 +1034,7 @@ describe('the recorder’s lifecycle', () => {
     vi.setSystemTime(RUN_STARTED);
     const bundle = harness({ recorder: { holdSave: true } });
     await failedRun(bundle);
-    await flush();
+    await vi.waitFor(() => expect(bundle.recordings[0]?.saved).toHaveLength(1));
     const partial = join(bundle.videosDir, 'Conductor', 'login-2026-09-02-143015.mp4.partial');
     writeFileSync(partial, 'half');
 
@@ -1068,13 +1096,13 @@ describe('the recorder’s lifecycle', () => {
   it('accepts a new run while the previous save is in flight', async () => {
     const bundle = harness({ recorder: { holdSave: true } });
     await failedRun(bundle);
-    await flush();
+    await vi.waitFor(() => expect(bundle.recordings[0]?.saved).toHaveLength(1));
 
     const second = await bundle.service.start(DEVICE, YAML, 'login.yml');
     expect(runId(second)).toBe('run-2');
 
     bundle.recordings[0]?.releaseSave();
-    await flush();
+    await bundle.service.settled();
     expect(recordingEvents(bundle.events)).toEqual([
       expect.objectContaining({ runId: 'run-1', ok: true }),
     ]);

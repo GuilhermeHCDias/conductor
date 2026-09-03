@@ -197,8 +197,10 @@ export interface MaestroGateway {
   /**
    * Records the device's screen until the session is saved or discarded
    * (recording criteria 2, 33). `name` is the caller's label for the
-   * recording — the run's id — and is opaque here like `deviceId` is. The
-   * video leaves the Gateway as a write into a host path the caller names
+   * recording — the run's id — opaque here like `deviceId` is, and plain:
+   * letters, digits, `_` and `-`, or the recorder refuses it, because the
+   * name reaches a device shell. The video leaves the Gateway as a write
+   * into a host path the caller names
    * on `save`, or as bytes one day — never as a device path (§10.1 rules 2,
    * 6): the device may share no filesystem with us.
    *

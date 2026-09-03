@@ -2,9 +2,9 @@ import { type JSX, memo, type UIEvent, useEffect, useRef } from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { StatusDot } from '../../components/StatusDot/StatusDot';
 import { formatClock } from '../../lib/clock';
+import { recordingRowIndex } from '../../lib/recording-row';
 import {
   type RunRecording,
-  type RunStep,
   selectDroppedLines,
   selectLogLines,
   selectOutcome,
@@ -84,22 +84,6 @@ const RunLog = memo(function RunLog(): JSX.Element | null {
     </div>
   );
 });
-
-/**
- * Recording criterion 23 — the failed step is the last row whose status is
- * `fail`; Maestro stops at the first failure, so it is also the only one.
- * A failed run whose every parsed step passed — the JVM died between steps,
- * or after the last — still kept its video, and it must stay reachable: the
- * last row stands in.
- */
-function recordingRowIndex(steps: readonly RunStep[]): number {
-  for (let index = steps.length - 1; index >= 0; index -= 1) {
-    if (steps[index]?.status === 'fail') {
-      return index;
-    }
-  }
-  return steps.length - 1;
-}
 
 /**
  * Recording criteria 23–24: what sits in the action's place on the failed

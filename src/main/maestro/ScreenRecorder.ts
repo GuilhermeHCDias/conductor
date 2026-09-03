@@ -1,11 +1,10 @@
-import type {
-  ExitReason,
-  RunOptions,
-  RunResult,
-  SpawnOptions,
-  StreamingProcess,
+import {
+  type ExitReason,
+  type SpawnOptions,
+  type StreamingProcess,
+  timedOut,
 } from '../process/run';
-import { AdbFailedError, AdbNotFoundError, type PullOptions } from './AdbBridge';
+import { AdbFailedError, AdbNotFoundError, type AdbRunner, type PullOptions } from './AdbBridge';
 import { RecordingFailedError, type RecordingSession } from './MaestroGateway';
 
 /**
@@ -42,14 +41,6 @@ export type RecorderAdb = {
   ) => Promise<void>;
   apiLevel: (deviceId: string) => Promise<number | null>;
 };
-
-/** `run`, for the two one-shot calls around the recording: the stop signal
- * and the cleanup. Text in both directions. */
-export type TextRunner = (
-  command: string,
-  args: readonly string[],
-  options?: RunOptions,
-) => Promise<RunResult>;
 
 /**
  * Bits per second. Well below `screenrecord`'s 20 Mbps default and far above
@@ -89,9 +80,20 @@ export const RECORDING_CLEANUP_TIMEOUT_MS = 5_000;
 /** How much of the recorder's stderr is kept for the failure message. */
 const STDERR_TAIL = 2_048;
 
+/**
+ * What a recording's name may be. It goes into the device's shell twice —
+ * the file's path, and the pattern the stop signal is aimed by — and
+ * `adb shell` hands its arguments to the device's `sh` as one line, re-parsed
+ * there, so the host's argument array protects nothing on that side. Anything
+ * the shell could read as more than a name is refused, never escaped.
+ */
+const RECORDING_NAME = /^[A-Za-z0-9_-]+$/;
+
 export type ScreenRecorderDeps = {
   readonly adb: RecorderAdb;
-  readonly run: TextRunner;
+  /** `run`, for the two one-shot calls around the recording: the stop signal
+   * and the cleanup — the bridge's own runner shape. */
+  readonly run: AdbRunner;
 };
 
 export class ScreenRecorder {
@@ -112,6 +114,9 @@ export class ScreenRecorder {
    * (criteria 4, 15).
    */
   async start(deviceId: string, runId: string): Promise<RecordingSession> {
+    if (!RECORDING_NAME.test(runId)) {
+      throw new TypeError(`A recording's name is letters, digits, '_' and '-': got '${runId}'.`);
+    }
     const binary = this.deps.adb.resolve();
     if (binary === null) {
       throw new AdbNotFoundError();
@@ -141,7 +146,9 @@ export class ScreenRecorder {
       pattern: `conductor-recording-${runId}[.]mp4`,
       child,
       run: this.deps.run,
-      pull: this.deps.adb.pull,
+      // The bridge's `pull` reads `this`: handed over as a call, never as a
+      // bare reference — the test over the real bridge pins it.
+      pull: (...args) => this.deps.adb.pull(...args),
     });
   }
 }
@@ -152,7 +159,7 @@ type RecordingContext = {
   readonly remotePath: string;
   readonly pattern: string;
   readonly child: StreamingProcess;
-  readonly run: TextRunner;
+  readonly run: AdbRunner;
   readonly pull: RecorderAdb['pull'];
 };
 
@@ -335,11 +342,18 @@ class Recording implements RecordingSession {
   }
 }
 
-/** The tool's own words when it left any, else the error's — never the
- * command line `AdbFailedError` also carries. */
+/**
+ * The tool's own words when it left any; the deadline in plain words; and for
+ * anything else a fixed sentence — never the error's own, which is the
+ * command line `run` rejects with, device path and host path included (spec
+ * constraint: nothing of that in a sentence the person reads).
+ */
 function reasonOf(error: unknown): string {
   if (error instanceof AdbFailedError) {
     return error.detail;
   }
-  return error instanceof Error ? error.message : 'the video could not be copied from the device';
+  if (timedOut(error)) {
+    return 'the device did not hand the video over in time';
+  }
+  return 'the video could not be copied from the device';
 }

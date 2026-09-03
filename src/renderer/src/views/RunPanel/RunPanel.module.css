@@ -110,9 +110,10 @@
   cursor: pointer;
   display: inline-flex;
   font: var(--type-caption);
-  gap: 6px;
+  gap: var(--space-3);
+  /* The kit's pill height, which no token names. */
   height: 26px;
-  padding: 0 8px;
+  padding: 0 var(--space-4);
   transition: var(--t-hover), var(--t-press);
 }
 

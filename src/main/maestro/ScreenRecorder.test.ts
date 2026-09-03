@@ -8,7 +8,7 @@ import type {
   SpawnOptions,
   StreamingProcess,
 } from '../process/run';
-import { AdbFailedError, type PullOptions } from './AdbBridge';
+import { AdbBridge, AdbFailedError, type PullOptions } from './AdbBridge';
 import { RecordingFailedError } from './MaestroGateway';
 import {
   RECORDING_BITRATE,
@@ -175,6 +175,49 @@ async function flush(): Promise<void> {
 const pkillOf = (ran: Ran[]): Ran | undefined => ran.find((call) => call.args[3] === 'pkill');
 const rmOf = (ran: Ran[]): Ran | undefined => ran.find((call) => call.args[3] === 'rm');
 
+/** The rejection `run` hands back when its `timeout` expires: Node's own
+ * words with the whole command line in them, and the marks `timedOut` reads
+ * (`run.test.ts` pins that shape against a real child). */
+const timedOutError = (commandLine: string): Error =>
+  Object.assign(new Error(`Command failed: ${commandLine}`), {
+    killed: true,
+    code: null,
+    signal: 'SIGTERM',
+  });
+
+/**
+ * The recorder over the real `AdbBridge`, with only the OS seam faked — the
+ * one arrangement in which the bridge's methods run with their own `this`.
+ * The closure fakes above cannot tell a method handed over unbound from a
+ * bound one; this can.
+ */
+function bridged(): { screen: ScreenRecorder; ran: Ran[]; shells: FakeShell[] } {
+  const ran: Ran[] = [];
+  const shells: FakeShell[] = [];
+  const run = (
+    command: string,
+    args: readonly string[],
+    options?: RunOptions,
+  ): Promise<RunResult> => {
+    ran.push(options === undefined ? { command, args } : { command, args, options });
+    const stdout = args.includes('getprop') ? '36\n' : '';
+    return Promise.resolve({ stdout, stderr: '', code: 0 });
+  };
+  const adb = new AdbBridge({
+    run,
+    spawn: () => {
+      const shell = new FakeShell();
+      shells.push(shell);
+      return shell;
+    },
+    isExecutable: (path) => path === ADB,
+    env: {},
+    home: '/Users/someone',
+    configuredPath: ADB,
+  });
+  return { screen: new ScreenRecorder({ adb, run }), ran, shells };
+}
+
 afterEach(() => {
   vi.useRealTimers();
 });
@@ -297,6 +340,20 @@ describe('when it cannot start', () => {
     await expect(screen.start(DEVICE, 'run-1')).rejects.toThrow('spawn ENOENT');
     expect(spawned).toEqual([]);
   });
+
+  /** The name goes into the device's shell twice — the file's path and the
+   * pattern the stop signal is aimed by — and `adb shell` hands its arguments
+   * to the device's `sh` as one line, re-parsed there. A name that shell
+   * could read as anything but a name never reaches it: the caller labels a
+   * run `run-<n>`, and nothing else is a label. */
+  it('refuses a name the device’s shell could re-parse, before touching the device', async () => {
+    const { recorder: screen, spawned, asked } = recorder();
+
+    await expect(screen.start(DEVICE, 'run 1; rm -rf /sdcard')).rejects.toBeInstanceOf(TypeError);
+    await expect(screen.start(DEVICE, 'run-1[.]mp4')).rejects.toBeInstanceOf(TypeError);
+    expect(spawned).toEqual([]);
+    expect(asked).toEqual([]);
+  });
 });
 
 describe('stopping and saving', () => {
@@ -395,7 +452,7 @@ describe('stopping and saving', () => {
     await expect(saving).rejects.toMatchObject({ phase: 'save', message: stderr });
   });
 
-  /** Criterion 14 — a pull that failed is a save failure with its words,
+  /** Criterion 14 — a pull that failed is a save failure with adb's words,
    * and the device is still cleaned up behind it. */
   it('reports a failed pull as a save failure, and still cleans up', async () => {
     const {
@@ -405,7 +462,11 @@ describe('stopping and saving', () => {
     } = recorder({
       pull: () =>
         Promise.reject(
-          new Error('adb -s R9QYC01EMXL pull exited 1. adb: error: failed to copy: I/O error'),
+          new AdbFailedError(['-s', DEVICE, 'pull', REMOTE, HOST], {
+            stdout: '',
+            stderr: 'adb: error: failed to copy: I/O error',
+            code: 1,
+          }),
         ),
     });
     const session = await screen.start(DEVICE, 'run-1');
@@ -417,9 +478,48 @@ describe('stopping and saving', () => {
     await expect(saving).rejects.toMatchObject({
       name: 'RecordingFailedError',
       phase: 'save',
-      message: expect.stringContaining('I/O error'),
+      message: 'adb: error: failed to copy: I/O error',
     });
     expect(rmOf(ran)).toBeDefined();
+  });
+
+  /** Criterion 14 — the device has not handed the file over within the
+   * budget. The runner's rejection carries Conductor's own command line, the
+   * device path and the host path in it; none of that is a sentence for the
+   * person (spec constraint). */
+  it('reports a pull that timed out in plain words, never the command line', async () => {
+    const { recorder: screen, shell } = recorder({
+      pull: () => Promise.reject(timedOutError(`${ADB} -s ${DEVICE} pull ${REMOTE} ${HOST}`)),
+    });
+    const session = await screen.start(DEVICE, 'run-1');
+
+    const saving = session.save(HOST);
+    await flush();
+    shell().exit({ code: 0, error: null });
+
+    await expect(saving).rejects.toMatchObject({
+      phase: 'save',
+      message: 'the device did not hand the video over in time',
+    });
+  });
+
+  /** Any other rejection of the copy — the binary gone mid-run, a buffer
+   * overrun — is not adb's words either: a fixed sentence, never the error's
+   * own, which names the binary's path. */
+  it('reports any other copy failure in plain words, never the error’s own', async () => {
+    const { recorder: screen, shell } = recorder({
+      pull: () => Promise.reject(new Error(`spawn ${ADB} ENOENT`)),
+    });
+    const session = await screen.start(DEVICE, 'run-1');
+
+    const saving = session.save(HOST);
+    await flush();
+    shell().exit({ code: 0, error: null });
+
+    await expect(saving).rejects.toMatchObject({
+      phase: 'save',
+      message: 'the video could not be copied from the device',
+    });
   });
 
   /** Criterion 3 — on Android < 14 the OS stops the recorder at three
@@ -661,6 +761,38 @@ describe('discarding', () => {
 
     expect(shell().killed).toBe(1);
     await expect(session.save(HOST)).rejects.toMatchObject({ phase: 'save' });
+  });
+
+  /** `dispose`'s sequence on a live recording: the abort, then the discard.
+   * Nothing waits on the device after an abort — no signal, no exit to wait
+   * for — and the file is still removed, best-effort. */
+  it('discards after an abort without signalling, and still removes the file', async () => {
+    const { recorder: screen, ran, shell } = recorder();
+    const session = await screen.start(DEVICE, 'run-1');
+
+    session.abort();
+    await session.discard();
+
+    expect(shell().killed).toBe(1);
+    expect(pkillOf(ran)).toBeUndefined();
+    expect(rmOf(ran)).toBeDefined();
+  });
+});
+
+describe('over the real bridge', () => {
+  /** Criterion 8, end to end through the bridge: the pull the save makes is
+   * the bridge's own method, run with the bridge's `this` — the wiring the
+   * composition root does, and the one thing no closure fake exercises. */
+  it('pulls the file through the bridge, and the save answers', async () => {
+    const { screen, ran, shells } = bridged();
+    const session = await screen.start(DEVICE, 'run-1');
+
+    const saving = session.save(HOST);
+    await flush();
+    shells[0]?.exit({ code: 0, error: null });
+
+    await expect(saving).resolves.toMatchObject({ stoppedAt: expect.any(Number) });
+    expect(ran.map((call) => call.args)).toContainEqual(['-s', DEVICE, 'pull', REMOTE, HOST]);
   });
 });
 

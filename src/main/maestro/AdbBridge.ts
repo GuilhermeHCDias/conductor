@@ -226,13 +226,23 @@ export class AdbBridge {
   /**
    * `ro.build.version.sdk` as a number — the API level that decides which
    * `screenrecord` flags the device accepts (recording criterion 2). `null`
-   * when the device does not say, never a guess: a flag chosen from an
-   * invented level is rejected by the device, and the run goes unrecorded.
+   * when the device does not say — or does not answer within the bound —
+   * never a guess: a flag chosen from an invented level is rejected by the
+   * device, and the run goes unrecorded. Only a missing adb still rejects,
+   * the way every entry point reports that prerequisite.
    */
   async apiLevel(deviceId: string): Promise<number | null> {
-    const text = await this.text(deviceId, ['shell', 'getprop', 'ro.build.version.sdk'], {
-      timeout: API_LEVEL_TIMEOUT_MS,
-    });
+    let text: string | null;
+    try {
+      text = await this.text(deviceId, ['shell', 'getprop', 'ro.build.version.sdk'], {
+        timeout: API_LEVEL_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (error instanceof AdbNotFoundError) {
+        throw error;
+      }
+      return null;
+    }
     if (text === null) {
       return null;
     }
@@ -294,9 +304,7 @@ export class AdbBridge {
     if (binary === null) {
       return Promise.reject(new AdbNotFoundError());
     }
-    return options === undefined
-      ? this.deps.run(binary, args)
-      : this.deps.run(binary, args, options);
+    return this.deps.run(binary, args, options);
   }
 
   /**
