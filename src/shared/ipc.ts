@@ -46,6 +46,10 @@ export const CHANNELS = {
   aiCancel: 'ai:cancel',
   aiReset: 'ai:reset',
   aiStatus: 'ai:status',
+  doctorStatus: 'doctor:status',
+  doctorCheck: 'doctor:check',
+  doctorInstall: 'doctor:install',
+  doctorSkipSetup: 'doctor:skip-setup',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -61,6 +65,8 @@ export const PUSH_CHANNELS = {
   publishChanged: 'publish:changed',
   publishEvent: 'publish:event',
   aiEvent: 'ai:event',
+  doctorChanged: 'doctor:changed',
+  doctorInstallEvent: 'doctor:install-event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -568,6 +574,97 @@ const aiEvent = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('reset') }),
 ]);
 
+/** The eight things the doctor reports on (doctor criterion 1), in the order
+ * the sheet lists them. Declared as the contract's own vocabulary so a row the
+ * renderer never heard of cannot arrive. */
+const doctorRowId = z.enum([
+  'maestro',
+  'adb',
+  'java',
+  'xcode-clt',
+  'gh',
+  'github-auth',
+  'claude',
+  'claude-auth',
+]);
+
+/** Three states and no fourth: the sheet colours by this alone. */
+const doctorRowStatus = z.enum(['ok', 'warn', 'fail']);
+
+/**
+ * One row (doctor criterion 1). `detail` is machine register — the CLI's own
+ * first line, never a transcript (criterion 5) — and `short` the version
+ * alone, for the Ready section. `label` is the one word of state.
+ */
+const doctorRow = z
+  .object({
+    id: doctorRowId,
+    name: z.string(),
+    status: doctorRowStatus,
+    label: z.string(),
+    detail: z.string(),
+    short: z.string(),
+  })
+  .strict();
+
+/** The whole report, pushed once when every check has settled (criterion 3),
+ * with `issues` = rows not `ok` (criterion 4) — the badge's count. */
+const doctorReport = z
+  .object({
+    rows: z.array(doctorRow).readonly(),
+    checkedAt: z.number().int().nonnegative(),
+    issues: z.number().int().nonnegative(),
+  })
+  .strict();
+
+/** The whole-number percentage of an install, and the step it is in. */
+const doctorInstallProgress = z.object({
+  installId: z.string(),
+  pct: z.number().min(0).max(100),
+  step: z.string(),
+});
+
+/** How an install failed (criterion 17): the stable code, one product-language
+ * sentence chosen by code, and the raw cause for the `maestro` row. */
+const doctorInstallFailure = z
+  .object({ code: z.string(), message: z.string(), detail: z.string() })
+  .strict();
+
+/**
+ * The doctor state (criterion 36): the last report or none, whether a check is
+ * in flight, whether this launch is the setup window and why, and the install
+ * in flight or the one that failed. Main owns every field; the renderer holds
+ * a projection.
+ */
+const doctorState = z
+  .object({
+    report: doctorReport.nullable(),
+    checking: z.boolean(),
+    setup: z
+      .object({ active: z.boolean(), reason: z.enum(['first-run', 'update']).nullable() })
+      .strict(),
+    install: z.union([
+      z.null(),
+      doctorInstallProgress.strict(),
+      z.object({ installId: z.string(), failed: doctorInstallFailure }).strict(),
+    ]),
+    /** `CONFIG.MAESTRO_PATH` is set (criterion 10): the sheet offers no
+     * Install then (criterion 31). The path itself never crosses. */
+    maestroOverridden: z.boolean(),
+    /** The pin, `CONFIG.MAESTRO_VERSION` — what the Setup view names
+     * (criteria 19, 21). A push carries the constant; nothing else does. */
+    version: z.string(),
+  })
+  .strict();
+
+/** Install progress as pushes (criterion 15): the invoke answered with the id
+ * at once, and everything after it arrives here, naming that id. */
+const doctorInstallEvent = z.discriminatedUnion('kind', [
+  doctorInstallProgress.extend({ kind: z.literal('progress') }).strict(),
+  z.object({ kind: z.literal('done'), installId: z.string(), version: z.string() }).strict(),
+  doctorInstallFailure.extend({ kind: z.literal('failed'), installId: z.string() }).strict(),
+]);
+
 export const IPC = {
   [CHANNELS.appInfo]: { request: noArguments, response: appInfoResponse },
   // Clipboard crosses through main because the sandboxed renderer's permission
@@ -711,6 +808,23 @@ export const IPC = {
     request: noArguments,
     response: z.object({ ready: z.literal(true) }),
   },
+  // The doctor's four invokes take nothing (criterion 37): the renderer sends
+  // no path, URL or command — main decides everything about where Maestro
+  // lives. Status is the boot query; the steady state is `doctor:changed`.
+  [CHANNELS.doctorStatus]: { request: noArguments, response: doctorState },
+  // `started` is false when the trigger was coalesced into a check already
+  // in flight (criterion 6) — a state, not a failure.
+  [CHANNELS.doctorCheck]: {
+    request: noArguments,
+    response: z.object({ started: z.boolean() }).strict(),
+  },
+  // The id immediately; the pipeline streams as `doctor:install-event` and is
+  // never awaited in the handler (criterion 15).
+  [CHANNELS.doctorInstall]: {
+    request: noArguments,
+    response: z.object({ installId: z.string() }).strict(),
+  },
+  [CHANNELS.doctorSkipSetup]: { request: noArguments, response: z.object({}).strict() },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
@@ -724,6 +838,8 @@ export const PUSH = {
   [PUSH_CHANNELS.publishChanged]: publishState,
   [PUSH_CHANNELS.publishEvent]: publishEvent,
   [PUSH_CHANNELS.aiEvent]: aiEvent,
+  [PUSH_CHANNELS.doctorChanged]: doctorState,
+  [PUSH_CHANNELS.doctorInstallEvent]: doctorInstallEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -758,6 +874,13 @@ export type PublishState = z.infer<typeof publishState>;
 export type PublishEvent = z.infer<typeof publishEvent>;
 export type AiOutcome = z.infer<typeof aiOutcome>;
 export type AiEvent = z.infer<typeof aiEvent>;
+export type DoctorRowId = z.infer<typeof doctorRowId>;
+export type DoctorRowStatus = z.infer<typeof doctorRowStatus>;
+export type DoctorRow = z.infer<typeof doctorRow>;
+export type DoctorReport = z.infer<typeof doctorReport>;
+export type DoctorInstallFailure = z.infer<typeof doctorInstallFailure>;
+export type DoctorState = z.infer<typeof doctorState>;
+export type DoctorInstallEvent = z.infer<typeof doctorInstallEvent>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -963,6 +1086,19 @@ export const ERROR_CODES = {
    * their own message: the person's Claude sign-in is what fixes them
    * (criterion 7). */
   aiTurnFailed: 'ai/turn-failed',
+  /** A second `doctor:install` while one runs — one pipeline, one copy. */
+  doctorInstallActive: 'doctor/install-active',
+  /** `CONFIG.MAESTRO_PATH` is set: an explicit path is the person's decision,
+   * and the installer never runs over it (doctor criterion 10). */
+  doctorMaestroOverridden: 'doctor/maestro-overridden',
+  /** `doctor:skip-setup` outside the setup window (criterion 18). */
+  doctorSetupNotActive: 'doctor/setup-not-active',
+  /** The four ways the install pipeline fails (criterion 17), each with its
+   * own product-language sentence; the raw cause rides in `detail`. */
+  doctorDownloadFailed: 'doctor/download-failed',
+  doctorChecksumMismatch: 'doctor/checksum-mismatch',
+  doctorExtractFailed: 'doctor/extract-failed',
+  doctorVerifyFailed: 'doctor/verify-failed',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -1079,6 +1215,22 @@ export interface ConductorApi {
   /** The availability question (criteria 6, 25): ready, or the blocking
    * reason as the error's stable code and product-language message. */
   aiStatus: (...args: Request<'ai:status'>) => Promise<Result<Response<'ai:status'>>>;
+  /** The doctor state on demand — the boot query behind the setup-or-app
+   * decision. The steady state arrives on `onDoctorChanged` instead. */
+  doctorStatus: (...args: Request<'doctor:status'>) => Promise<Result<Response<'doctor:status'>>>;
+  /** Runs every check again (criterion 6); the report lands on
+   * `onDoctorChanged` once all have settled. */
+  doctorCheck: (...args: Request<'doctor:check'>) => Promise<Result<Response<'doctor:check'>>>;
+  /** Starts installing Conductor's pinned Maestro and answers with the id at
+   * once — progress arrives on `onDoctorInstallEvent` (criterion 15). */
+  doctorInstall: (
+    ...args: Request<'doctor:install'>
+  ) => Promise<Result<Response<'doctor:install'>>>;
+  /** "Continue without Maestro" (criterion 18) — main presents the app in the
+   * same window; refused outside the setup window. */
+  doctorSkipSetup: (
+    ...args: Request<'doctor:skip-setup'>
+  ) => Promise<Result<Response<'doctor:skip-setup'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
@@ -1109,4 +1261,12 @@ export interface ConductorApi {
    * Mounted app-wide (criterion 24): events keep landing while the Run tab
    * is selected, and the unsubscribe is consumed in effect cleanup. */
   onAiEvent: (listener: (payload: PushPayload<'ai:event'>) => void) => () => void;
+  /** The whole doctor state, whenever any of it changes — a report landing, a
+   * check starting, the setup window closing, an install starting or ending. */
+  onDoctorChanged: (listener: (payload: PushPayload<'doctor:changed'>) => void) => () => void;
+  /** Install progress at ~10 Hz while a download runs — mounted app-wide, and
+   * the unsubscribe is consumed in effect cleanup like every other stream. */
+  onDoctorInstallEvent: (
+    listener: (payload: PushPayload<'doctor:install-event'>) => void,
+  ) => () => void;
 }

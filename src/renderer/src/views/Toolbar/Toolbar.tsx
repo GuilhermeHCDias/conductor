@@ -1,4 +1,5 @@
 import type { JSX } from 'react';
+import { DoctorBadge } from '../../components/DoctorBadge/DoctorBadge';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { SendControl } from '../../components/SendControl/SendControl';
@@ -7,6 +8,7 @@ import { ENVIRONMENT } from '../../fixtures/flows';
 import { documentTitle } from '../../lib/document-title';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
+import { selectIssues, useDoctorStore } from '../../stores/doctor.store';
 import { selectOpenName, selectYaml, useFlowStore } from '../../stores/flow.store';
 import { selectControlPhase, selectUnsentCount, usePublishStore } from '../../stores/publish.store';
 import { selectActiveRepo, useRepoStore } from '../../stores/repo.store';
@@ -44,6 +46,11 @@ export function Toolbar(): JSX.Element {
   const controlPhase = usePublishStore(selectControlPhase);
   const unsentCount = usePublishStore(selectUnsentCount);
   const openSheet = usePublishStore((state) => state.openSheet);
+  // Doctor criteria 33–34: the count once the first report landed, and the
+  // sheet's open state so the badge reads as selected.
+  const issues = useDoctorStore(selectIssues);
+  const doctorOpen = useDoctorStore((state) => state.sheetOpen);
+  const toggleDoctor = useDoctorStore((state) => state.toggleSheet);
 
   // The count is the open flow's own, not a fixture's: a step the command menu
   // appends moves it the moment it lands.
@@ -92,6 +99,12 @@ export function Toolbar(): JSX.Element {
       </span>
 
       <span className={styles.spacer} />
+
+      {/* Doctor criterion 33 — after the spacer, before Run, and only once a
+          report exists: a wrong "all clear" would be a small lie. */}
+      {issues !== null ? (
+        <DoctorBadge issues={issues} onClick={toggleDoctor} selected={doctorOpen} />
+      ) : null}
 
       <button className={styles.environment} type="button">
         <Icon className={styles.environmentGlyph} name="variable" size={12} />

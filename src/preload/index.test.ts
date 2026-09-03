@@ -64,6 +64,10 @@ describe('the bridge', () => {
       'configGet',
       'deviceAppInfo',
       'deviceList',
+      'doctorCheck',
+      'doctorInstall',
+      'doctorSkipSetup',
+      'doctorStatus',
       'flowCreate',
       'flowCreateFolder',
       'flowDelete',
@@ -81,6 +85,8 @@ describe('the bridge', () => {
       'mirrorStop',
       'onAiEvent',
       'onDeviceChanged',
+      'onDoctorChanged',
+      'onDoctorInstallEvent',
       'onFlowChanged',
       'onMirrorEvent',
       'onPublishChanged',
@@ -216,6 +222,8 @@ describe('a subscription', () => {
     ['onPublishChanged', PUSH_CHANNELS.publishChanged],
     ['onPublishEvent', PUSH_CHANNELS.publishEvent],
     ['onAiEvent', PUSH_CHANNELS.aiEvent],
+    ['onDoctorChanged', PUSH_CHANNELS.doctorChanged],
+    ['onDoctorInstallEvent', PUSH_CHANNELS.doctorInstallEvent],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
@@ -232,6 +240,8 @@ describe('a subscription', () => {
     'onPublishChanged',
     'onPublishEvent',
     'onAiEvent',
+    'onDoctorChanged',
+    'onDoctorInstallEvent',
   ] as const)('%s returns the unsubscribe that removes exactly its own listener', (name) => {
     const unsubscribe = api[name](() => {});
 

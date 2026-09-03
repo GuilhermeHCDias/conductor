@@ -75,6 +75,14 @@
   color: var(--text-secondary);
 }
 
+/* The doctor sheet's `checked 9:12 am`: mono, quiet, on the title's line. */
+.aside {
+  color: var(--text-tertiary);
+  flex: none;
+  font: var(--type-mono-label);
+  margin-top: 4px;
+}
+
 .body {
   padding: 0 var(--space-6) var(--space-6);
 }

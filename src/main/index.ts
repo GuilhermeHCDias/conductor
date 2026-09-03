@@ -7,6 +7,7 @@ import { app, BrowserWindow, shell } from 'electron';
 import { registerAiIpc } from './ipc/ai';
 import { registerAppIpc } from './ipc/app';
 import { registerDeviceIpc } from './ipc/device';
+import { registerDoctorIpc } from './ipc/doctor';
 import { registerFlowIpc } from './ipc/flow';
 import { registerMaestroIpc } from './ipc/maestro';
 import { registerPublishIpc } from './ipc/publish';
@@ -18,10 +19,13 @@ import { LocalGateway } from './maestro/LocalGateway';
 import { resolveMaestro } from './maestro/resolve-maestro';
 import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
 import { ScreenCapture } from './maestro/ScreenCapture';
-import { isExecutable } from './process/executable';
+import { isExecutable, isFile } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
 import { AiService } from './services/ai.service';
 import { DeviceService } from './services/device.service';
+import { DoctorService } from './services/doctor.service';
+import { hiddenTools, hideTools } from './services/doctor-hide';
+import { downloadToFile } from './services/download';
 import { FlowService } from './services/flow.service';
 import { MaestroMcpService } from './services/maestro-mcp.service';
 import { conductorPluginDir, PublishService } from './services/publish.service';
@@ -30,7 +34,7 @@ import { resolveClaude } from './services/resolve-claude';
 import { resolveGh } from './services/resolve-gh';
 import { RunService } from './services/run.service';
 import { SnapshotService } from './services/snapshot.service';
-import { createWindow, ICON_PATH, presentWorkspace } from './window';
+import { createWindow, ICON_PATH, presentConnect, presentWorkspace } from './window';
 
 /**
  * The composition root: it owns the service registry, registers the IPC
@@ -134,6 +138,15 @@ if (!app.requestSingleInstanceLock()) {
     // The one place any of this is constructed. Every dependency is passed in,
     // which is what lets each class above be tested with fakes.
     const home = homedir();
+    const userData = app.getPath('userData');
+    // Doctor criterion 40 — `CONDUCTOR_DOCTOR_HIDE` (dev only) makes named
+    // tools absent for every consumer at once: one wrapped probe, walked by
+    // every resolver ladder below. Packaged builds ignore the variable.
+    const hidden = hiddenTools(process.env, app.isPackaged);
+    const probe = hideTools(isExecutable, hidden);
+    // Conductor's own pinned Maestro (§10 as amended) — the managed rung of
+    // the one `resolveMaestro` ladder. Only this file knows the directory.
+    const managedMaestroDir = join(userData, 'maestro');
     // The repo domain (§2.1): the connected list, the active repo and the
     // resolver behind the connect screen. Constructed and loaded first,
     // because the active repo decides the flow workspace root, the device
@@ -147,7 +160,7 @@ if (!app.requestSingleInstanceLock()) {
       flowsDir: CONFIG.FLOWS_DIR,
       extensions: CONFIG.FLOW_EXTENSIONS,
       resolveGh: () =>
-        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable }),
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable: probe }),
       run,
       emitChanged: (payload) => {
         broadcast(PUSH_CHANNELS.repoChanged, payload);
@@ -162,7 +175,9 @@ if (!app.requestSingleInstanceLock()) {
 
     // While no repo is active the single window is the small connect card;
     // the first confirm grows that same window into the workspace. A switch
-    // later re-points the workspace without touching geometry.
+    // later re-points the workspace without touching geometry. Before either,
+    // on a launch whose managed Maestro is missing or behind the pin, the
+    // same window is the installer (doctor criterion 14).
     let connectWindow = false;
 
     async function applyWorkspace(next: RepoWorkspace | null): Promise<void> {
@@ -183,13 +198,37 @@ if (!app.requestSingleInstanceLock()) {
 
     const openWindow = (): BrowserWindow => {
       connectWindow = repoService.activeWorkspace() === null;
-      return createWindow(connectWindow ? 'connect' : 'workspace');
+      const setup = doctorService.state().setup.active;
+      const window = createWindow(setup ? 'setup' : connectWindow ? 'connect' : 'workspace');
+      // Doctor criterion 6 — the first report runs after first paint, never
+      // before; and the focus recheck is the "install it in the terminal,
+      // come back" loop.
+      window.once('show', () => {
+        doctorService.windowShown();
+      });
+      window.on('focus', () => {
+        doctorService.windowFocused();
+      });
+      return window;
+    };
+
+    /** Doctor criterion 16 — setup finished, installed or skipped: the same
+     * window becomes the connect card or the workspace. */
+    const presentAfterSetup = (): void => {
+      connectWindow = repoService.activeWorkspace() === null;
+      for (const window of BrowserWindow.getAllWindows()) {
+        if (connectWindow) {
+          presentConnect(window);
+        } else {
+          presentWorkspace(window);
+        }
+      }
     };
 
     const adb = new AdbBridge({
       run,
       spawn: spawnStreaming,
-      isExecutable,
+      isExecutable: probe,
       env: process.env,
       home,
       configuredPath: CONFIG.ADB_PATH,
@@ -212,10 +251,12 @@ if (!app.requestSingleInstanceLock()) {
     // started per call.
     const mcp = new MaestroMcpService({
       spawn: spawnStreaming,
-      isExecutable,
+      isExecutable: probe,
+      isFile,
       env: process.env,
       home,
       configuredPath: CONFIG.MAESTRO_PATH,
+      managedDir: managedMaestroDir,
     });
     // Bytes, and never through Maestro (§10.1 rule 13): `runBinary` rather than
     // `run`, because the latter decodes stdout as UTF-8 and a PNG does not
@@ -224,10 +265,12 @@ if (!app.requestSingleInstanceLock()) {
     // The raw-CLI door (§9.2) — the only maestro-spawner besides the mcp child.
     const cli = new CliRunner({
       spawn: spawnStreaming,
-      isExecutable,
+      isExecutable: probe,
+      isFile,
       env: process.env,
       home,
       configuredPath: CONFIG.MAESTRO_PATH,
+      managedDir: managedMaestroDir,
     });
     const gateway = new LocalGateway(adb, scrcpy, mcp, capture, cli);
     // The publish domain (§8): owns the send pipeline, the AI note and the
@@ -249,13 +292,13 @@ if (!app.requestSingleInstanceLock()) {
       describeBudgetUsd: CONFIG.AI_DESCRIBE_BUDGET_USD,
       activeClone: () => repoService.activeClone(),
       resolveGh: () =>
-        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable }),
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable: probe }),
       resolveClaude: () =>
         resolveClaude({
           configuredPath: CONFIG.CLAUDE_PATH,
           env: process.env,
           home,
-          isExecutable,
+          isExecutable: probe,
         }),
       gateway,
       run,
@@ -323,14 +366,16 @@ if (!app.requestSingleInstanceLock()) {
           configuredPath: CONFIG.CLAUDE_PATH,
           env: process.env,
           home,
-          isExecutable,
+          isExecutable: probe,
         }),
       resolveMaestro: () =>
         resolveMaestro({
           configuredPath: CONFIG.MAESTRO_PATH,
+          managedDir: managedMaestroDir,
           env: process.env,
           home,
-          isExecutable,
+          isExecutable: probe,
+          isFile,
         }),
       snapshots: snapshot,
       spawn: spawnStreaming,
@@ -353,7 +398,53 @@ if (!app.requestSingleInstanceLock()) {
         publishService.notifyFlowChanged();
       },
     });
-    services.push(device, mcp, runService, flowService, repoService, publishService, aiService);
+    // The environment doctor (§10): installs and pins Maestro under
+    // `userData`, reports the rest. It names the binaries and creates
+    // nothing — `run` and Electron's `net` arrive here, by injection.
+    const doctorService = new DoctorService({
+      managedDir: managedMaestroDir,
+      installDir: join(userData, 'maestro-install'),
+      pinnedVersion: CONFIG.MAESTRO_VERSION,
+      releaseUrl: CONFIG.MAESTRO_RELEASE_URL,
+      maestroOverride: CONFIG.MAESTRO_PATH,
+      env: process.env,
+      home,
+      isExecutable: probe,
+      isFile,
+      resolveAdb: () => adb.resolve(),
+      resolveGh: () =>
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable: probe }),
+      resolveClaude: () =>
+        resolveClaude({
+          configuredPath: CONFIG.CLAUDE_PATH,
+          env: process.env,
+          home,
+          isExecutable: probe,
+        }),
+      hidden,
+      run,
+      download: downloadToFile,
+      emitChanged: (payload) => {
+        broadcast(PUSH_CHANNELS.doctorChanged, payload);
+      },
+      emitInstallEvent: (payload) => {
+        broadcast(PUSH_CHANNELS.doctorInstallEvent, payload);
+      },
+      onSetupFinished: presentAfterSetup,
+    });
+    // Criterion 13 — a file read, before the window exists: its geometry
+    // follows this decision.
+    doctorService.start();
+    services.push(
+      device,
+      mcp,
+      runService,
+      flowService,
+      repoService,
+      publishService,
+      aiService,
+      doctorService,
+    );
 
     registerAppIpc();
     registerDeviceIpc({ device });
@@ -363,6 +454,7 @@ if (!app.requestSingleInstanceLock()) {
     registerRepoIpc({ repo: repoService });
     registerPublishIpc({ publish: publishService });
     registerAiIpc({ ai: aiService });
+    registerDoctorIpc({ doctor: doctorService });
 
     watchRenderer(openWindow(), device);
     // Starts after the window exists, so its first push has somewhere to land.

@@ -1,0 +1,32 @@
+/* The kit's CDoctorBadge: the amber pill, one 28px slot beside the toolbar's
+   environment control. The quiet state is the shared IconButton and needs
+   nothing of its own. */
+
+.pill {
+  align-items: center;
+  background: var(--state-running-quiet);
+  border: 1px solid var(--state-running-edge);
+  border-radius: var(--a-radius-field);
+  color: var(--state-running);
+  cursor: pointer;
+  display: flex;
+  flex: none;
+  font: var(--type-caption);
+  gap: 5px;
+  height: 28px;
+  padding: 0 9px;
+  transition: var(--t-hover), var(--t-press);
+}
+
+.pill:hover {
+  background: var(--state-running-edge);
+}
+
+.pill:active {
+  transform: scale(var(--press-scale));
+}
+
+.pill:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

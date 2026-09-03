@@ -14,6 +14,7 @@ The scaffold must define these as `package.json` scripts. Use `npm`, not `pnpm` 
 | Command | Purpose |
 |---|---|
 | `npm run dev` | electron-vite dev server, HMR in the renderer |
+| `npm run dev:fresh` | `dev` against a wiped `${TMPDIR:-/tmp}/conductor-fresh` as `userData` — a genuine first run: the Maestro installer, then connect. Runs beside a normal `dev` (the single-instance lock is per `userData`). Knobs while iterating on the doctor: `HOME=<empty dir>` for signed-out `gh`/`claude` rows (both read `$HOME`; Electron's `userData` does not, hence `--user-data-dir`); `CONDUCTOR_MAESTRO_PATH=~/.maestro/bin/maestro` to skip the 315 MB download when the installer is not what you are working on; `CONDUCTOR_MAESTRO_RELEASE_URL=http://localhost:8000` with a local `python3 -m http.server` over `maestro.zip` + `checksums_sha256.txt` to iterate on the installer offline and to provoke a checksum mismatch; `CONDUCTOR_DOCTOR_HIDE=maestro,adb,java,xcode-clt,gh,claude` (any subset) to make those tools absent for every consumer — dev only, ignored when packaged |
 | `npm run build` | typecheck, then build all three targets into `out/` |
 | `npm run typecheck` | `typecheck:node` + `typecheck:web` (one `tsc --noEmit` per tsconfig) |
 | `npm run lint` | `biome check .` |
@@ -45,7 +46,9 @@ src/
     src/
       main.tsx                # React root
       App.tsx                 # layout shell arranging views — no business logic
-      views/<Name>/           # one folder per §9.2 panel — see Architecture
+      views/<Name>/           # one folder per §9.2 panel — see Architecture;
+                              # plus Setup (the first-run installer window)
+                              # beside Doctor (the diagnostic sheet), §10
       components/<Name>/      # reusable presentational components
       hooks/use<Name>.ts      # event subscriptions + reusable view logic
       stores/<name>.store.ts  # Zustand, one per domain
@@ -107,7 +110,7 @@ Layers from dumb to wired — each may import only from the rows above it:
 | `components/` | Reusable presentational pieces. Props in, callbacks out. No stores, no `window.conductor`. | `lib`, other components |
 | `stores/` | Zustand, one per domain (`device`, `flow`, `run`, `ai`, `doctor`, `publish`). State + actions; **actions are the only renderer code that calls `window.conductor` commands**. | `lib` |
 | `hooks/` | Subscriptions (`window.conductor.on*`) that write into stores, plus reusable view logic. | `stores`, `lib`, other hooks |
-| `views/` | One folder per §9.2 panel: `Toolbar`, `FlowList`, `DeviceMirror`, `FlowEditor`, `AIPanel`, `RunPanel`, `PublishSheet` — plus `Doctor` (§10). Compose components, select from stores, mount hooks. | everything above |
+| `views/` | One folder per §9.2 panel: `Toolbar`, `FlowList`, `DeviceMirror`, `FlowEditor`, `AIPanel`, `RunPanel`, `PublishSheet` — plus `Doctor` and `Setup` (§10). Compose components, select from stores, mount hooks. | everything above |
 
 Rules that keep the layers honest:
 

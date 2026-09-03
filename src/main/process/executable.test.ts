@@ -37,3 +37,24 @@ describe('isExecutable', () => {
     expect(isExecutable(dir)).toBe(false);
   });
 });
+
+/** The doctor's marker probe: a plain file, executable or not — the managed
+ * Maestro's `version` marker carries no execute bit and must still count. */
+describe('isFile', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'conductor-file-'));
+
+  it('accepts a regular file', async () => {
+    const { isFile } = await import('./executable');
+    const path = join(dir, 'version');
+    writeFileSync(path, '2.10.0\n');
+
+    expect(isFile(path)).toBe(true);
+  });
+
+  it('answers false for a directory or a missing path', async () => {
+    const { isFile } = await import('./executable');
+
+    expect(isFile(dir)).toBe(false);
+    expect(isFile(join(dir, 'missing'))).toBe(false);
+  });
+});

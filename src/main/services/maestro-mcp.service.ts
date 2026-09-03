@@ -53,10 +53,13 @@ export type MaestroMcpServiceDeps = {
   /** Wraps a started child in an MCP session. Defaults to `McpClient`. */
   readonly connect?: (child: StreamingProcess) => McpSession;
   readonly isExecutable: (path: string) => boolean;
+  readonly isFile: (path: string) => boolean;
   readonly env: NodeJS.ProcessEnv;
   readonly home: string;
   /** `CONFIG.MAESTRO_PATH`. Empty means "resolve it yourself". */
   readonly configuredPath: string;
+  /** `userData/maestro` — the managed copy's rung in the one ladder. */
+  readonly managedDir: string;
 };
 
 type Connection = {

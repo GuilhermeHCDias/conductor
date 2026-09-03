@@ -52,6 +52,10 @@ describe('the channels', () => {
       'ai:cancel',
       'ai:reset',
       'ai:status',
+      'doctor:status',
+      'doctor:check',
+      'doctor:install',
+      'doctor:skip-setup',
     ]);
   });
 
@@ -78,6 +82,8 @@ describe('the channels', () => {
       'publish:changed',
       'publish:event',
       'ai:event',
+      'doctor:changed',
+      'doctor:install-event',
     ]);
   });
 
@@ -1531,6 +1537,153 @@ describe('the ai error codes', () => {
       'ai/active',
       'ai/budget-exceeded',
       'ai/turn-failed',
+    ]);
+  });
+});
+
+/**
+ * The doctor domain (doctor criterion 36). The renderer sends nothing but
+ * intent — no path, no URL, no command — and main answers with the whole
+ * doctor state or an id; progress crosses as `doctor:install-event` pushes.
+ */
+describe('doctor:*', () => {
+  const ROW = {
+    id: 'adb',
+    name: 'Android platform-tools',
+    status: 'ok',
+    label: 'Ready',
+    detail: 'Android Debug Bridge version 1.0.41 · /opt/homebrew/bin/adb',
+    short: 'adb 35.0.2',
+  };
+  const REPORT = { rows: [ROW], checkedAt: 1_756_800_000_000, issues: 0 };
+  const STATE = {
+    report: REPORT,
+    checking: false,
+    setup: { active: false, reason: null },
+    install: null,
+    maestroOverridden: false,
+    version: '2.10.0',
+  };
+
+  it('every doctor invoke takes no arguments', () => {
+    for (const channel of [
+      CHANNELS.doctorStatus,
+      CHANNELS.doctorCheck,
+      CHANNELS.doctorInstall,
+      CHANNELS.doctorSkipSetup,
+    ]) {
+      expect(IPC[channel].request.safeParse([]).success).toBe(true);
+      expect(IPC[channel].request.safeParse(['/usr/local/bin/maestro']).success).toBe(false);
+    }
+  });
+
+  it('answers status with the whole doctor state', () => {
+    const schema = IPC[CHANNELS.doctorStatus].response;
+
+    expect(schema.safeParse(STATE).success).toBe(true);
+    expect(schema.safeParse({ ...STATE, report: null, checking: true }).success).toBe(true);
+    expect(
+      schema.safeParse({ ...STATE, setup: { active: true, reason: 'first-run' } }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ ...STATE, setup: { active: true, reason: 'update' } }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({
+        ...STATE,
+        install: { installId: 'install-1', pct: 42, step: 'Downloading maestro 2.10.0' },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        install: {
+          installId: 'install-1',
+          failed: { code: 'doctor/download-failed', message: 'sentence', detail: 'HTTP 503' },
+        },
+      }).success,
+    ).toBe(true);
+  });
+
+  /** Criterion 31's guard travels in the state: the sheet never learns the
+   * path, only that the person set one. */
+  it('carries whether CONFIG.MAESTRO_PATH is set, and nothing more about it', () => {
+    const schema = IPC[CHANNELS.doctorStatus].response;
+
+    expect(schema.safeParse({ ...STATE, maestroOverridden: true }).success).toBe(true);
+    expect(schema.safeParse({ ...STATE, maestroOverridden: '/custom/maestro' }).success).toBe(
+      false,
+    );
+    expect(schema.safeParse({ ...STATE, maestroPath: '/custom/maestro' }).success).toBe(false);
+  });
+
+  it('rejects a row outside the three statuses or the eight ids', () => {
+    const schema = IPC[CHANNELS.doctorStatus].response;
+
+    expect(
+      schema.safeParse({ ...STATE, report: { ...REPORT, rows: [{ ...ROW, status: 'busy' }] } })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ ...STATE, report: { ...REPORT, rows: [{ ...ROW, id: 'git' }] } }).success,
+    ).toBe(false);
+  });
+
+  it('answers check with whether a check started, install with its id, skip with nothing', () => {
+    expect(IPC[CHANNELS.doctorCheck].response.safeParse({ started: false }).success).toBe(true);
+    expect(IPC[CHANNELS.doctorInstall].response.safeParse({ installId: 'install-1' }).success).toBe(
+      true,
+    );
+    expect(IPC[CHANNELS.doctorInstall].response.safeParse({}).success).toBe(false);
+    expect(IPC[CHANNELS.doctorSkipSetup].response.safeParse({}).success).toBe(true);
+  });
+
+  it('pushes the same state on doctor:changed', () => {
+    expect(PUSH[PUSH_CHANNELS.doctorChanged].safeParse(STATE).success).toBe(true);
+  });
+
+  it('pushes progress, done and failed install events, each naming its install', () => {
+    const schema = PUSH[PUSH_CHANNELS.doctorInstallEvent];
+
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'progress', pct: 12, step: 'Extracting' })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'done', version: '2.10.0' }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        installId: 'install-1',
+        kind: 'failed',
+        code: 'doctor/checksum-mismatch',
+        message: 'sentence',
+        detail: 'sha256 mismatch',
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ kind: 'progress', pct: 12, step: 'Extracting' }).success).toBe(false);
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'progress', pct: 101, step: 'x' }).success,
+    ).toBe(false);
+  });
+
+  it('declares the seven doctor codes', () => {
+    expect([
+      ERROR_CODES.doctorInstallActive,
+      ERROR_CODES.doctorMaestroOverridden,
+      ERROR_CODES.doctorSetupNotActive,
+      ERROR_CODES.doctorDownloadFailed,
+      ERROR_CODES.doctorChecksumMismatch,
+      ERROR_CODES.doctorExtractFailed,
+      ERROR_CODES.doctorVerifyFailed,
+    ]).toEqual([
+      'doctor/install-active',
+      'doctor/maestro-overridden',
+      'doctor/setup-not-active',
+      'doctor/download-failed',
+      'doctor/checksum-mismatch',
+      'doctor/extract-failed',
+      'doctor/verify-failed',
     ]);
   });
 });

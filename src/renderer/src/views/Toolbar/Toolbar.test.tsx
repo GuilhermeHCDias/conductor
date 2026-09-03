@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENVIRONMENT } from '../../fixtures/flows';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
+import { resetDoctorStore, useDoctorStore } from '../../stores/doctor.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetPublishStore, usePublishStore } from '../../stores/publish.store';
 import { resetRepoStore, useRepoStore } from '../../stores/repo.store';
@@ -58,6 +59,7 @@ beforeEach(() => {
   resetRunStore();
   resetPublishStore();
   resetRepoStore();
+  resetDoctorStore();
   connectRepo();
   useFlowStore.setState({ openPath: 'teste.yaml', yaml: FLOW_YAML });
 });
@@ -354,5 +356,56 @@ describe('the Run button', () => {
     });
 
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument();
+  });
+});
+
+/** Doctor criteria 33–34 — the badge sits after the spacer and before Run,
+ * and only once the first report has landed. */
+describe('the doctor badge', () => {
+  const REPORT = { rows: [], checkedAt: 1_756_800_000_000, issues: 0 };
+
+  function names(): (string | null)[] {
+    return within(screen.getByRole('toolbar'))
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent);
+  }
+
+  it('shows nothing before the first report', () => {
+    render(<Toolbar />);
+
+    expect(screen.queryByRole('button', { name: /Doctor/ })).not.toBeInTheDocument();
+  });
+
+  it('is the quiet Doctor button after the spacer, before Run, at zero issues', () => {
+    useDoctorStore.setState({ loaded: true, report: REPORT });
+    render(<Toolbar />);
+
+    expect(names()).toEqual(['Toggle sidebar', 'Doctor', ENVIRONMENT, 'Run', 'Dark appearance']);
+  });
+
+  it('is the amber count while things need the person', () => {
+    useDoctorStore.setState({ loaded: true, report: { ...REPORT, issues: 2 } });
+    render(<Toolbar />);
+
+    expect(names()).toEqual([
+      'Toggle sidebar',
+      'Doctor · 2 items need you',
+      ENVIRONMENT,
+      'Run',
+      'Dark appearance',
+    ]);
+  });
+
+  /** Criterion 25 — a click opens the sheet; another closes it. */
+  it('toggles the doctor sheet, and reads as selected while it is open', async () => {
+    useDoctorStore.setState({ loaded: true, report: REPORT });
+    render(<Toolbar />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Doctor' }));
+    expect(useDoctorStore.getState().sheetOpen).toBe(true);
+    expect(screen.getByRole('button', { name: 'Doctor' })).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Doctor' }));
+    expect(useDoctorStore.getState().sheetOpen).toBe(false);
   });
 });

@@ -99,6 +99,8 @@ function makeService(
     env: overrides.env ?? {},
     home: '/Users/someone',
     configuredPath: overrides.configuredPath ?? '',
+    managedDir: '/Users/someone/Library/Application Support/Conductor/maestro',
+    isFile: () => false,
   });
 
   return { service, spawns, session, listCalls: () => listCalls };
