@@ -186,25 +186,3 @@
   flex-basis: 100%;
   font: var(--type-caption);
 }
-
-/* Criterion 20: the raw Maestro log in the DS mono treatment — its own
-   scrolling region, pinned to the tail until the person scrolls up. */
-.log {
-  border-top: 1px solid var(--a-hair);
-  max-height: 16rem;
-  overflow-y: auto;
-  padding: var(--space-4) var(--space-6) var(--space-6);
-}
-
-.logText {
-  color: var(--text-tertiary);
-  font: var(--type-code-sm);
-  overflow-wrap: anywhere;
-  white-space: pre-wrap;
-}
-
-.droppedNote {
-  color: var(--text-disabled);
-  font: var(--type-caption);
-  padding-bottom: var(--space-2);
-}

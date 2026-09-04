@@ -234,10 +234,10 @@ describe('starting a recording', () => {
     expect(spawned).toEqual([
       {
         deviceId: DEVICE,
-        args: ['screenrecord', '--bit-rate', '4000000', '--time-limit', '0', REMOTE],
+        args: ['screenrecord', '--bit-rate', '2000000', '--time-limit', '0', REMOTE],
       },
     ]);
-    expect(RECORDING_BITRATE).toBe(4_000_000);
+    expect(RECORDING_BITRATE).toBe(2_000_000);
     expect(spawned[0]?.args.filter((arg) => arg.includes(' '))).toEqual([]);
   });
 
@@ -266,7 +266,7 @@ describe('starting a recording', () => {
 
     await screen.start(DEVICE, 'run-1');
 
-    expect(spawned[0]?.args).toEqual(['screenrecord', '--bit-rate', '4000000', REMOTE]);
+    expect(spawned[0]?.args).toEqual(['screenrecord', '--bit-rate', '2000000', REMOTE]);
     expect(UNLIMITED_TIME_LIMIT_API).toBe(34);
   });
 

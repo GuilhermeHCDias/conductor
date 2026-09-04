@@ -5,9 +5,10 @@ import { type RunStep, resetRunStore, useRunStore } from '../../stores/run.store
 import { RunPanel } from './RunPanel';
 
 /**
- * Run criteria 19–23: the live step list, the streaming log, the outcome —
- * and the empty state only while no run has ever happened. Everything renders
- * from `run.store`; the ui.store fixtures stopped feeding this panel.
+ * Run criteria 19–23: the live step list and the outcome — the raw log stays
+ * off screen since the 2026-09-04 amendment — and the empty state only while
+ * no run has ever happened. Everything renders from `run.store`; the ui.store
+ * fixtures stopped feeding this panel.
  */
 
 const STEPS: readonly RunStep[] = [
@@ -38,7 +39,8 @@ describe('the empty state', () => {
   });
 
   /** Criterion 22 — a run that died before any step parsed is a report, never
-   * the empty-state text over a dead run. */
+   * the empty-state text over a dead run. Maestro's own line stays off
+   * screen (the 2026-09-04 amendment): the outcome's message is the report. */
   it('gives way to the failure when a run died before any step', () => {
     useRunStore.setState({
       outcome: 'error',
@@ -52,8 +54,8 @@ describe('the empty state', () => {
     ).not.toBeInTheDocument();
     expect(screen.getByText('The Maestro CLI is not installed.')).toBeInTheDocument();
     expect(
-      screen.getByText('Device NOPE was requested, but it is not connected.'),
-    ).toBeInTheDocument();
+      screen.queryByText('Device NOPE was requested, but it is not connected.'),
+    ).not.toBeInTheDocument();
   });
 
   it('gives way the moment a run is live, before any output', () => {
@@ -116,32 +118,20 @@ describe('the step list', () => {
 });
 
 /** Criterion 20 — the raw Maestro log, mono, in order. */
+/** Criterion 20 as amended (2026-09-04): the raw Maestro log is not shown —
+ * the step list and the outcome are the report. The store still buffers the
+ * lines; the panel never renders them, dropped or not. */
 describe('the log', () => {
-  it('streams the raw lines in order', () => {
+  it('keeps the raw lines off screen, dropped or not', () => {
     useRunStore.setState({
       running: true,
       logLines: ['Running on R9QYC01EMXL', ' > Flow happy', 'Launch app "x"... COMPLETED'],
+      droppedLines: 120,
     });
     render(<RunPanel />);
 
-    expect(screen.getByTestId('log-text').textContent).toBe(
-      'Running on R9QYC01EMXL\n > Flow happy\nLaunch app "x"... COMPLETED',
-    );
-    expect(screen.getByRole('log')).toBeInTheDocument();
-  });
-
-  /** The cap is visible, never silent (spec constraint). */
-  it('says when earlier output was dropped', () => {
-    useRunStore.setState({ running: true, logLines: ['newest'], droppedLines: 120 });
-    render(<RunPanel />);
-
-    expect(screen.getByText('… earlier output dropped')).toBeInTheDocument();
-  });
-
-  it('does not claim a drop that never happened', () => {
-    useRunStore.setState({ running: true, logLines: ['all of it'] });
-    render(<RunPanel />);
-
+    expect(screen.queryByRole('log')).not.toBeInTheDocument();
+    expect(screen.queryByText(/Running on R9QYC01EMXL/)).not.toBeInTheDocument();
     expect(screen.queryByText('… earlier output dropped')).not.toBeInTheDocument();
   });
 });
@@ -186,7 +176,7 @@ describe('the outcome', () => {
 
     expect(screen.getAllByRole('listitem')).toHaveLength(1);
     expect(screen.getByText('Run failed')).toBeInTheDocument();
-    expect(screen.getByText('Launch app "x"... COMPLETED')).toBeInTheDocument();
+    expect(screen.queryByText('Launch app "x"... COMPLETED')).not.toBeInTheDocument();
   });
 });
 
@@ -371,7 +361,7 @@ describe('the recording', () => {
     render(<RunPanel />);
 
     expect(screen.getByRole('button', { name: 'Open video' })).toBeInTheDocument();
-    expect(screen.getByText('Tap on "Entrar"... FAILED')).toBeInTheDocument();
+    expect(screen.queryByText('Tap on "Entrar"... FAILED')).not.toBeInTheDocument();
     expect(screen.getByText('Run failed')).toBeInTheDocument();
   });
 });
