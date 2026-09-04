@@ -35,22 +35,39 @@ const WORKSPACE = { width: 1280, height: 820, minWidth: 960, minHeight: 640 } as
  * connect card is the whole window and has nothing to grow into. */
 const CONNECT = { width: 560, height: 520 } as const;
 
+/** Before that (doctor criterion 14): the Maestro installer, 520 × 360 per
+ * the kit's `CDoctorInstaller`, fixed — close live, minimise and zoom dead,
+ * the way a macOS installer window renders. */
+const SETUP = { width: 520, height: 360 } as const;
+
+export type WindowView = 'setup' | 'connect' | 'workspace';
+
 /**
  * The one and only `BrowserWindow` factory — it carries the §9.3 flags.
- * `view` picks the geometry: the small fixed connect window while no repo is
- * active, the workspace otherwise. Same window, same flags, different size.
+ * `view` picks the geometry: the installer while Maestro is being put on the
+ * machine, the small fixed connect window while no repo is active, the
+ * workspace otherwise. Same window, same flags, different size.
  */
-export function createWindow(view: 'connect' | 'workspace' = 'workspace'): BrowserWindow {
+export function createWindow(view: WindowView = 'workspace'): BrowserWindow {
   const bounds =
-    view === 'connect'
+    view === 'setup'
       ? {
-          width: CONNECT.width,
-          height: CONNECT.height,
+          width: SETUP.width,
+          height: SETUP.height,
           resizable: false,
+          minimizable: false,
           maximizable: false,
           fullscreenable: false,
         }
-      : WORKSPACE;
+      : view === 'connect'
+        ? {
+            width: CONNECT.width,
+            height: CONNECT.height,
+            resizable: false,
+            maximizable: false,
+            fullscreenable: false,
+          }
+        : WORKSPACE;
   const mainWindow = new BrowserWindow({
     ...bounds,
     show: false,
@@ -118,6 +135,25 @@ export function presentWorkspace(window: BrowserWindow): void {
   window.setResizable(true);
   window.setMaximizable(true);
   window.setFullScreenable(true);
+  // Dead in the setup window (doctor criterion 14), live everywhere after.
+  window.setMinimizable(true);
   window.setSize(WORKSPACE.width, WORKSPACE.height);
+  window.center();
+}
+
+/**
+ * Setup finished with no repo persisted: the same window becomes the connect
+ * card (doctor criterion 16) — resized, never a second BrowserWindow. The
+ * connect card is as fixed as the installer was; only minimise comes back.
+ */
+export function presentConnect(window: BrowserWindow): void {
+  if (window.isDestroyed()) {
+    return;
+  }
+  window.setResizable(false);
+  window.setMaximizable(false);
+  window.setFullScreenable(false);
+  window.setMinimizable(true);
+  window.setSize(CONNECT.width, CONNECT.height);
   window.center();
 }

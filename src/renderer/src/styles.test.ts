@@ -306,6 +306,9 @@ describe('the drag region', () => {
 
     expect(declaring.map((module) => module.name).sort()).toEqual([
       'views/Connect/Connect.module.css',
+      // The installer window's drag strip (doctor criterion 24) — the same
+      // strip Connect reserves, for the same frameless window.
+      'views/Setup/Setup.module.css',
       'views/Toolbar/Toolbar.module.css',
     ]);
   });

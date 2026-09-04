@@ -37,6 +37,8 @@ function runner(overrides: {
     env: overrides.env ?? { PATH: '/usr/bin:/opt/maestro/bin' },
     home: '/Users/someone',
     configuredPath: overrides.configuredPath ?? '',
+    managedDir: '/Users/someone/Library/Application Support/Conductor/maestro',
+    isFile: () => false,
   });
   return { cli, spawned };
 }
@@ -175,6 +177,8 @@ describe('CliRunner.checkSyntax', () => {
       env: overrides.env ?? { PATH: '/usr/bin:/opt/maestro/bin' },
       home: '/Users/someone',
       configuredPath: overrides.configuredPath ?? '',
+      managedDir: '/Users/someone/Library/Application Support/Conductor/maestro',
+      isFile: () => false,
     });
     return {
       cli,

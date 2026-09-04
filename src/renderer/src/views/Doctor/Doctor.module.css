@@ -1,0 +1,215 @@
+/* The kit's CDoctorSheetB over the app's Dialog: a verdict band, one table
+   ordered by who has to act, a footnote, two footer buttons. The Dialog owns
+   the scrim, the panel, the header and the footer bar; this file dresses
+   what goes inside them. */
+
+/* Criterion 27 — the band, coloured by verdict. It bleeds to the panel's
+   edges, so the Dialog's body padding is undone here. */
+.verdict {
+  align-items: flex-start;
+  border-bottom: 1px solid var(--state-pass-edge);
+  background: var(--state-pass-quiet);
+  display: flex;
+  gap: 11px;
+  margin: 0 calc(-1 * var(--space-6)) var(--space-5);
+  padding: 14px var(--space-6);
+}
+
+.verdict[data-verdict="issues"] {
+  background: var(--state-running-quiet);
+  border-bottom-color: var(--state-running-edge);
+}
+
+.verdictGlyph {
+  color: var(--state-pass);
+  flex: none;
+  margin-top: 1px;
+}
+
+.verdict[data-verdict="issues"] .verdictGlyph {
+  color: var(--state-running);
+}
+
+.verdictText {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
+}
+
+.verdictTitle {
+  color: var(--text-primary);
+  font: var(--type-title-3);
+}
+
+.verdictBody {
+  color: var(--text-secondary);
+  font: var(--type-body);
+  text-wrap: pretty;
+}
+
+.table {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  overflow: hidden;
+}
+
+.sectionLabel {
+  background: var(--a-well);
+  border-bottom: 1px solid var(--a-hair);
+  color: var(--text-tertiary);
+  font: var(--type-label);
+  letter-spacing: 0.09em;
+  padding: 7px 14px 6px;
+  text-transform: uppercase;
+}
+
+.rows {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+/* Glyph · name over the mono line · the state word · (Install). */
+.row {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr) auto auto;
+  padding: 7px 14px;
+}
+
+.rows > .row:last-child {
+  border-bottom: none;
+}
+
+.glyph {
+  color: var(--text-tertiary);
+}
+
+.row[data-status="ok"] .glyph {
+  color: var(--state-pass);
+}
+
+.row[data-status="warn"] .glyph {
+  color: var(--state-running);
+}
+
+.row[data-status="fail"] .glyph {
+  color: var(--state-fail);
+}
+
+.text {
+  display: grid;
+  gap: 1px;
+  min-width: 0;
+}
+
+.name {
+  color: var(--text-primary);
+  font: var(--type-body-strong);
+}
+
+/* The mono line: quiet where nothing is wrong, tinted where a person has
+   to read it — the kit's B reading. */
+.mono {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row[data-status="warn"] .mono {
+  color: var(--state-running);
+}
+
+.row[data-status="fail"] .mono {
+  color: var(--state-fail);
+}
+
+.label {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+}
+
+.row[data-status="warn"] .label {
+  color: var(--state-running);
+}
+
+.row[data-status="fail"] .label {
+  color: var(--state-fail);
+}
+
+/* Criterion 31 — the sheet's one per-row action. */
+.install {
+  background: var(--accent);
+  border: none;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  font: var(--type-caption);
+  height: 24px;
+  padding: 0 10px;
+  transition: var(--t-hover);
+}
+
+.install:hover {
+  background: var(--accent-strong);
+}
+
+.footnote {
+  color: var(--text-tertiary);
+  font: var(--type-caption);
+  margin: 0;
+  padding: 10px 2px 0;
+  text-wrap: pretty;
+}
+
+/* The footer pair, the kit's ghost and primary. */
+.ghost,
+.primary {
+  align-items: center;
+  border-radius: var(--a-radius-field);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  gap: var(--space-3);
+  height: 28px;
+  padding: 0 var(--space-5);
+  transition: var(--t-hover);
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--text-secondary);
+}
+
+.ghost:hover:enabled {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.ghost:disabled {
+  cursor: default;
+  opacity: 0.5;
+}
+
+.primary {
+  background: var(--accent);
+  border: none;
+  color: var(--accent-on);
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+}
+
+.install:focus-visible,
+.ghost:focus-visible,
+.primary:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

@@ -1,6 +1,7 @@
 import { type JSX, useEffect, useLayoutEffect } from 'react';
 import styles from './App.module.css';
 import { useAiEvents } from './hooks/useAiEvents';
+import { useDoctorEvents } from './hooks/useDoctorEvents';
 import { useElementWidth } from './hooks/useElementWidth';
 import { useFlowIndex } from './hooks/useFlowIndex';
 import { usePublishEvents } from './hooks/usePublishEvents';
@@ -8,6 +9,7 @@ import { useRepoEvents } from './hooks/useRepoEvents';
 import { useRunEvents } from './hooks/useRunEvents';
 import { useWindowShortcuts } from './hooks/useWindowShortcuts';
 import { countCommands } from './lib/yaml-tokens';
+import { useDoctorStore } from './stores/doctor.store';
 import { selectYaml, useFlowStore } from './stores/flow.store';
 import { useRepoStore } from './stores/repo.store';
 import { selectRunning, selectSettledStepCount, useRunStore } from './stores/run.store';
@@ -15,10 +17,12 @@ import { selectSidebarVisible, useUiStore } from './stores/ui.store';
 import { AddRepoDialog } from './views/AddRepoDialog/AddRepoDialog';
 import { Connect } from './views/Connect/Connect';
 import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
+import { Doctor } from './views/Doctor/Doctor';
 import { FlowEditor } from './views/FlowEditor/FlowEditor';
 import { FlowList } from './views/FlowList/FlowList';
 import { PublishSheet } from './views/PublishSheet/PublishSheet';
 import { RepoBar } from './views/RepoBar/RepoBar';
+import { Setup } from './views/Setup/Setup';
 import { Toolbar } from './views/Toolbar/Toolbar';
 
 /** The window opens at this width; the frame corrects it on first measure. */
@@ -47,6 +51,10 @@ export function App(): JSX.Element {
   // connect screen.
   const repoLoaded = useRepoStore((state) => state.loaded);
   const activeRepo = useRepoStore((state) => state.active);
+  // Doctor criterion 38 — and before either, the installer: while setup is
+  // active the window is Conductor putting its own Maestro on the machine.
+  const doctorLoaded = useDoctorStore((state) => state.loaded);
+  const setupActive = useDoctorStore((state) => state.setup.active);
   const [frameRef, frameWidth] = useElementWidth(INITIAL_WIDTH);
 
   useWindowShortcuts();
@@ -64,6 +72,9 @@ export function App(): JSX.Element {
   // And for the assistant: its stream keeps landing while the Run tab is
   // selected, and its edits open flows whichever panel is showing.
   useAiEvents();
+  // And for the doctor: the report feeds the toolbar badge whether or not
+  // the sheet is open, and the install stream feeds the setup window.
+  useDoctorEvents();
 
   // A layout effect, not a plain one: the appearance has to be on the document
   // before the first paint, or the window flashes light and then goes dark
@@ -78,13 +89,24 @@ export function App(): JSX.Element {
 
   const total = Math.max(countCommands(yaml), 1);
   const progress = Math.min(100, Math.round((settled / total) * 100));
-  const view = !repoLoaded ? 'loading' : activeRepo === null ? 'connect' : 'workspace';
+  const view =
+    !repoLoaded || !doctorLoaded
+      ? 'loading'
+      : setupActive
+        ? 'setup'
+        : activeRepo === null
+          ? 'connect'
+          : 'workspace';
 
   return (
     <div className={styles.desktop} data-testid="window-frame" ref={frameRef}>
       <div aria-hidden="true" className={styles.wash} />
 
-      <div className={styles.window} data-view={view === 'connect' ? 'connect' : undefined}>
+      <div
+        className={styles.window}
+        data-view={view === 'connect' || view === 'setup' ? view : undefined}
+      >
+        {view === 'setup' ? <Setup /> : null}
         {view === 'connect' ? <Connect /> : null}
         {view === 'workspace' ? (
           <>
@@ -124,6 +146,7 @@ export function App(): JSX.Element {
 
             <AddRepoDialog />
             <PublishSheet />
+            <Doctor />
           </>
         ) : null}
       </div>

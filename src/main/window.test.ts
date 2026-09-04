@@ -47,6 +47,9 @@ vi.mock('electron', () => ({
     setSize(width: number, height: number): void {
       mock.applied.push(`size:${width}x${height}`);
     }
+    setMinimizable(minimizable: boolean): void {
+      mock.applied.push(`minimizable:${minimizable}`);
+    }
     center(): void {
       mock.applied.push('center');
     }
@@ -60,7 +63,8 @@ vi.mock('@electron-toolkit/utils', () => ({
 
 process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
-const { createWindow, isRendererUrl, presentWorkspace, RENDERER_URL } = await import('./window');
+const { createWindow, isRendererUrl, presentConnect, presentWorkspace, RENDERER_URL } =
+  await import('./window');
 
 /**
  * `isRendererUrl` is the allowlist the IPC sender guard checks against, so a
@@ -204,7 +208,51 @@ describe('createWindow', () => {
       'resizable:true',
       'maximizable:true',
       'fullscreenable:true',
+      'minimizable:true',
       'size:1280x820',
+      'center',
+    ]);
+  });
+
+  /** Doctor criterion 14 — the first-run installer: 520 × 360, fixed; close
+   * live, minimise and zoom dead, the way a macOS installer window renders. */
+  it('opens at the installer geometry for the setup view', () => {
+    createWindow('setup');
+
+    expect(mock.constructed[0]).toMatchObject({
+      width: 520,
+      height: 360,
+      resizable: false,
+      minimizable: false,
+      maximizable: false,
+      fullscreenable: false,
+    });
+  });
+
+  it('keeps the §9.3 flags in the setup window too', () => {
+    createWindow('setup');
+
+    expect(mock.constructed[0]?.webPreferences).toMatchObject({
+      contextIsolation: true,
+      nodeIntegration: false,
+      sandbox: true,
+      webviewTag: false,
+    });
+  });
+
+  /** Doctor criterion 16 — after setup the same window becomes the connect
+   * card: resized, never a second BrowserWindow, and minimisable again. */
+  it('presentConnect resizes the setup window to the connect bounds', () => {
+    const window = createWindow('setup');
+
+    presentConnect(window);
+
+    expect(mock.applied).toEqual([
+      'resizable:false',
+      'maximizable:false',
+      'fullscreenable:false',
+      'minimizable:true',
+      'size:560x520',
       'center',
     ]);
   });

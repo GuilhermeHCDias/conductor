@@ -1,0 +1,155 @@
+/* The kit's CDoctorInstaller: drag strip over a centred column — mark,
+   heading, body, one bar, one line. 520 × 360 is the window's own size
+   (window.ts), so nothing here scrolls or grows. */
+
+.setup {
+  display: grid;
+  grid-template-rows: 38px minmax(0, 1fr);
+  min-height: 0;
+}
+
+/* The installer window renders no toolbar; this strip is what the person
+   drags it by, the way Connect's is. */
+.drag {
+  background: var(--a-chrome);
+  border-bottom: 1px solid var(--a-hair);
+  -webkit-app-region: drag;
+}
+
+.body {
+  align-content: center;
+  display: grid;
+  justify-items: center;
+  min-height: 0;
+  padding: 0 44px;
+  text-align: center;
+}
+
+/* The real Conductor icon, not the kit's gradient "C" (spec decision). */
+.mark {
+  border-radius: 14px;
+  box-shadow: var(--shadow-2), var(--a-refract);
+  height: 54px;
+  width: 54px;
+}
+
+.title {
+  color: var(--text-primary);
+  font: var(--type-title-2);
+  margin: 18px 0 0;
+}
+
+.copy {
+  color: var(--text-secondary);
+  font: var(--type-body);
+  margin: 6px 0 0;
+  text-wrap: pretty;
+}
+
+.track {
+  background: var(--a-hair-strong);
+  border-radius: var(--radius-pill);
+  height: 4px;
+  margin-top: 26px;
+  overflow: hidden;
+  width: 100%;
+}
+
+.fill {
+  background: var(--accent);
+  border-radius: var(--radius-pill);
+  height: 100%;
+  transition:
+    width var(--dur-base) linear,
+    background var(--dur-base) var(--ease-out);
+}
+
+/* Criterion 21 — the bar turns pass on done. */
+.track[data-done="true"] .fill {
+  background: var(--state-pass);
+}
+
+.line {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  margin-top: 10px;
+  width: 100%;
+}
+
+.check {
+  color: var(--state-pass);
+}
+
+.step {
+  color: var(--text-tertiary);
+  flex: 1;
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.step[data-done="true"] {
+  color: var(--state-pass);
+}
+
+.pct {
+  color: var(--text-disabled);
+  font: var(--type-mono-label);
+}
+
+/* Criterion 23 — the failure sentence takes the step line's place. */
+.failure {
+  color: var(--state-fail);
+  font: var(--type-caption);
+  margin: 10px 0 0;
+  text-wrap: pretty;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: center;
+  margin-top: 14px;
+}
+
+.ghost,
+.primary {
+  align-items: center;
+  border-radius: var(--a-radius-field);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  height: 28px;
+  padding: 0 var(--space-6);
+  transition: var(--t-hover);
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid var(--a-hair);
+  color: var(--text-secondary);
+}
+
+.ghost:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.primary {
+  background: var(--accent);
+  border: none;
+  color: var(--accent-on);
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+}
+
+.ghost:focus-visible,
+.primary:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

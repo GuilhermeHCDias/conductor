@@ -9,6 +9,7 @@
   },
   "scripts": {
     "dev": "electron-vite dev",
+    "dev:fresh": "rm -rf \"${TMPDIR:-/tmp}/conductor-fresh\" && electron-vite dev -- --user-data-dir=\"${TMPDIR:-/tmp}/conductor-fresh\"",
     "build": "npm run typecheck && electron-vite build",
     "typecheck": "npm run typecheck:node && npm run typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",

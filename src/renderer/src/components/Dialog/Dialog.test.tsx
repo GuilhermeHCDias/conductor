@@ -71,3 +71,13 @@ describe('Dialog', () => {
     expect(onClose).toHaveBeenCalled();
   });
 });
+
+/** The doctor sheet stamps its check time beside the title (doctor criterion
+ * 26) — an aside in the header, between the heading and the close control. */
+describe('aside', () => {
+  it('renders the aside in the header when given', () => {
+    render(<Dialog aside="checked 9:12 am" onClose={vi.fn()} title="Doctor" />);
+
+    expect(screen.getByText('checked 9:12 am')).toBeInTheDocument();
+  });
+});
