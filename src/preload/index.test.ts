@@ -104,6 +104,7 @@ describe('the bridge', () => {
       'repoResolve',
       'repoSwitch',
       'runCancel',
+      'runOpenRecording',
       'runStart',
     ]);
   });
@@ -131,8 +132,9 @@ describe('the bridge', () => {
     await api.mirrorInput('mirror-1', tap);
     await api.maestroSnapshot('R9QYC01EMXL');
     await api.maestroSynthesizeSelector('snapshot-1', [1, 2, 0]);
-    await api.runStart('R9QYC01EMXL', 'appId: x\n---\n- launchApp\n');
+    await api.runStart('R9QYC01EMXL', 'appId: x\n---\n- launchApp\n', 'checkout/pix.yml');
     await api.runCancel('run-1');
+    await api.runOpenRecording('run-1');
     await api.flowList();
     await api.flowRead('checkout/pix.yml');
     await api.flowSave('checkout/pix.yml', 'appId: x\n---\n');
@@ -166,8 +168,12 @@ describe('the bridge', () => {
       { channel: CHANNELS.mirrorInput, args: ['mirror-1', tap] },
       { channel: CHANNELS.maestroSnapshot, args: ['R9QYC01EMXL'] },
       { channel: CHANNELS.maestroSynthesizeSelector, args: ['snapshot-1', [1, 2, 0]] },
-      { channel: CHANNELS.runStart, args: ['R9QYC01EMXL', 'appId: x\n---\n- launchApp\n'] },
+      {
+        channel: CHANNELS.runStart,
+        args: ['R9QYC01EMXL', 'appId: x\n---\n- launchApp\n', 'checkout/pix.yml'],
+      },
       { channel: CHANNELS.runCancel, args: ['run-1'] },
+      { channel: CHANNELS.runOpenRecording, args: ['run-1'] },
       { channel: CHANNELS.flowList, args: [] },
       { channel: CHANNELS.flowRead, args: ['checkout/pix.yml'] },
       { channel: CHANNELS.flowSave, args: ['checkout/pix.yml', 'appId: x\n---\n'] },

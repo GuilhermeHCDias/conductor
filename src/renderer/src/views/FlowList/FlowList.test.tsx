@@ -339,8 +339,10 @@ describe('the context menus', () => {
     });
     await userEvent.click(screen.getByRole('menuitem', { name: 'Run now' }));
 
+    // Recording criterion 31 — the run carries the flow's identity, so a
+    // failed run's video is named after the file that was run.
     await vi.waitFor(() => {
-      expect(runStart).toHaveBeenCalledExactlyOnceWith('device-1', FLOW);
+      expect(runStart).toHaveBeenCalledExactlyOnceWith('device-1', FLOW, 'pix.yaml');
     });
     expect(useUiStore.getState().lowerPanel).toBe('run');
   });

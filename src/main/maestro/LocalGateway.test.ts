@@ -5,9 +5,15 @@ import type { AdbBridge } from './AdbBridge';
 import type { CliRunner } from './CliRunner';
 import { HierarchyParseError } from './HierarchyParser';
 import { LocalGateway } from './LocalGateway';
-import type { MirrorHandlers, MirrorSession, RunProgress } from './MaestroGateway';
+import type {
+  MirrorHandlers,
+  MirrorSession,
+  RecordingSession,
+  RunProgress,
+} from './MaestroGateway';
 import type { ScrcpySource } from './ScrcpySource';
 import type { ScreenCapture } from './ScreenCapture';
+import type { ScreenRecorder } from './ScreenRecorder';
 
 /**
  * Delegation, and the seam that matters: every device capability arrives through
@@ -41,6 +47,13 @@ const TREE = JSON.stringify({
 });
 
 const PNG = Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]);
+
+const RECORDING: RecordingSession = {
+  startedAt: 1_756_823_415_000,
+  save: () => Promise.resolve({ stoppedAt: 1_756_823_475_000 }),
+  discard: () => Promise.resolve(),
+  abort: () => {},
+};
 
 /** A child whose stdio the test drives by hand, chunk by chunk. */
 function scriptedChild(): {
@@ -77,7 +90,13 @@ function scriptedChild(): {
   };
 }
 
-function gateway(overrides: { tree?: string; capture?: () => Promise<Buffer> } = {}): {
+function gateway(
+  overrides: {
+    tree?: string;
+    capture?: () => Promise<Buffer>;
+    record?: () => Promise<RecordingSession>;
+  } = {},
+): {
   gateway: LocalGateway;
   calls: Array<{ method: string; args: readonly unknown[] }>;
   emitStdout: (chunk: string) => void;
@@ -118,6 +137,13 @@ function gateway(overrides: { tree?: string; capture?: () => Promise<Buffer> } =
     },
   } as unknown as ScreenCapture;
 
+  const recorder = {
+    start: (...args: readonly unknown[]): Promise<RecordingSession> => {
+      calls.push({ method: 'record', args });
+      return overrides.record?.() ?? Promise.resolve(RECORDING);
+    },
+  } as unknown as ScreenRecorder;
+
   const scripted = scriptedChild();
   const cli = {
     test: (...args: readonly unknown[]): StreamingProcess => {
@@ -128,7 +154,7 @@ function gateway(overrides: { tree?: string; capture?: () => Promise<Buffer> } =
   } as unknown as CliRunner;
 
   return {
-    gateway: new LocalGateway(adb, scrcpy, mcp, capture, cli),
+    gateway: new LocalGateway(adb, scrcpy, mcp, capture, cli, recorder),
     calls,
     emitStdout: scripted.emitStdout,
     emitStderr: scripted.emitStderr,
@@ -263,6 +289,35 @@ describe('taking a screenshot', () => {
     });
 
     await expect(local.screenshot('R9QYC01EMXL')).rejects.toThrow('device offline');
+  });
+});
+
+/**
+ * Recording criteria 2 and 33. The recorder sits behind the Gateway for the
+ * reason the screenshot does: where the device lives is the Gateway's secret,
+ * and the video leaves it as a write into a host path — never a device path.
+ */
+describe('recording the screen', () => {
+  it('records through the screen recorder, naming the recording after the run', async () => {
+    const { gateway: local, calls } = gateway();
+
+    await local.startRecording('R9QYC01EMXL', 'run-1');
+
+    expect(calls).toEqual([{ method: 'record', args: ['R9QYC01EMXL', 'run-1'] }]);
+  });
+
+  it('answers with the session it was given', async () => {
+    const { gateway: local } = gateway();
+
+    expect(await local.startRecording('R9QYC01EMXL', 'run-1')).toBe(RECORDING);
+  });
+
+  it('propagates a recorder that could not start', async () => {
+    const { gateway: local } = gateway({
+      record: () => Promise.reject(new Error('No adb found.')),
+    });
+
+    await expect(local.startRecording('R9QYC01EMXL', 'run-1')).rejects.toThrow('No adb found.');
   });
 });
 

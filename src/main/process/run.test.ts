@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_MAX_BUFFER, run, runBinary, type StreamingProcess, spawnStreaming } from './run';
+import {
+  DEFAULT_MAX_BUFFER,
+  run,
+  runBinary,
+  type StreamingProcess,
+  spawnStreaming,
+  timedOut,
+} from './run';
 
 /** Exercised against real child processes: this module's whole purpose is the
  * boundary with the OS, and a mocked `execFile` would only prove the mock. */
@@ -47,6 +54,33 @@ describe('run', () => {
     await expect(
       run(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { timeout: 100 }),
     ).rejects.toThrow();
+  });
+
+  /** The three rejections look alike from outside — each is an `Error` whose
+   * message starts with the command line — and a caller that reports a
+   * deadline in plain words needs to tell the timeout from the rest. This is
+   * the one predicate that knows execFile's shape for it. */
+  it('tells a timeout apart from an abort, a missing binary and a plain error', async () => {
+    const rejection = (promise: Promise<unknown>): Promise<unknown> =>
+      promise.then(
+        () => 'resolved',
+        (error: unknown) => error,
+      );
+
+    const timeout = await rejection(
+      run(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { timeout: 100 }),
+    );
+    expect(timedOut(timeout)).toBe(true);
+
+    const controller = new AbortController();
+    const aborting = rejection(
+      run(process.execPath, ['-e', 'setTimeout(() => {}, 10000)'], { signal: controller.signal }),
+    );
+    controller.abort();
+    expect(timedOut(await aborting)).toBe(false);
+
+    expect(timedOut(await rejection(run('/definitely/not/a/binary', [])))).toBe(false);
+    expect(timedOut(new Error('Command failed: adb pull'))).toBe(false);
   });
 
   // `maestro hierarchy` on a dense screen comfortably clears Node's 1 MB

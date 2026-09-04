@@ -9,18 +9,20 @@ import type {
   MaestroGateway,
   MirrorHandlers,
   MirrorSession,
+  RecordingSession,
   RunFlowHandlers,
   SyntaxCheck,
 } from './MaestroGateway';
 import { type ParsedOutput, RunOutputParser } from './RunOutputParser';
 import type { ScrcpySource } from './ScrcpySource';
 import type { ScreenCapture } from './ScreenCapture';
+import type { ScreenRecorder } from './ScreenRecorder';
 
 /**
  * The Gateway against the machine the app is running on. Delegation and nothing
  * else — the parsing, the wire and the traps live in `AdbBridge`,
- * `ScrcpySource`, `ScreenCapture`, `MaestroMcpService`, `CliRunner`,
- * `HierarchyParser` and `RunOutputParser`.
+ * `ScrcpySource`, `ScreenCapture`, `ScreenRecorder`, `MaestroMcpService`,
+ * `CliRunner`, `HierarchyParser` and `RunOutputParser`.
  */
 export class LocalGateway implements MaestroGateway {
   private readonly adb: AdbBridge;
@@ -28,6 +30,7 @@ export class LocalGateway implements MaestroGateway {
   private readonly mcp: MaestroMcpService;
   private readonly capture: ScreenCapture;
   private readonly cli: CliRunner;
+  private readonly recorder: ScreenRecorder;
 
   constructor(
     adb: AdbBridge,
@@ -35,12 +38,14 @@ export class LocalGateway implements MaestroGateway {
     mcp: MaestroMcpService,
     capture: ScreenCapture,
     cli: CliRunner,
+    recorder: ScreenRecorder,
   ) {
     this.adb = adb;
     this.scrcpy = scrcpy;
     this.mcp = mcp;
     this.capture = capture;
     this.cli = cli;
+    this.recorder = recorder;
   }
 
   listDevices(): Promise<Device[]> {
@@ -71,6 +76,12 @@ export class LocalGateway implements MaestroGateway {
 
   screenshot(deviceId: string): Promise<Buffer> {
     return this.capture.capture(deviceId);
+  }
+
+  /** Routed and nothing else — the command line, the stop and the deadline
+   * are `ScreenRecorder`'s (recording criterion 2). */
+  startRecording(deviceId: string, name: string): Promise<RecordingSession> {
+    return this.recorder.start(deviceId, name);
   }
 
   /**

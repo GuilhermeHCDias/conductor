@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ExitReason, RunResult, StreamingProcess } from '../process/run';
-import { AdbBridge, AdbFailedError, AdbNotFoundError } from './AdbBridge';
+import type { ExitReason, RunOptions, RunResult, StreamingProcess } from '../process/run';
+import { AdbBridge, AdbFailedError, AdbNotFoundError, API_LEVEL_TIMEOUT_MS } from './AdbBridge';
 
 /**
  * Every one of these drives the bridge from captured `adb` output. Nothing here
@@ -17,7 +17,7 @@ R9QYC01EMXL            device usb:337641472X product:o1sxx model:SM_G991B device
 emulator-5554          device product:sdk_gphone64_arm64 model:sdk_gphone64_arm64 device:emu64a transport_id:2
 `;
 
-type Call = { command: string; args: readonly string[] };
+type Call = { command: string; args: readonly string[]; options?: RunOptions };
 
 /** A `StreamingProcess` that records what was done to it. The mirror's server
  * is a child that stays up, so its lifecycle is what the tests assert on. */
@@ -68,8 +68,8 @@ function makeBridge(
   const children: FakeChild[] = [];
   const executable = new Set(options.executable ?? ['/opt/sdk/platform-tools/adb']);
   const bridge = new AdbBridge({
-    run: (command, args) => {
-      calls.push({ command, args });
+    run: (command, args, options) => {
+      calls.push(options === undefined ? { command, args } : { command, args, options });
       return Promise.resolve(responses({ command, args }));
     },
     spawn: (command, args) => {
@@ -598,6 +598,140 @@ describe('pushing a file to the device', () => {
 });
 
 /** Criterion 16 — the port is allocated, never a hardcoded 27183. */
+describe('pulling a file from the device', () => {
+  /** The counterpart of `push`, and how a failed run's video leaves the
+   * device (recording criterion 8): the host path is the caller's; the
+   * device path never travels further up than the module that named it. */
+  it('pulls the device path to the host path, on the selected device', async () => {
+    const { bridge, calls } = makeBridge(() =>
+      ok(
+        '/sdcard/conductor-recording-run-1.mp4: 1 file pulled. 31.2 MB/s (31457280 bytes in 0.96s)',
+      ),
+    );
+
+    await bridge.pull(
+      'R9QYC01EMXL',
+      '/sdcard/conductor-recording-run-1.mp4',
+      '/Users/someone/Movies/Conductor/login-2026-09-02-143015.mp4.partial',
+    );
+
+    expect(calls[0]).toEqual({
+      command: '/opt/sdk/platform-tools/adb',
+      args: [
+        '-s',
+        'R9QYC01EMXL',
+        'pull',
+        '/sdcard/conductor-recording-run-1.mp4',
+        '/Users/someone/Movies/Conductor/login-2026-09-02-143015.mp4.partial',
+      ],
+    });
+  });
+
+  /** A video is tens of megabytes, and a device that stopped answering leaves
+   * the pull hanging: the caller's deadline reaches the runner, so it becomes
+   * a failure with a reason rather than a save that never finishes. */
+  it('hands the caller’s deadline to the runner', async () => {
+    const { bridge, calls } = makeBridge(() => ok(''));
+
+    await bridge.pull('R9QYC01EMXL', '/sdcard/x.mp4', '/tmp/x.mp4', { timeoutMs: 15_000 });
+
+    expect(calls[0]?.options).toEqual({ timeout: 15_000 });
+  });
+
+  it('carries the caller’s abort signal, so a quit can cut the pull short', async () => {
+    const { bridge, calls } = makeBridge(() => ok(''));
+    const controller = new AbortController();
+
+    await bridge.pull('R9QYC01EMXL', '/sdcard/x.mp4', '/tmp/x.mp4', { signal: controller.signal });
+
+    expect(calls[0]?.options?.signal).toBe(controller.signal);
+  });
+
+  it('reports a pull that failed with adb’s own words', async () => {
+    const { bridge } = makeBridge(() =>
+      failed(
+        1,
+        "adb: error: failed to stat remote object '/sdcard/x.mp4': No such file or directory",
+      ),
+    );
+
+    await expect(bridge.pull('R9QYC01EMXL', '/sdcard/x.mp4', '/tmp/x.mp4')).rejects.toMatchObject({
+      code: 'device/adb-failed',
+      message: expect.stringContaining('No such file or directory'),
+      // The words alone, apart from the command line — what a surface the
+      // person reads may quote (recording constraint: no `adb`, no `pull`).
+      detail: "adb: error: failed to stat remote object '/sdcard/x.mp4': No such file or directory",
+    });
+  });
+
+  it('names the exit code as the detail when adb said nothing', async () => {
+    const { bridge } = makeBridge(() => failed(1));
+
+    await expect(bridge.pull('R9QYC01EMXL', '/sdcard/x.mp4', '/tmp/x.mp4')).rejects.toMatchObject({
+      detail: 'exited 1',
+    });
+  });
+});
+
+describe('reading the device’s API level', () => {
+  /** Recording criterion 2 — the level decides which `screenrecord` flags the
+   * device accepts, so it is read from the property that says it exactly. */
+  /** The read sits between the Run click and the spawn: a device that stopped
+   * answering must not hold the Run button forever. */
+  it('bounds the read, so a hung device cannot hold the Run button', async () => {
+    const { bridge, calls } = makeBridge(() => ok('36'));
+
+    await bridge.apiLevel('R9QYC01EMXL');
+
+    expect(calls[0]?.options).toEqual({ timeout: API_LEVEL_TIMEOUT_MS });
+    expect(API_LEVEL_TIMEOUT_MS).toBeGreaterThan(0);
+  });
+
+  it('reads ro.build.version.sdk as a number', async () => {
+    const { bridge, calls } = makeBridge(() => ok('36\n'));
+
+    await expect(bridge.apiLevel('R9QYC01EMXL')).resolves.toBe(36);
+    expect(calls[0]?.args).toEqual([
+      '-s',
+      'R9QYC01EMXL',
+      'shell',
+      'getprop',
+      'ro.build.version.sdk',
+    ]);
+  });
+
+  /** `null` is "not reported", never a guess: a flag chosen from an invented
+   * level is rejected by the device, and the run would go unrecorded. */
+  it.each([
+    ['says nothing', ok('')],
+    ['answers with something that is not a number', ok('unknown')],
+    ['refuses the read', failed(1, 'error: device offline')],
+  ])('reports null when the device %s', async (_label, answer) => {
+    const { bridge } = makeBridge(() => answer);
+
+    await expect(bridge.apiLevel('R9QYC01EMXL')).resolves.toBeNull();
+  });
+
+  /** A device that does not answer within the bound did not say either: the
+   * flag stays off and the cap stands, a video rather than a run that goes
+   * unrecorded with adb's command line as the reason. The runner's rejection
+   * is Node's, the command line in its message. */
+  it('reports null when the device does not answer in time', async () => {
+    const { bridge } = makeBridge(() =>
+      Promise.reject(
+        Object.assign(
+          new Error(
+            'Command failed: /opt/sdk/platform-tools/adb -s R9QYC01EMXL shell getprop ro.build.version.sdk',
+          ),
+          { killed: true, code: null, signal: 'SIGTERM' },
+        ),
+      ),
+    );
+
+    await expect(bridge.apiLevel('R9QYC01EMXL')).resolves.toBeNull();
+  });
+});
+
 describe('forwarding a port', () => {
   it('asks adb to allocate one and returns the port it printed', async () => {
     // Verified on hardware 2026-08-04: `adb forward tcp:0` prints the port.
@@ -705,6 +839,8 @@ describe('when adb itself is gone', () => {
     await expect(bridge.properties('x')).rejects.toBeInstanceOf(AdbNotFoundError);
     await expect(bridge.appIdentity('x', 'com.example')).rejects.toBeInstanceOf(AdbNotFoundError);
     await expect(bridge.push('x', '/a', '/b')).rejects.toBeInstanceOf(AdbNotFoundError);
+    await expect(bridge.pull('x', '/a', '/b')).rejects.toBeInstanceOf(AdbNotFoundError);
+    await expect(bridge.apiLevel('x')).rejects.toBeInstanceOf(AdbNotFoundError);
     await expect(bridge.forward('x', 'localabstract:y')).rejects.toBeInstanceOf(AdbNotFoundError);
     await expect(bridge.removeForward('x', 1)).rejects.toBeInstanceOf(AdbNotFoundError);
   });
