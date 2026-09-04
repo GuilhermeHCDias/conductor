@@ -1,11 +1,13 @@
 import type { JSX } from 'react';
+import { DoctorBadge } from '../../components/DoctorBadge/DoctorBadge';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { SendControl } from '../../components/SendControl/SendControl';
 import { documentTitle } from '../../lib/document-title';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
-import { selectOpenName, selectYaml, useFlowStore } from '../../stores/flow.store';
+import { selectIssues, useDoctorStore } from '../../stores/doctor.store';
+import { selectOpenName, selectOpenPath, selectYaml, useFlowStore } from '../../stores/flow.store';
 import { selectControlPhase, selectUnsentCount, usePublishStore } from '../../stores/publish.store';
 import { selectActiveRepo, useRepoStore } from '../../stores/repo.store';
 import { selectRunning, useRunStore } from '../../stores/run.store';
@@ -30,6 +32,9 @@ export function Toolbar(): JSX.Element {
   const cancel = useRunStore((state) => state.cancel);
   const deviceId = useDeviceStore(selectSelectedId);
   const yaml = useFlowStore(selectYaml);
+  // Recording criterion 31 — the open flow's identity names a failed run's
+  // video; `null` for a flow that was never saved, and main says `flow`.
+  const openPath = useFlowStore(selectOpenPath);
   const setLowerPanel = useUiStore((state) => state.setLowerPanel);
   const toggleAppearance = useUiStore((state) => state.toggleAppearance);
   const toggleSidebar = useUiStore((state) => state.toggleSidebar);
@@ -42,6 +47,11 @@ export function Toolbar(): JSX.Element {
   const controlPhase = usePublishStore(selectControlPhase);
   const unsentCount = usePublishStore(selectUnsentCount);
   const openSheet = usePublishStore((state) => state.openSheet);
+  // Doctor criteria 33–34: the count once the first report landed, and the
+  // sheet's open state so the badge reads as selected.
+  const issues = useDoctorStore(selectIssues);
+  const doctorOpen = useDoctorStore((state) => state.sheetOpen);
+  const toggleDoctor = useDoctorStore((state) => state.toggleSheet);
 
   // The count is the open flow's own, not a fixture's: a step the command menu
   // appends moves it the moment it lands.
@@ -63,7 +73,7 @@ export function Toolbar(): JSX.Element {
     if (deviceId === null) {
       return;
     }
-    void start(deviceId, yaml);
+    void start(deviceId, yaml, openPath);
     // Criterion 18 — the report lands in the Run tab, so the click goes
     // there: progress if the run starts, the failure if it refuses (22).
     setLowerPanel('run');
@@ -88,6 +98,12 @@ export function Toolbar(): JSX.Element {
       </span>
 
       <span className={styles.spacer} />
+
+      {/* Doctor criterion 33 — after the spacer, before Run, and only once a
+          report exists: a wrong "all clear" would be a small lie. */}
+      {issues !== null ? (
+        <DoctorBadge issues={issues} onClick={toggleDoctor} selected={doctorOpen} />
+      ) : null}
 
       <button
         className={styles.run}

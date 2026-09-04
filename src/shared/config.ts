@@ -33,8 +33,26 @@ export const CONFIG = {
    */
   ADB_PATH: process.env.CONDUCTOR_ADB_PATH ?? '',
 
-  /** Idem para o `maestro`. Vazio = resolver sozinho. */
+  /** Idem para o `maestro`. Vazio = resolver sozinho. Um caminho explícito é
+   * decisão da pessoa: o instalador nunca roda com ele definido (doctor). */
   MAESTRO_PATH: process.env.CONDUCTOR_MAESTRO_PATH ?? '',
+
+  /**
+   * A versão do Maestro que o Conductor instala e mantém em `userData/maestro`
+   * — o terceiro artefato pinado depois do jar do scrcpy e do plugin (§10,
+   * emenda do doctor). Toda instalação mira exatamente esta; o marcador
+   * gravado ao lado da cópia é comparado com ela a cada lançamento.
+   */
+  MAESTRO_VERSION: process.env.CONDUCTOR_MAESTRO_VERSION ?? '2.10.0',
+
+  /**
+   * Base das releases: `<base>/cli-<versão>/maestro.zip` e o
+   * `checksums_sha256.txt` ao lado. O override existe para iterar no
+   * instalador offline, contra um `python3 -m http.server` local.
+   */
+  MAESTRO_RELEASE_URL:
+    process.env.CONDUCTOR_MAESTRO_RELEASE_URL ??
+    'https://github.com/mobile-dev-inc/maestro/releases/download',
 
   /** Idem para o `gh`. Vazio = resolver sozinho (`resolve-gh`). */
   GH_PATH: process.env.CONDUCTOR_GH_PATH ?? '',

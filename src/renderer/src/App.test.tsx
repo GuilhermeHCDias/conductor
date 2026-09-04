@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it } from 'vitest';
 import { App } from './App';
 import { resetDeviceStore, useDeviceStore } from './stores/device.store';
+import { resetDoctorStore, useDoctorStore } from './stores/doctor.store';
 import { resetFlowStore, useFlowStore } from './stores/flow.store';
 import { resetRepoStore, useRepoStore } from './stores/repo.store';
 import { resetRunStore, useRunStore } from './stores/run.store';
@@ -40,9 +41,12 @@ beforeEach(() => {
   resetFlowStore();
   resetRunStore();
   resetRepoStore();
+  resetDoctorStore();
   // Seeded before render so the first paint is already the workspace, and
   // mirrored in the list answer so the mount-time refresh changes nothing.
   useRepoStore.setState({ repos: [ACTIVE_REPO], active: ACTIVE_REPO.slug, loaded: true });
+  // The doctor's truth too (doctor criterion 38): loaded, no setup pending.
+  useDoctorStore.setState({ loaded: true });
   window.conductor.repoList = () =>
     Promise.resolve({
       ok: true as const,
@@ -104,6 +108,60 @@ describe('App', () => {
       });
 
       expect(screen.getByRole('dialog', { name: 'Add repository' })).toBeInTheDocument();
+    });
+  });
+
+  /** Doctor criterion 38 — loading until both truths landed, then setup
+   * while it is active, then connect or workspace as before. */
+  describe('setup', () => {
+    it('holds a blank window until the doctor truth arrives', () => {
+      useDoctorStore.setState({ loaded: false });
+      render(<App />);
+
+      expect(screen.queryByRole('toolbar', { name: 'Window' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Point Conductor at a repository' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('shows only the installer while setup is active, whatever the repo state', () => {
+      useDoctorStore.setState({ loaded: true, setup: { active: true, reason: 'first-run' } });
+      render(<App />);
+
+      expect(screen.getByRole('heading', { name: 'Setting up Conductor' })).toBeInTheDocument();
+      expect(screen.queryByRole('toolbar', { name: 'Window' })).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('heading', { name: 'Point Conductor at a repository' }),
+      ).not.toBeInTheDocument();
+    });
+
+    it('moves on to connect when setup ends with no repo', () => {
+      useRepoStore.setState({ repos: [], active: null, loaded: true });
+      window.conductor.repoList = () =>
+        Promise.resolve({ ok: true as const, data: { repos: [], active: null } });
+      useDoctorStore.setState({ loaded: true, setup: { active: true, reason: 'first-run' } });
+      render(<App />);
+
+      act(() => {
+        useDoctorStore.setState({ setup: { active: false, reason: null } });
+      });
+
+      expect(
+        screen.getByRole('heading', { name: 'Point Conductor at a repository' }),
+      ).toBeInTheDocument();
+    });
+
+    it('mounts the doctor sheet over the workspace', () => {
+      useDoctorStore.setState({
+        loaded: true,
+        report: { rows: [], checkedAt: 1_756_800_000_000, issues: 0 },
+      });
+      render(<App />);
+      act(() => {
+        useDoctorStore.getState().openSheet();
+      });
+
+      expect(screen.getByRole('dialog', { name: 'Doctor' })).toBeInTheDocument();
     });
   });
 

@@ -50,6 +50,8 @@ function idleConductor(): ConductorApi {
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     runStart: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     runCancel: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    runOpenRecording: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     // The workspace's quiet default is emptiness, not failure: a view test
     // mounts a sidebar with no flows, the way `deviceList` answers no devices.
     flowList: () => Promise.resolve({ ok: true, data: { flows: [], folders: [] } }),
@@ -87,6 +89,25 @@ function idleConductor(): ConductorApi {
     // Ready is the quiet default — the assistant available, the composer
     // enabled — the way `deviceList` answers no devices rather than failing.
     aiStatus: () => Promise.resolve({ ok: true, data: { ready: true } }),
+    // No report yet, no setup, nothing installing — the quiet doctor truth
+    // of a machine that has Conductor's Maestro already.
+    doctorStatus: () =>
+      Promise.resolve({
+        ok: true,
+        data: {
+          report: null,
+          checking: false,
+          setup: { active: false, reason: null },
+          install: null,
+          maestroOverridden: false,
+          version: '2.10.0',
+        },
+      }),
+    doctorCheck: () => Promise.resolve({ ok: true, data: { started: false } }),
+    doctorInstall: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    doctorSkipSetup: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     onDeviceChanged: () => () => {},
     onMirrorEvent: () => () => {},
     onRunEvent: () => () => {},
@@ -96,6 +117,8 @@ function idleConductor(): ConductorApi {
     onPublishChanged: () => () => {},
     onPublishEvent: () => () => {},
     onAiEvent: () => () => {},
+    onDoctorChanged: () => () => {},
+    onDoctorInstallEvent: () => () => {},
   };
 }
 

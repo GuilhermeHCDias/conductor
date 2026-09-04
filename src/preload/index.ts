@@ -24,8 +24,10 @@ const api: ConductorApi = {
   maestroSnapshot: (deviceId) => ipcRenderer.invoke(CHANNELS.maestroSnapshot, deviceId),
   maestroSynthesizeSelector: (snapshotId, path) =>
     ipcRenderer.invoke(CHANNELS.maestroSynthesizeSelector, snapshotId, path),
-  runStart: (deviceId, yaml) => ipcRenderer.invoke(CHANNELS.runStart, deviceId, yaml),
+  runStart: (deviceId, yaml, flowPath) =>
+    ipcRenderer.invoke(CHANNELS.runStart, deviceId, yaml, flowPath),
   runCancel: (runId) => ipcRenderer.invoke(CHANNELS.runCancel, runId),
+  runOpenRecording: (runId) => ipcRenderer.invoke(CHANNELS.runOpenRecording, runId),
   flowList: () => ipcRenderer.invoke(CHANNELS.flowList),
   flowRead: (path) => ipcRenderer.invoke(CHANNELS.flowRead, path),
   flowSave: (path, yaml) => ipcRenderer.invoke(CHANNELS.flowSave, path, yaml),
@@ -45,6 +47,10 @@ const api: ConductorApi = {
   aiCancel: () => ipcRenderer.invoke(CHANNELS.aiCancel),
   aiReset: () => ipcRenderer.invoke(CHANNELS.aiReset),
   aiStatus: () => ipcRenderer.invoke(CHANNELS.aiStatus),
+  doctorStatus: () => ipcRenderer.invoke(CHANNELS.doctorStatus),
+  doctorCheck: () => ipcRenderer.invoke(CHANNELS.doctorCheck),
+  doctorInstall: () => ipcRenderer.invoke(CHANNELS.doctorInstall),
+  doctorSkipSetup: () => ipcRenderer.invoke(CHANNELS.doctorSkipSetup),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -148,6 +154,31 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.aiEvent, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.aiEvent, forward);
+    };
+  },
+
+  // Same shape — the doctor's report, setup and install state are main's.
+  onDoctorChanged: (listener) => {
+    const forward = (_event: IpcRendererEvent, payload: PushPayload<'doctor:changed'>): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.doctorChanged, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.doctorChanged, forward);
+    };
+  },
+
+  // And the install's progress, at ~10 Hz while the archive downloads.
+  onDoctorInstallEvent: (listener) => {
+    const forward = (
+      _event: IpcRendererEvent,
+      payload: PushPayload<'doctor:install-event'>,
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.doctorInstallEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.doctorInstallEvent, forward);
     };
   },
 };

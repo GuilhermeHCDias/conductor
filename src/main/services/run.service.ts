@@ -1,8 +1,14 @@
-import { mkdir, rename, rm, writeFile } from 'node:fs/promises';
+import { access, mkdir, rename, rm, writeFile } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { ERROR_CODES, type ErrorCode, type Result } from '@shared/ipc';
 import type { RunEvent, RunOutcome } from '@shared/types';
-import type { FlowRun, MaestroGateway, RunProgress } from '../maestro/MaestroGateway';
+import {
+  type FlowRun,
+  type MaestroGateway,
+  RecordingFailedError,
+  type RecordingSession,
+  type RunProgress,
+} from '../maestro/MaestroGateway';
 import type { ExitReason } from '../process/run';
 
 /**
@@ -14,6 +20,11 @@ import type { ExitReason } from '../process/run';
  * One run at a time, per window (criterion 4). The verdict always derives
  * from the process exit — kill, code, or failure to start — never from the
  * parsed decoration (criterion 7).
+ *
+ * Beside every run, a recording (recording criteria 1–22): started through
+ * the Gateway with the run's first step, kept when the run failed with a
+ * step on record and discarded otherwise, saved into the person's Movies
+ * folder, and reported as the one event that may follow the terminal one.
  */
 
 /** The slice of `SnapshotService` this service coordinates with. An interface
@@ -32,15 +43,49 @@ export type RunServiceDeps = {
   /** Where run temp files live — inside the app's user-data area, never the
    * repo: the run executes a snapshot of memory, not the document (§8.2). */
   readonly runsDir: string;
+  /** The person's videos folder — Electron's `app.getPath('videos')`, which
+   * is `~/Movies` on macOS. A failed run's recording lands in a subfolder
+   * of it (recording criterion 8). */
+  readonly videosDir: string;
+  /**
+   * `shell.openPath`, injected the way `openExternal` is into
+   * `PublishService`: answers `''` when the OS opened the file, its own
+   * message otherwise. Only ever called with a path this service wrote.
+   */
+  readonly openPath: (path: string) => Promise<string>;
 };
+
+/** The subfolder of Movies, so Conductor's files do not mix with the person's. */
+export const RECORDINGS_FOLDER = 'Conductor';
 
 type ActiveRun = {
   readonly runId: string;
+  readonly deviceId: string;
   readonly flowPath: string;
+  /** The open flow's identity, `null` when it was never saved — what the
+   * video is named after (recording criterion 10). */
+  readonly flowIdentity: string | null;
+  /** Local wall-clock start, the file name's timestamp. */
+  readonly startedAt: number;
   run: FlowRun | null;
   /** Criterion 9: set before the kill, so the exit reads as `canceled` no
    * matter what code the dying JVM leaves behind. */
   canceled: boolean;
+  /** The recorder beside this run — `null` while no step has asked for it,
+   * while it is still coming up, or when it could not start, in which case
+   * `recordingFailure` says why (recording criterion 4). */
+  recording: RecordingSession | null;
+  /** The recorder coming up, asked for by the first step event (recording
+   * criterion 1 as amended); settled before the run's recording is decided. */
+  recordingStart: Promise<void> | null;
+  recordingFailure: string | null;
+  /** Set once `dispose` cut the recorder, so a second pass cuts nothing twice. */
+  recordingCut: boolean;
+  /** Any step on record — a verdict without its start still counts. */
+  stepsSeen: number;
+  lastStepStartedAt: number | null;
+  /** When the step that failed began, for criterion 13's offset. */
+  failedStepStartedAt: number | null;
 };
 
 export class RunService {
@@ -50,6 +95,27 @@ export class RunService {
    * from a dead run must never wear a live one's id. */
   private nextRun = 1;
   private disposed = false;
+  /** Recording criterion 17's registry: the video main saved for each run,
+   * and the only paths `openRecording` will ever open. */
+  private readonly savedRecordings = new Map<string, string>();
+  /**
+   * Every recording still settling — a save in flight while the next run
+   * begins (recording criterion 22), a discard behind a pass or a refused
+   * spawn — so `dispose` can cut each one and wait for it (criterion 21).
+   */
+  private readonly settling = new Set<{
+    session: RecordingSession;
+    done: Promise<void>;
+    /** Already aborted by whoever tracked it, so a quit does not cut it twice. */
+    cut: boolean;
+  }>();
+  /** A start between its first await and its answer, so `dispose` can wait
+   * for it to notice the quit rather than race it (recording criterion 21). */
+  private starting: Promise<unknown> | null = null;
+  /** Every recorder still coming up — a run's own, or the previous run's,
+   * asked for a moment before its exit — so `dispose` can wait for each to
+   * arrive and cut itself (recording criterion 21). */
+  private readonly recordersStarting = new Set<Promise<void>>();
 
   constructor(deps: RunServiceDeps) {
     this.deps = deps;
@@ -60,9 +126,15 @@ export class RunService {
    * taken synchronously (two clicks race on the await otherwise), captures are
    * waited out (criterion 12), the flow is written atomically — and then the
    * answer leaves immediately. Completion is nobody's to await (§12.16's
-   * spirit: long work is streamed, never awaited in a handler).
+   * spirit: long work is streamed, never awaited in a handler). The recorder
+   * is no part of this: the run's first step asks for it (recording
+   * criterion 1 as amended), so the spawn waits on the device for nothing.
    */
-  async start(deviceId: string, yaml: string): Promise<Result<{ runId: string }>> {
+  async start(
+    deviceId: string,
+    yaml: string,
+    flowIdentity: string | null,
+  ): Promise<Result<{ runId: string }>> {
     if (this.disposed) {
       return refuse(ERROR_CODES.runActive, 'Conductor is shutting down.');
     }
@@ -77,15 +149,50 @@ export class RunService {
     this.nextRun += 1;
     const active: ActiveRun = {
       runId,
+      deviceId,
       flowPath: join(this.deps.runsDir, `${runId}.yaml`),
+      flowIdentity,
+      startedAt: Date.now(),
       run: null,
       canceled: false,
+      recording: null,
+      recordingStart: null,
+      recordingFailure: null,
+      recordingCut: false,
+      stepsSeen: 0,
+      lastStepStartedAt: null,
+      failedStepStartedAt: null,
     };
     this.active = active;
+    // The report clears when the next run starts (recording criterion 28), and
+    // so does what this service would open for it: a video is reachable for
+    // one report, which keeps the registry bounded by construction.
+    this.savedRecordings.clear();
 
+    const launching = this.launch(active, deviceId, yaml);
+    this.starting = launching;
+    try {
+      return await launching;
+    } finally {
+      this.starting = null;
+    }
+  }
+
+  /**
+   * The awaits between the slot and the spawn, each followed by a look at
+   * `disposed`: a quit that lands mid-start must find the attempt refused and
+   * nothing spawned (recording criterion 21).
+   */
+  private async launch(
+    active: ActiveRun,
+    deviceId: string,
+    yaml: string,
+  ): Promise<Result<{ runId: string }>> {
     try {
       await this.deps.snapshots.suspend();
+      this.ensureLive();
       await writeFlow(active.flowPath, yaml);
+      this.ensureLive();
       active.run = this.deps.gateway.runFlow(deviceId, active.flowPath, {
         onProgress: (progress) => {
           this.forward(active, progress);
@@ -96,23 +203,17 @@ export class RunService {
       });
     } catch (error) {
       // A start that never became a run leaves nothing behind: no suspension,
-      // no file, no events — and the next click starts clean. The removal is
-      // awaited because the refusal is the whole answer: when it lands,
-      // nothing of this attempt may still be settling.
+      // no file, no events — and no recorder, which only a step event asks
+      // for. The removal is awaited because the refusal is the whole answer:
+      // when it lands, nothing of this attempt may still be settling.
       this.active = null;
       this.deps.snapshots.resume();
       await removeFlow(active.flowPath);
-      return refuse(codeOf(error), messageOf(error));
+      return refuse(codeOf(error), messageOf(error, 'The run could not be started.'));
     }
 
-    if (this.disposed) {
-      // `before-quit` fired while the awaits above were settling.
-      active.canceled = true;
-      active.run.kill();
-    }
-
-    this.emit({ type: 'started', runId });
-    return { ok: true, data: { runId } };
+    this.emit({ type: 'started', runId: active.runId });
+    return { ok: true, data: { runId: active.runId } };
   }
 
   /** Criterion 9. Kill the tree now; the terminal event arrives when the exit
@@ -129,18 +230,167 @@ export class RunService {
     return { ok: true, data: { runId } };
   }
 
-  /** Criterion 10 — no orphaned JVM survives `before-quit`. */
-  dispose(): void {
-    this.disposed = true;
-    if (this.active?.run != null) {
-      this.active.canceled = true;
-      this.active.run.kill();
+  /**
+   * Recording criteria 17–19. Opens the video this service saved for the run
+   * — never a path from the renderer, which only ever sends the id. The file
+   * may have been moved or deleted since; the OS may decline; each is its own
+   * stable code, and nothing opens in either case.
+   */
+  async openRecording(runId: string): Promise<Result<{ runId: string }>> {
+    const path = this.savedRecordings.get(runId);
+    if (path === undefined) {
+      return refuse(
+        ERROR_CODES.runRecordingMissing,
+        'The video is no longer in your Movies folder.',
+      );
     }
+    try {
+      await access(path);
+    } catch {
+      return refuse(
+        ERROR_CODES.runRecordingMissing,
+        'The video is no longer in your Movies folder.',
+      );
+    }
+    const problem = await this.deps.openPath(path);
+    if (problem !== '') {
+      return refuse(ERROR_CODES.runRecordingOpenFailed, problem);
+    }
+    return { ok: true, data: { runId } };
+  }
+
+  /**
+   * Criterion 10 — no orphaned JVM survives `before-quit`; recording
+   * criterion 21 — no device-side recorder child and no `.partial` either.
+   * The live recorder is cut at once and its device-side file removed; a save
+   * in flight is cut short, and the disposal waits for both.
+   */
+  async dispose(): Promise<void> {
+    this.disposed = true;
+    // Synchronously first: the kill and the abort must not wait on anything.
+    this.cutActive();
+    // A start mid-flight sees the flag at its next await and refuses itself;
+    // a recorder still coming up cuts itself on arrival (`startRecording`)
+    // and parks its discard in the registry cut below — both are waited for,
+    // never raced.
+    await this.starting;
+    await Promise.all([...this.recordersStarting]);
+    this.cutActive();
+    for (const entry of this.settling) {
+      if (!entry.cut) {
+        entry.session.abort();
+      }
+    }
+    await this.settled();
+  }
+
+  /**
+   * Resolves once nothing is settling — every recorder still coming up has
+   * arrived, and every save and discard in flight has run to its end, the
+   * follow-up event included. A recorder that arrives may start a save or a
+   * discard, so the wait goes around until both sets are empty. `dispose`
+   * waits on it after aborting them; a test waits on it instead of on the
+   * clock.
+   */
+  async settled(): Promise<void> {
+    while (this.recordersStarting.size > 0 || this.settling.size > 0) {
+      await Promise.all([
+        ...this.recordersStarting,
+        ...[...this.settling].map((entry) => entry.done),
+      ]);
+    }
+  }
+
+  /** Kills the live run and cuts its recorder, idempotently — and marks the
+   * cut even before the recorder exists, so one still coming up cuts itself
+   * the moment it arrives. */
+  private cutActive(): void {
+    const active = this.active;
+    // `canceled` doubles as "already told to die": a cancel, or the first
+    // pass of a dispose, sent the kill, and the second pass sends nothing.
+    if (active?.run != null && !active.canceled) {
+      active.canceled = true;
+      active.run.kill();
+    }
+    if (active !== null && !active.recordingCut) {
+      active.recordingCut = true;
+      if (active.recording !== null) {
+        active.recording.abort();
+        this.track(active.recording, active.recording.discard(), true);
+      }
+    }
+  }
+
+  /** Throws the refusal a quit earns, so `launch`'s catch cleans up. */
+  private ensureLive(): void {
+    if (this.disposed) {
+      throw coded(ERROR_CODES.runActive, 'Conductor is shutting down.');
+    }
+  }
+
+  /** Holds a settling recording until it is done, so `dispose` can find it —
+   * and knows whether it was cut already. */
+  private track(session: RecordingSession, done: Promise<void>, cut = false): Promise<void> {
+    const entry = { session, done: done.catch(() => {}), cut };
+    this.settling.add(entry);
+    void entry.done.finally(() => {
+      this.settling.delete(entry);
+    });
+    return entry.done;
+  }
+
+  /**
+   * Recording criteria 1 (as amended) and 4. Asked for by the run's first
+   * step event, never before the spawn: Maestro's JVM takes seconds to reach
+   * its first command, and a recorder started with the spawn filmed a still
+   * screen for all of them. It never stops the run: a recorder that cannot
+   * start is logged, and its cause kept for the run to report should it fail
+   * (criterion 15). One that arrives after a quit cut the run — or the run
+   * it belongs to — is dropped on the spot (criterion 21).
+   */
+  private async startRecording(active: ActiveRun): Promise<void> {
+    let session: RecordingSession;
+    try {
+      session = await this.deps.gateway.startRecording(active.deviceId, active.runId);
+    } catch (error) {
+      active.recordingFailure = messageOf(error, 'the recorder could not be started');
+      console.warn(`Run ${active.runId} is not recorded:`, active.recordingFailure);
+      return;
+    }
+    if (active.recordingCut || this.disposed) {
+      session.abort();
+      this.track(session, session.discard(), true);
+      return;
+    }
+    active.recording = session;
+  }
+
+  /** The recorder's start, held where `dispose` can wait for it. */
+  private askRecorder(active: ActiveRun): Promise<void> {
+    const starting: Promise<void> = this.startRecording(active).finally(() => {
+      this.recordersStarting.delete(starting);
+    });
+    this.recordersStarting.add(starting);
+    return starting;
   }
 
   private forward(active: ActiveRun, progress: RunProgress): void {
     if (this.active !== active) {
       return;
+    }
+    if (progress.type !== 'log') {
+      if (active.stepsSeen === 0) {
+        // Recording criterion 1 as amended: the first step is the first thing
+        // worth filming, so the recorder is asked for here, off the event's
+        // own path — what became of it is read when the run settles.
+        active.recordingStart = this.askRecorder(active);
+      }
+      active.stepsSeen += 1;
+      if (progress.type === 'step-started') {
+        active.lastStepStartedAt = Date.now();
+      } else if (progress.type === 'step-failed') {
+        active.failedStepStartedAt = active.lastStepStartedAt;
+      }
     }
     this.emit(
       progress.type === 'log'
@@ -152,7 +402,8 @@ export class RunService {
   /**
    * The one exit, whatever it was. Resume comes first — the end-of-run
    * recapture (criterion 13) rides on the terminal event, and it must find
-   * the gate already open.
+   * the gate already open. The terminal event goes out the moment the exit
+   * is known (recording criterion 6); the recording follows on its own.
    */
   private settle(active: ActiveRun, reason: ExitReason): void {
     if (this.active !== active) {
@@ -161,11 +412,106 @@ export class RunService {
     this.active = null;
     this.deps.snapshots.resume();
     void removeFlow(active.flowPath);
+    const outcome = outcomeOf(active, reason);
+    // Recording criteria 7–9: kept only by a failure or an error with a step
+    // on record — a run that never reached a step recorded nothing worth
+    // watching.
+    const keep = (outcome === 'failed' || outcome === 'error') && active.stepsSeen > 0;
+    // Recording criterion 12 as amended: `pending` when a video is being saved
+    // — or when the recorder is still coming up for a run that would keep it,
+    // the follow-up event then saying which way it went.
+    const saving =
+      keep &&
+      active.recordingFailure === null &&
+      (active.recording !== null || active.recordingStart !== null);
     this.emit({
       type: 'finished',
       runId: active.runId,
-      outcome: outcomeOf(active, reason),
+      outcome,
       message: settleMessage(active, reason),
+      recording: saving ? 'pending' : 'none',
+    });
+    void this.settleRecording(active, keep);
+  }
+
+  /** Recording criteria 7–9, 13–15: what becomes of the video, and the one
+   * event that says so — pushed only for a run that would have kept it. */
+  private async settleRecording(active: ActiveRun, keep: boolean): Promise<void> {
+    // The recorder asked for by the first step may still be coming up when the
+    // exit lands — a run that died on its first command. Its answer decides
+    // everything below, so it is waited for here, never in `settle`.
+    await active.recordingStart;
+    const session = active.recording;
+    if (session === null) {
+      if (keep && active.recordingFailure !== null) {
+        this.emitRecordingFailure(active, 'record', active.recordingFailure);
+      }
+      return;
+    }
+    if (!keep) {
+      await this.track(session, session.discard());
+      return;
+    }
+    await this.track(session, this.saveRecording(active, session));
+  }
+
+  /**
+   * Recording criteria 8, 10, 11, 13, 14. Into `<videos>/Conductor/`, made
+   * if missing, under a `.partial` name until the pull is whole (§8.2's
+   * idiom), never over an existing file — and then the one event, with the
+   * name and where in the video the failed step begins.
+   */
+  private async saveRecording(active: ActiveRun, session: RecordingSession): Promise<void> {
+    const folder = join(this.deps.videosDir, RECORDINGS_FOLDER);
+    let partial: string | null = null;
+    try {
+      await mkdir(folder, { recursive: true });
+      const fileName = await reserveName(
+        folder,
+        `${flowSlug(active.flowIdentity)}-${localTimestamp(active.startedAt)}`,
+      );
+      const path = join(folder, fileName);
+      partial = `${path}.partial`;
+      const { stoppedAt } = await session.save(partial);
+      await rename(partial, path);
+      partial = null;
+      this.savedRecordings.set(active.runId, path);
+      this.emit({
+        type: 'recording',
+        runId: active.runId,
+        ok: true,
+        fileName,
+        fromSeconds: fromSeconds(active, session.startedAt, stoppedAt),
+      });
+    } catch (error) {
+      // A save that reached the pull left the session stopped and the device
+      // clean; one refused before that — the folder, the name — left the
+      // recorder running, and nothing else would stop it (criteria 5, 21).
+      // The note goes out first either way; the settle waits for the cleanup,
+      // so a quit still finds it.
+      const cleanup =
+        partial === null ? session.discard() : rm(partial, { force: true }).catch(() => {});
+      this.emitRecordingFailure(
+        active,
+        error instanceof RecordingFailedError ? error.phase : 'save',
+        messageOf(error, 'the video could not be saved'),
+      );
+      await cleanup;
+    }
+  }
+
+  /** Criteria 14 and 15's two sentences, the reason in the OS's or the tool's own
+   * words (spec constraint) — one full stop, whichever way the reason ends. */
+  private emitRecordingFailure(active: ActiveRun, phase: 'record' | 'save', reason: string): void {
+    const detail = reason.trim().replace(/\.$/, '');
+    this.emit({
+      type: 'recording',
+      runId: active.runId,
+      ok: false,
+      message:
+        phase === 'record'
+          ? `This run wasn't recorded: ${detail}.`
+          : `The recording couldn't be saved to your Movies folder: ${detail}.`,
     });
   }
 
@@ -209,6 +555,69 @@ function settleMessage(active: ActiveRun, reason: ExitReason): string | null {
 }
 
 /**
+ * Recording criterion 13: whole seconds, floored, from the recorder's start
+ * to the moment the failed step began — `null` when no step failed on record,
+ * or when the recorder had already stopped by then (criterion 3's cap). The
+ * floor is honest: the recorder needs a beat after its spawn before the
+ * first frame, so sub-second precision would be a claim, not a measurement.
+ */
+function fromSeconds(
+  active: ActiveRun,
+  recorderStartedAt: number,
+  stoppedAt: number,
+): number | null {
+  const failedAt = active.failedStepStartedAt;
+  if (failedAt === null || failedAt > stoppedAt) {
+    return null;
+  }
+  return Math.max(0, Math.floor((failedAt - recorderStartedAt) / 1000));
+}
+
+/**
+ * Recording criterion 10: the path relative to `conductor/` without its
+ * extension, `/` as `-`, everything outside `[A-Za-z0-9._-]` as `-`; `flow`
+ * when nothing was open — or when nothing survives the cleaning.
+ */
+function flowSlug(identity: string | null): string {
+  if (identity === null) {
+    return 'flow';
+  }
+  const slug = identity
+    .replace(/\.[^./]*$/, '')
+    .replace(/\//g, '-')
+    .replace(/[^A-Za-z0-9._-]/g, '-');
+  return slug === '' ? 'flow' : slug;
+}
+
+/** `YYYY-MM-DD-HHmmss`, in local time — the person's own clock. */
+function localTimestamp(at: number): string {
+  const date = new Date(at);
+  const pad = (value: number): string => String(value).padStart(2, '0');
+  const day = `${date.getFullYear()}-${pad(date.getMonth() + 1)}-${pad(date.getDate())}`;
+  const time = `${pad(date.getHours())}${pad(date.getMinutes())}${pad(date.getSeconds())}`;
+  return `${day}-${time}`;
+}
+
+/** Recording criterion 10 — never over an existing file: `-2`, `-3`… */
+async function reserveName(folder: string, base: string): Promise<string> {
+  for (let attempt = 1; ; attempt += 1) {
+    const name = attempt === 1 ? `${base}.mp4` : `${base}-${attempt}.mp4`;
+    if (!(await exists(join(folder, name)))) {
+      return name;
+    }
+  }
+}
+
+async function exists(path: string): Promise<boolean> {
+  try {
+    await access(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/**
  * §8.2's atomic write: temp name, then rename. The `maestro test` child reads
  * this exact file, and a write interrupted halfway must never hand it half a
  * YAML. The rename also makes a crash's leftover harmless — the next run of
@@ -235,6 +644,11 @@ function refuse(code: ErrorCode, message: string): Result<never> {
   return { ok: false, error: { code, message } };
 }
 
+/** An error carrying one of our stable codes, for `codeOf` to read back. */
+function coded(code: ErrorCode, message: string): Error {
+  return Object.assign(new Error(message), { code });
+}
+
 /** Codes that are actually ours. `fs` errors carry a `code` too — `EEXIST`,
  * `ENOTDIR` — and an errno crossing the boundary as a stable code would be a
  * contract the renderer cannot read. */
@@ -252,6 +666,7 @@ function codeOf(error: unknown): ErrorCode {
     : ERROR_CODES.runStartFailed;
 }
 
-function messageOf(error: unknown): string {
-  return error instanceof Error ? error.message : 'The run could not be started.';
+/** The error's own words, or the caller's sentence for a rejection without any. */
+function messageOf(error: unknown, fallback: string): string {
+  return error instanceof Error ? error.message : fallback;
 }

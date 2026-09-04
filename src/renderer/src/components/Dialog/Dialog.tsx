@@ -17,6 +17,8 @@ export type DialogProps = {
   /** The panel's width when the content needs more than the default 460px —
    * the add-repository sheet is 520 per the kit. */
   readonly width?: number;
+  /** A quiet stamp beside the title — the doctor sheet's check time. */
+  readonly aside?: ReactNode;
   readonly onClose: () => void;
   readonly children?: ReactNode;
   readonly footer?: ReactNode;
@@ -27,6 +29,7 @@ export function Dialog({
   subtitle,
   icon,
   width,
+  aside,
   onClose,
   children,
   footer,
@@ -79,6 +82,9 @@ export function Dialog({
             </h2>
             {subtitle !== undefined ? <p className={styles.subtitle}>{subtitle}</p> : null}
           </div>
+          {aside !== undefined && aside !== null ? (
+            <span className={styles.aside}>{aside}</span>
+          ) : null}
           <IconButton icon="x" label="Close" onClick={onClose} size="sm" />
         </div>
         {children !== undefined && children !== null ? (

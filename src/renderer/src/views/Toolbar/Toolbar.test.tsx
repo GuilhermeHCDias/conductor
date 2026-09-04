@@ -3,6 +3,7 @@ import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
+import { resetDoctorStore, useDoctorStore } from '../../stores/doctor.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetPublishStore, usePublishStore } from '../../stores/publish.store';
 import { resetRepoStore, useRepoStore } from '../../stores/repo.store';
@@ -57,6 +58,7 @@ beforeEach(() => {
   resetRunStore();
   resetPublishStore();
   resetRepoStore();
+  resetDoctorStore();
   connectRepo();
   useFlowStore.setState({ openPath: 'teste.yaml', yaml: FLOW_YAML });
 });
@@ -291,7 +293,9 @@ describe('the Run button', () => {
   });
 
   /** Criterion 15 — what you see is what runs: the store's current text,
-   * dirty or not, on the selected device. And the button flips. */
+   * dirty or not, on the selected device. And the button flips. Recording
+   * criterion 31 — the open flow's identity rides along, so main can name a
+   * failed run's video after it. */
   it('starts the open flow on the selected device and flips to Stop', async () => {
     connectDevice();
     useFlowStore.getState().appendStep('- tapOn: "Entrar"');
@@ -301,8 +305,22 @@ describe('the Run button', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Run' }));
 
-    expect(runStart).toHaveBeenCalledWith(DEVICE, useFlowStore.getState().yaml);
+    expect(runStart).toHaveBeenCalledWith(DEVICE, useFlowStore.getState().yaml, 'teste.yaml');
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+  });
+
+  /** Recording criterion 31 — the identity is the store's `openPath`, taken
+   * as it is: a nested flow keeps its folder. */
+  it('passes the open flow’s path, folder included', async () => {
+    connectDevice();
+    useFlowStore.setState({ openPath: 'checkout/pix.yml', yaml: FLOW_YAML });
+    const runStart = vi.fn(() => Promise.resolve({ ok: true as const, data: { runId: 'run-1' } }));
+    window.conductor.runStart = runStart;
+    render(<Toolbar />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(runStart).toHaveBeenCalledWith(DEVICE, FLOW_YAML, 'checkout/pix.yml');
   });
 
   /** Criterion 18 — the report is in the Run tab, so that is where a click
@@ -336,10 +354,66 @@ describe('the Run button', () => {
     act(() => {
       useRunStore.getState().applyEvent({
         ok: true,
-        data: { type: 'finished', runId: 'run-1', outcome: 'canceled', message: null },
+        data: {
+          type: 'finished',
+          runId: 'run-1',
+          outcome: 'canceled',
+          message: null,
+          recording: 'none',
+        },
       });
     });
 
     expect(screen.getByRole('button', { name: 'Run' })).toBeInTheDocument();
+  });
+});
+
+/** Doctor criteria 33–34 — the badge sits after the spacer and before Run,
+ * and only once the first report has landed. */
+describe('the doctor badge', () => {
+  const REPORT = { rows: [], checkedAt: 1_756_800_000_000, issues: 0 };
+
+  function names(): (string | null)[] {
+    return within(screen.getByRole('toolbar'))
+      .getAllByRole('button')
+      .map((button) => button.getAttribute('aria-label') ?? button.textContent);
+  }
+
+  it('shows nothing before the first report', () => {
+    render(<Toolbar />);
+
+    expect(screen.queryByRole('button', { name: /Doctor/ })).not.toBeInTheDocument();
+  });
+
+  it('is the quiet Doctor button after the spacer, before Run, at zero issues', () => {
+    useDoctorStore.setState({ loaded: true, report: REPORT });
+    render(<Toolbar />);
+
+    expect(names()).toEqual(['Toggle sidebar', 'Doctor', 'Run', 'Dark appearance']);
+  });
+
+  it('is the amber count while things need the person', () => {
+    useDoctorStore.setState({ loaded: true, report: { ...REPORT, issues: 2 } });
+    render(<Toolbar />);
+
+    expect(names()).toEqual([
+      'Toggle sidebar',
+      'Doctor · 2 items need you',
+      'Run',
+      'Dark appearance',
+    ]);
+  });
+
+  /** Criterion 25 — a click opens the sheet; another closes it. */
+  it('toggles the doctor sheet, and reads as selected while it is open', async () => {
+    useDoctorStore.setState({ loaded: true, report: REPORT });
+    render(<Toolbar />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Doctor' }));
+    expect(useDoctorStore.getState().sheetOpen).toBe(true);
+    expect(screen.getByRole('button', { name: 'Doctor' })).toHaveAttribute('aria-pressed', 'true');
+
+    await userEvent.click(screen.getByRole('button', { name: 'Doctor' }));
+    expect(useDoctorStore.getState().sheetOpen).toBe(false);
   });
 });

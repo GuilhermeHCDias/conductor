@@ -135,8 +135,9 @@ opened: the user writes the test by using the app, then watches it run.
 19. While a run is active, the step list shall show each parsed step with `StatusDot`
     `running` on start, then `pass` or `fail`; steps not yet reached don't appear (the list
     grows as Maestro advances).
-20. The panel shall stream the raw log lines in a mono, auto-scrolling region — pinned to the
-    bottom while the user hasn't scrolled up, holding position when they have.
+20. *(Withdrawn 2026-09-04 — see Decisions; the store still buffers the lines.)* The panel
+    shall stream the raw log lines in a mono, auto-scrolling region — pinned to the bottom
+    while the user hasn't scrolled up, holding position when they have.
 21. When the terminal event lands, the panel shall show the outcome (passed / failed /
     canceled / error with its message) and the final step states; the log remains readable
     after the run — cleared only when the next run starts.
@@ -251,3 +252,10 @@ opened: the user writes the test by using the app, then watches it run.
 - **No per-domain IPC registrar test** (implementation): the guarded seam is
   `handle.ts`, which carries the tests — the `run.ts` registrar is thin exactly like
   `device.ts`/`maestro.ts`, which have none either.
+- ⏸️ **Emenda (2026-09-04) — the raw log is no longer displayed** (engineer, after the first
+  hardware run of `failed-run-recording`): the step list already tells the story line by line,
+  and Maestro's own text beneath it read as noise ("I don't want this maestro log at the end").
+  Criterion 20 is withdrawn, and with it the log halves of criteria 21–22: `RunPanel` renders
+  the steps and the outcome, nothing else. The `log` events, the store's capped buffer and its
+  selectors stay exactly as they were — the text is still there for a later "copy log" or for
+  the assistant, just not on screen — and `RunPanel.test.tsx` pins the absence.

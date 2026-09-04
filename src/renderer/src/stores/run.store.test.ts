@@ -24,7 +24,7 @@ function event(data: RunEvent): Result<RunEvent> {
 /** Starts a run against a conductor whose answer the test controls. */
 async function startRun(runId = 'run-1'): Promise<void> {
   window.conductor.runStart = vi.fn(() => Promise.resolve(ok({ runId })));
-  await useRunStore.getState().start(DEVICE, YAML);
+  await useRunStore.getState().start(DEVICE, YAML, 'login.yml');
 }
 
 beforeEach(() => {
@@ -36,13 +36,13 @@ afterEach(() => {
 });
 
 describe('starting', () => {
-  it('invokes run:start with the device and the flow text', async () => {
+  it('invokes run:start with the device, the flow text and the flow identity', async () => {
     const runStart = vi.fn(() => Promise.resolve(ok({ runId: 'run-1' })));
     window.conductor.runStart = runStart;
 
-    await useRunStore.getState().start(DEVICE, YAML);
+    await useRunStore.getState().start(DEVICE, YAML, 'login.yml');
 
-    expect(runStart).toHaveBeenCalledWith(DEVICE, YAML);
+    expect(runStart).toHaveBeenCalledWith(DEVICE, YAML, 'login.yml');
     expect(useRunStore.getState().running).toBe(true);
     expect(useRunStore.getState().runId).toBe('run-1');
     expect(useRunStore.getState().outcome).toBeNull();
@@ -58,7 +58,7 @@ describe('starting', () => {
       }),
     );
 
-    await useRunStore.getState().start(DEVICE, YAML);
+    await useRunStore.getState().start(DEVICE, YAML, 'login.yml');
 
     const state = useRunStore.getState();
     expect(state.running).toBe(false);
@@ -73,7 +73,15 @@ describe('starting', () => {
     const apply = useRunStore.getState().applyEvent;
     apply(event({ type: 'step-started', runId: 'run-1', label: 'Launch app "x"' }));
     apply(event({ type: 'log', runId: 'run-1', lines: ['Running on device'] }));
-    apply(event({ type: 'finished', runId: 'run-1', outcome: 'failed', message: 'code 1' }));
+    apply(
+      event({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'failed',
+        message: 'code 1',
+        recording: 'none',
+      }),
+    );
 
     await startRun('run-2');
 
@@ -95,8 +103,8 @@ describe('starting', () => {
     );
     window.conductor.runStart = runStart;
 
-    const first = useRunStore.getState().start(DEVICE, YAML);
-    const second = useRunStore.getState().start(DEVICE, YAML);
+    const first = useRunStore.getState().start(DEVICE, YAML, 'login.yml');
+    const second = useRunStore.getState().start(DEVICE, YAML, 'login.yml');
     releaseStart(ok({ runId: 'run-1' }));
     await Promise.all([first, second]);
 
@@ -207,9 +215,15 @@ describe('finishing', () => {
   it('lands the outcome and stops running', async () => {
     await startRun();
 
-    useRunStore
-      .getState()
-      .applyEvent(event({ type: 'finished', runId: 'run-1', outcome: 'passed', message: null }));
+    useRunStore.getState().applyEvent(
+      event({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'passed',
+        message: null,
+        recording: 'none',
+      }),
+    );
 
     const state = useRunStore.getState();
     expect(state.running).toBe(false);
@@ -229,7 +243,7 @@ describe('finishing', () => {
     const apply = useRunStore.getState().applyEvent;
     apply(event({ type: 'step-started', runId: 'run-1', label: 'Assert "x"' }));
 
-    apply(event({ type: 'finished', runId: 'run-1', outcome, message: null }));
+    apply(event({ type: 'finished', runId: 'run-1', outcome, message: null, recording: 'none' }));
 
     expect(useRunStore.getState().steps[0]?.status).toBe(status);
   });
@@ -239,10 +253,226 @@ describe('finishing', () => {
     const apply = useRunStore.getState().applyEvent;
     apply(event({ type: 'log', runId: 'run-1', lines: ['some output'] }));
 
-    apply(event({ type: 'finished', runId: 'run-1', outcome: 'failed', message: 'code 1' }));
+    apply(
+      event({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'failed',
+        message: 'code 1',
+        recording: 'none',
+      }),
+    );
 
     expect(useRunStore.getState().logLines).toEqual(['some output']);
     expect(useRunStore.getState().outcomeMessage).toBe('code 1');
+  });
+});
+
+/** Recording criteria 23–29 — the video of the open run, as the panel reads it. */
+describe('the recording', () => {
+  const failed = (recording: 'pending' | 'none'): Result<RunEvent> =>
+    event({ type: 'finished', runId: 'run-1', outcome: 'failed', message: 'code 1', recording });
+
+  /** Criterion 23 — the terminal event says a video is on its way. */
+  it('marks the video as saving when the terminal event says one is on its way', async () => {
+    await startRun();
+
+    useRunStore.getState().applyEvent(failed('pending'));
+
+    expect(useRunStore.getState().recording).toEqual({ status: 'saving' });
+    expect(useRunStore.getState().recordingNote).toBeNull();
+  });
+
+  /** Criterion 27 — nothing to show when nothing is coming. */
+  it('holds no recording state when the terminal event says none', async () => {
+    await startRun();
+
+    useRunStore.getState().applyEvent(failed('none'));
+
+    expect(useRunStore.getState().recording).toBeNull();
+  });
+
+  /** Criterion 24 — the saved video, with its name and where the failed
+   * step begins. */
+  it('lands the saved video with its name and offset', async () => {
+    await startRun();
+    const apply = useRunStore.getState().applyEvent;
+    apply(failed('pending'));
+
+    apply(
+      event({
+        type: 'recording',
+        runId: 'run-1',
+        ok: true,
+        fileName: 'login-2026-09-02-143015.mp4',
+        fromSeconds: 12,
+      }),
+    );
+
+    expect(useRunStore.getState().recording).toEqual({
+      status: 'saved',
+      fileName: 'login-2026-09-02-143015.mp4',
+      fromSeconds: 12,
+    });
+  });
+
+  /** Criterion 26 — a video that could not be saved is a note, and no action. */
+  it('lands a failed save as a note, with no video to open', async () => {
+    await startRun();
+    const apply = useRunStore.getState().applyEvent;
+    apply(failed('pending'));
+
+    apply(
+      event({
+        type: 'recording',
+        runId: 'run-1',
+        ok: false,
+        message: "The recording couldn't be saved to your Movies folder: EACCES.",
+      }),
+    );
+
+    expect(useRunStore.getState().recording).toBeNull();
+    expect(useRunStore.getState().recordingNote).toBe(
+      "The recording couldn't be saved to your Movies folder: EACCES.",
+    );
+  });
+
+  /** Criterion 16 — the previous run's late video never lands on this one. */
+  it('drops a recording event wearing another run’s id', async () => {
+    await startRun('run-2');
+
+    useRunStore.getState().applyEvent(
+      event({
+        type: 'recording',
+        runId: 'run-1',
+        ok: true,
+        fileName: 'a.mp4',
+        fromSeconds: null,
+      }),
+    );
+
+    expect(useRunStore.getState().recording).toBeNull();
+  });
+
+  /** Criterion 28 — readable until the next run starts, cleared by it. */
+  it('clears the video state when a new run starts', async () => {
+    await startRun('run-1');
+    const apply = useRunStore.getState().applyEvent;
+    apply(failed('pending'));
+    apply(
+      event({
+        type: 'recording',
+        runId: 'run-1',
+        ok: false,
+        message: 'This run wasn’t recorded: x.',
+      }),
+    );
+
+    await startRun('run-2');
+
+    expect(useRunStore.getState().recording).toBeNull();
+    expect(useRunStore.getState().recordingNote).toBeNull();
+  });
+
+  /** Criterion 29 — a recording event touches only its own slice: the steps
+   * and the log keep their identity, so the panels that select them do not
+   * re-render for it. */
+  it('leaves the steps and the log untouched', async () => {
+    await startRun();
+    const apply = useRunStore.getState().applyEvent;
+    apply(event({ type: 'step-started', runId: 'run-1', label: 'Tap on "x"' }));
+    apply(event({ type: 'log', runId: 'run-1', lines: ['a line'] }));
+    apply(failed('pending'));
+    const { steps, logLines } = useRunStore.getState();
+
+    apply(
+      event({ type: 'recording', runId: 'run-1', ok: true, fileName: 'a.mp4', fromSeconds: 3 }),
+    );
+
+    expect(useRunStore.getState().steps).toBe(steps);
+    expect(useRunStore.getState().logLines).toBe(logLines);
+  });
+});
+
+/** Recording criterion 25 — the only renderer code invoking `run:open-recording`. */
+describe('opening the video', () => {
+  async function savedRun(): Promise<void> {
+    await startRun();
+    const apply = useRunStore.getState().applyEvent;
+    apply(
+      event({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'failed',
+        message: null,
+        recording: 'pending',
+      }),
+    );
+    apply(
+      event({ type: 'recording', runId: 'run-1', ok: true, fileName: 'a.mp4', fromSeconds: null }),
+    );
+  }
+
+  it('invokes run:open-recording with the run’s id, and nothing else', async () => {
+    await savedRun();
+    const runOpenRecording = vi.fn(() => Promise.resolve(ok({ runId: 'run-1' })));
+    window.conductor.runOpenRecording = runOpenRecording;
+
+    await useRunStore.getState().openRecording();
+
+    expect(runOpenRecording).toHaveBeenCalledExactlyOnceWith('run-1');
+    expect(useRunStore.getState().recordingNote).toBeNull();
+  });
+
+  /** Criterion 25 — a refusal shows in the outcome bar; the action stays,
+   * because the OS may open it on the next try. */
+  it('shows a refusal as the note beneath the outcome', async () => {
+    await savedRun();
+    window.conductor.runOpenRecording = vi.fn(() =>
+      Promise.resolve({
+        ok: false as const,
+        error: {
+          code: 'run/recording-missing',
+          message: 'The video is no longer in your Movies folder.',
+        },
+      }),
+    );
+
+    await useRunStore.getState().openRecording();
+
+    expect(useRunStore.getState().recordingNote).toBe(
+      'The video is no longer in your Movies folder.',
+    );
+    expect(useRunStore.getState().recording).toMatchObject({ status: 'saved' });
+  });
+
+  it('does nothing while no video is saved', async () => {
+    await startRun();
+    const runOpenRecording = vi.fn(() => Promise.resolve(ok({ runId: 'run-1' })));
+    window.conductor.runOpenRecording = runOpenRecording;
+
+    await useRunStore.getState().openRecording();
+
+    expect(runOpenRecording).not.toHaveBeenCalled();
+  });
+
+  /** A refusal that lands after the next run started belongs to a dead run. */
+  it('drops a refusal that arrives after the next run started', async () => {
+    await savedRun();
+    let refuse: (result: Result<{ runId: string }>) => void = () => {};
+    window.conductor.runOpenRecording = vi.fn(
+      () =>
+        new Promise<Result<{ runId: string }>>((resolve) => {
+          refuse = resolve;
+        }),
+    );
+
+    const opening = useRunStore.getState().openRecording();
+    await startRun('run-2');
+    refuse({ ok: false, error: { code: 'run/recording-missing', message: 'gone' } });
+    await opening;
+
+    expect(useRunStore.getState().recordingNote).toBeNull();
   });
 });
 
@@ -258,9 +488,15 @@ describe('canceling', () => {
     expect(runCancel).toHaveBeenCalledWith('run-1');
     expect(useRunStore.getState().running).toBe(true);
 
-    useRunStore
-      .getState()
-      .applyEvent(event({ type: 'finished', runId: 'run-1', outcome: 'canceled', message: null }));
+    useRunStore.getState().applyEvent(
+      event({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'canceled',
+        message: null,
+        recording: 'none',
+      }),
+    );
     expect(useRunStore.getState().running).toBe(false);
     expect(useRunStore.getState().outcome).toBe('canceled');
   });

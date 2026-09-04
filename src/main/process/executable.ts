@@ -20,3 +20,16 @@ export function isExecutable(path: string): boolean {
     return false;
   }
 }
+
+/**
+ * True when `path` is a regular file, executable or not — the probe behind
+ * the managed Maestro's `version` marker, which carries no execute bit and
+ * still has to be found. Answers rather than throws, for the same reason.
+ */
+export function isFile(path: string): boolean {
+  try {
+    return statSync(path).isFile();
+  } catch {
+    return false;
+  }
+}

@@ -6,7 +6,7 @@ import {
   type DeviceState,
   ERROR_CODES,
 } from '@shared/ipc';
-import type { RunResult, SpawnOptions, StreamingProcess } from '../process/run';
+import type { RunOptions, RunResult, SpawnOptions, StreamingProcess } from '../process/run';
 
 /**
  * Every `adb` invocation the app makes, and the only module that knows the
@@ -19,7 +19,20 @@ import type { RunResult, SpawnOptions, StreamingProcess } from '../process/run';
  * no device attached.
  */
 
-export type AdbRunner = (command: string, args: readonly string[]) => Promise<RunResult>;
+/** `run`. The options exist for the one call that can sit on a device that
+ * stopped answering — a `pull` of a video — and are otherwise left alone:
+ * `devices` and `getprop` answer in milliseconds or not at all. */
+export type AdbRunner = (
+  command: string,
+  args: readonly string[],
+  options?: RunOptions,
+) => Promise<RunResult>;
+
+/** What a `pull` may be bounded by: a deadline, and a signal a quit pulls. */
+export type PullOptions = {
+  readonly timeoutMs?: number;
+  readonly signal?: AbortSignal;
+};
 
 /** The streaming counterpart, for the one adb child that has to stay up: the
  * scrcpy server's `app_process`. */
@@ -54,12 +67,24 @@ export class AdbNotFoundError extends Error {
 /** adb ran and refused. Distinct from "no adb": the fix is a different one. */
 export class AdbFailedError extends Error {
   readonly code = ERROR_CODES.adbFailed;
+  /** adb's own words alone — what a surface the person reads may quote. The
+   * message keeps the command line for the log. */
+  readonly detail: string;
 
   constructor(args: readonly string[], result: RunResult) {
     super(`adb ${args.join(' ')} exited ${result.code}. ${result.stderr.trim()}`.trim());
     this.name = 'AdbFailedError';
+    const words = result.stderr.trim();
+    this.detail = words === '' ? `exited ${result.code}` : words;
   }
 }
+
+/**
+ * The bound on the one property read that sits between a click and a spawn
+ * — `apiLevel`, on the Run button's path. A device that stopped answering
+ * must not hold the button; the recorder simply goes without.
+ */
+export const API_LEVEL_TIMEOUT_MS = 5_000;
 
 /** The states `adb devices` reports. Anything else is not a device row. */
 const STATES = new Set<string>(['device', 'unauthorized', 'offline']);
@@ -170,6 +195,62 @@ export class AdbBridge {
   }
 
   /**
+   * The counterpart of `push`, and how a failed run's video leaves the device
+   * (recording criterion 8): the host path is the caller's, the device path
+   * never travels further up than the module that named it. A video is tens
+   * of megabytes and a device that stopped answering leaves the pull hanging,
+   * so the caller's deadline and abort signal reach the runner, where they
+   * turn that into a failure with a reason rather than a save that never ends.
+   */
+  async pull(
+    deviceId: string,
+    remotePath: string,
+    localPath: string,
+    options: PullOptions = {},
+  ): Promise<void> {
+    const args = ['-s', deviceId, 'pull', remotePath, localPath];
+    const bounds: RunOptions = {
+      ...(options.timeoutMs === undefined ? {} : { timeout: options.timeoutMs }),
+      ...(options.signal === undefined ? {} : { signal: options.signal }),
+    };
+    const result = await this.deps.run(
+      this.binary(),
+      args,
+      Object.keys(bounds).length === 0 ? undefined : bounds,
+    );
+    if (result.code !== 0) {
+      throw new AdbFailedError(args, result);
+    }
+  }
+
+  /**
+   * `ro.build.version.sdk` as a number — the API level that decides which
+   * `screenrecord` flags the device accepts (recording criterion 2). `null`
+   * when the device does not say — or does not answer within the bound —
+   * never a guess: a flag chosen from an invented level is rejected by the
+   * device, and the run goes unrecorded. Only a missing adb still rejects,
+   * the way every entry point reports that prerequisite.
+   */
+  async apiLevel(deviceId: string): Promise<number | null> {
+    let text: string | null;
+    try {
+      text = await this.text(deviceId, ['shell', 'getprop', 'ro.build.version.sdk'], {
+        timeout: API_LEVEL_TIMEOUT_MS,
+      });
+    } catch (error) {
+      if (error instanceof AdbNotFoundError) {
+        throw error;
+      }
+      return null;
+    }
+    if (text === null) {
+      return null;
+    }
+    const level = Number(text);
+    return Number.isInteger(level) && level > 0 ? level : null;
+  }
+
+  /**
    * Criterion 16. `tcp:0` makes adb allocate, and it prints the port it chose —
    * verified on hardware, where it answered `54556`. Hardcoding 27183 the way
    * scrcpy's own client does would collide with a scrcpy the person is running
@@ -218,12 +299,12 @@ export class AdbBridge {
   }
 
   /** One place resolves the binary, so one place can report it missing. */
-  private adb(args: readonly string[]): Promise<RunResult> {
+  private adb(args: readonly string[], options?: RunOptions): Promise<RunResult> {
     const binary = this.resolve();
     if (binary === null) {
       return Promise.reject(new AdbNotFoundError());
     }
-    return this.deps.run(binary, args);
+    return this.deps.run(binary, args, options);
   }
 
   /**
@@ -245,8 +326,12 @@ export class AdbBridge {
    * property read goes through here, which is what makes "not reported" the
    * default answer rather than an invented one.
    */
-  private async text(deviceId: string, args: readonly string[]): Promise<string | null> {
-    const result = await this.adb(['-s', deviceId, ...args]);
+  private async text(
+    deviceId: string,
+    args: readonly string[],
+    options?: RunOptions,
+  ): Promise<string | null> {
+    const result = await this.adb(['-s', deviceId, ...args], options);
     if (result.code !== 0) {
       return null;
     }

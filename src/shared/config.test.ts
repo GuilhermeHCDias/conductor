@@ -21,3 +21,17 @@ describe('CONFIG', () => {
     expect(CONFIG.AI_BUDGET_USD).toBeGreaterThan(0);
   });
 });
+
+/** Doctor criterion 7 — the Maestro pin and where its release lives are the
+ * only two download facts that are constants; everything else derives. */
+describe('the managed Maestro', () => {
+  it('pins a semantic version', () => {
+    expect(CONFIG.MAESTRO_VERSION).toMatch(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('points at the official release archive base', () => {
+    expect(CONFIG.MAESTRO_RELEASE_URL).toBe(
+      'https://github.com/mobile-dev-inc/maestro/releases/download',
+    );
+  });
+});
