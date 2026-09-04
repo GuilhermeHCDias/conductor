@@ -33,6 +33,7 @@ describe('the channels', () => {
       'maestro:synthesize-selector',
       'run:start',
       'run:cancel',
+      'run:open-recording',
       'flow:list',
       'flow:read',
       'flow:save',
@@ -432,27 +433,36 @@ describe('maestro:synthesize-selector', () => {
 
 describe('run:start', () => {
   const schema = IPC[CHANNELS.runStart];
+  const YAML = 'appId: x\n---\n- launchApp\n';
 
   /** Criterion 1 — the device and the flow's own YAML text: the run executes a
-   * temp snapshot of memory, so the text itself is what crosses. */
-  it('takes the opaque device id and the flow text', () => {
-    expect(schema.request.safeParse(['R9QYC01EMXL', 'appId: x\n---\n- launchApp\n']).success).toBe(
-      true,
-    );
+   * temp snapshot of memory, so the text itself is what crosses. Recording
+   * criterion 31 adds the open flow's identity, which names the saved video. */
+  it('takes the opaque device id, the flow text and the flow identity', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL', YAML, 'checkout/pix.yml']).success).toBe(true);
+    expect(schema.request.safeParse(['R9QYC01EMXL', YAML]).success).toBe(false);
     expect(schema.request.safeParse(['R9QYC01EMXL']).success).toBe(false);
     expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  /** Recording criterion 31 — `null` is a legitimate identity: a flow that was
+   * never saved has no path yet, and main names the file `flow` instead. It
+   * has to be said, though — an absent argument is a caller that forgot. */
+  it('accepts null as the identity of an unsaved flow', () => {
+    expect(schema.request.safeParse(['R9QYC01EMXL', YAML, null]).success).toBe(true);
+    expect(schema.request.safeParse(['R9QYC01EMXL', YAML, undefined]).success).toBe(false);
   });
 
   /** Criterion 17 keeps the button disabled on an empty flow; the boundary
    * refuses one outright rather than handing Maestro an empty file. */
   it('refuses an empty flow', () => {
-    expect(schema.request.safeParse(['R9QYC01EMXL', '']).success).toBe(false);
+    expect(schema.request.safeParse(['R9QYC01EMXL', '', null]).success).toBe(false);
   });
 
   /** Same rule, same measure as the button's disable: a flow of nothing but
    * whitespace is an empty flow, not a runnable file. */
   it('refuses a whitespace-only flow', () => {
-    expect(schema.request.safeParse(['R9QYC01EMXL', ' \n\t\n']).success).toBe(false);
+    expect(schema.request.safeParse(['R9QYC01EMXL', ' \n\t\n', null]).success).toBe(false);
   });
 
   /** Criterion 1 — the fresh run id, immediately, and nothing else: progress
@@ -471,6 +481,27 @@ describe('run:cancel', () => {
 
   it('answers with the run it canceled', () => {
     expect(IPC[CHANNELS.runCancel].response.safeParse({ runId: 'run-1' }).success).toBe(true);
+  });
+});
+
+describe('run:open-recording', () => {
+  const schema = IPC[CHANNELS.runOpenRecording];
+
+  /** Recording criterion 17 — the run id and nothing else: the renderer never
+   * sends a path, and main opens only a file it wrote itself. */
+  it('takes the run id, never a path', () => {
+    expect(schema.request.safeParse(['run-1']).success).toBe(true);
+    expect(schema.request.safeParse([]).success).toBe(false);
+    expect(schema.request.safeParse(['run-1', '/Users/x/Movies/Conductor/a.mp4']).success).toBe(
+      false,
+    );
+  });
+
+  it('answers with the run whose video it opened', () => {
+    expect(schema.response.safeParse({ runId: 'run-1' }).success).toBe(true);
+    expect(schema.response.safeParse({ path: '/Users/x/Movies/Conductor/a.mp4' }).success).toBe(
+      false,
+    );
   });
 });
 
@@ -1035,7 +1066,20 @@ describe('run:event', () => {
     ['step-passed', { type: 'step-passed', runId: 'run-1', label: 'Launch app "x"' }],
     ['step-failed', { type: 'step-failed', runId: 'run-1', label: 'Assert that "y" is visible' }],
     ['log', { type: 'log', runId: 'run-1', lines: ['Running on R9QYC01EMXL', ' > Flow happy'] }],
-    ['finished', { type: 'finished', runId: 'run-1', outcome: 'passed', message: null }],
+    [
+      'finished',
+      { type: 'finished', runId: 'run-1', outcome: 'passed', message: null, recording: 'none' },
+    ],
+    [
+      'recording',
+      {
+        type: 'recording',
+        runId: 'run-1',
+        ok: true,
+        fileName: 'checkout-pix-2026-09-02-143015.mp4',
+        fromSeconds: 12,
+      },
+    ],
   ] as const)('carries the %s event', (_label, event) => {
     expect(schema.safeParse(event).success).toBe(true);
   });
@@ -1054,12 +1098,23 @@ describe('run:event', () => {
   it('refuses an outcome the vocabulary does not have', () => {
     for (const outcome of ['passed', 'failed', 'canceled', 'error'] as const) {
       expect(
-        schema.safeParse({ type: 'finished', runId: 'run-1', outcome, message: null }).success,
+        schema.safeParse({
+          type: 'finished',
+          runId: 'run-1',
+          outcome,
+          message: null,
+          recording: 'none',
+        }).success,
       ).toBe(true);
     }
     expect(
-      schema.safeParse({ type: 'finished', runId: 'run-1', outcome: 'crashed', message: null })
-        .success,
+      schema.safeParse({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'crashed',
+        message: null,
+        recording: 'none',
+      }).success,
     ).toBe(false);
   });
 
@@ -1072,11 +1127,89 @@ describe('run:event', () => {
         runId: 'run-1',
         outcome: 'error',
         message: 'The Maestro CLI is not installed.',
+        recording: 'none',
       }).success,
     ).toBe(true);
-    expect(schema.safeParse({ type: 'finished', runId: 'run-1', outcome: 'passed' }).success).toBe(
-      false,
-    );
+    expect(
+      schema.safeParse({ type: 'finished', runId: 'run-1', outcome: 'passed', recording: 'none' })
+        .success,
+    ).toBe(false);
+  });
+
+  /** Recording criterion 12 — the terminal event says whether a video is on
+   * its way, so the failed row can show its saving state; it must say so
+   * either way, because "unsaid" would read as "none" on a run that is saving. */
+  it('says whether a recording follows the terminal event', () => {
+    for (const recording of ['pending', 'none'] as const) {
+      expect(
+        schema.safeParse({
+          type: 'finished',
+          runId: 'run-1',
+          outcome: 'failed',
+          message: null,
+          recording,
+        }).success,
+      ).toBe(true);
+    }
+    expect(
+      schema.safeParse({ type: 'finished', runId: 'run-1', outcome: 'failed', message: null })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        type: 'finished',
+        runId: 'run-1',
+        outcome: 'failed',
+        message: null,
+        recording: 'saving',
+      }).success,
+    ).toBe(false);
+  });
+
+  /** Recording criterion 13 — a saved video travels as its file name and the
+   * whole second the failed step begins at, `null` when that is unknown. */
+  it('carries a saved recording with its file name and offset', () => {
+    const saved = { type: 'recording', runId: 'run-1', ok: true, fileName: 'login-1.mp4' };
+
+    expect(schema.safeParse({ ...saved, fromSeconds: 12 }).success).toBe(true);
+    expect(schema.safeParse({ ...saved, fromSeconds: 0 }).success).toBe(true);
+    expect(schema.safeParse({ ...saved, fromSeconds: null }).success).toBe(true);
+    expect(schema.safeParse({ ...saved }).success).toBe(false);
+    expect(schema.safeParse({ ...saved, fromSeconds: '12' }).success).toBe(false);
+    expect(schema.safeParse({ ...saved, fromSeconds: 1.5 }).success).toBe(false);
+    expect(schema.safeParse({ ...saved, fromSeconds: -1 }).success).toBe(false);
+    expect(
+      schema.safeParse({ type: 'recording', runId: 'run-1', ok: true, fromSeconds: 12 }).success,
+    ).toBe(false);
+  });
+
+  /** Recording criteria 14–15 — a video that could not be saved, or a run that
+   * was never recorded, travels as a message the outcome bar shows verbatim. */
+  it('carries a recording that could not be saved with its message', () => {
+    expect(
+      schema.safeParse({
+        type: 'recording',
+        runId: 'run-1',
+        ok: false,
+        message: "The recording couldn't be saved to your Movies folder: EACCES.",
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ type: 'recording', runId: 'run-1', ok: false }).success).toBe(false);
+    expect(schema.safeParse({ type: 'recording', ok: false, message: 'x' }).success).toBe(false);
+  });
+
+  /** Recording criterion 17 — a video crosses as its name, never as a path:
+   * the file is main's, and only main opens it. */
+  it('names the saved file, never its path', () => {
+    expect(
+      schema.safeParse({
+        type: 'recording',
+        runId: 'run-1',
+        ok: true,
+        fileName: '/Users/x/Movies/Conductor/login-1.mp4',
+        fromSeconds: null,
+      }).success,
+    ).toBe(false);
   });
 
   it('refuses an event of no declared kind', () => {
@@ -1283,11 +1416,14 @@ describe('the failure codes', () => {
   });
 
   /**
-   * The run spec's four. `run/maestro-not-found` is distinct from the mcp
-   * child's `mcp/maestro-not-found` on purpose: same missing binary, but the
-   * refusal reaches a different surface, and criterion 3 wants it distinct
-   * from every mid-run failure. `run/active` is both criterion 4's "one run at
-   * a time" and criterion 11's "the screen is stale until the run ends".
+   * The run spec's four, plus the recording spec's two. `run/maestro-not-found`
+   * is distinct from the mcp child's `mcp/maestro-not-found` on purpose: same
+   * missing binary, but the refusal reaches a different surface, and criterion
+   * 3 wants it distinct from every mid-run failure. `run/active` is both
+   * criterion 4's "one run at a time" and criterion 11's "the screen is stale
+   * until the run ends". The recording pair (criteria 18–19) tells "the file
+   * is gone" from "the OS would not open it" — a save failure is not here,
+   * because it travels as a value in the event, like every mid-run failure.
    */
   it('tell the run refusals apart', () => {
     expect([
@@ -1295,7 +1431,16 @@ describe('the failure codes', () => {
       ERROR_CODES.runMaestroNotFound,
       ERROR_CODES.runNotFound,
       ERROR_CODES.runStartFailed,
-    ]).toEqual(['run/active', 'run/maestro-not-found', 'run/not-found', 'run/start-failed']);
+      ERROR_CODES.runRecordingMissing,
+      ERROR_CODES.runRecordingOpenFailed,
+    ]).toEqual([
+      'run/active',
+      'run/maestro-not-found',
+      'run/not-found',
+      'run/start-failed',
+      'run/recording-missing',
+      'run/recording-open-failed',
+    ]);
   });
 
   /**

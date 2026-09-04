@@ -24,8 +24,10 @@ const api: ConductorApi = {
   maestroSnapshot: (deviceId) => ipcRenderer.invoke(CHANNELS.maestroSnapshot, deviceId),
   maestroSynthesizeSelector: (snapshotId, path) =>
     ipcRenderer.invoke(CHANNELS.maestroSynthesizeSelector, snapshotId, path),
-  runStart: (deviceId, yaml) => ipcRenderer.invoke(CHANNELS.runStart, deviceId, yaml),
+  runStart: (deviceId, yaml, flowPath) =>
+    ipcRenderer.invoke(CHANNELS.runStart, deviceId, yaml, flowPath),
   runCancel: (runId) => ipcRenderer.invoke(CHANNELS.runCancel, runId),
+  runOpenRecording: (runId) => ipcRenderer.invoke(CHANNELS.runOpenRecording, runId),
   flowList: () => ipcRenderer.invoke(CHANNELS.flowList),
   flowRead: (path) => ipcRenderer.invoke(CHANNELS.flowRead, path),
   flowSave: (path, yaml) => ipcRenderer.invoke(CHANNELS.flowSave, path, yaml),

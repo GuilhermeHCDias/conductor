@@ -265,7 +265,13 @@ describe('while a flow runs', () => {
     act(() => {
       useRunStore.getState().applyEvent({
         ok: true,
-        data: { type: 'finished', runId: 'run-1', outcome: 'passed', message: null },
+        data: {
+          type: 'finished',
+          runId: 'run-1',
+          outcome: 'passed',
+          message: null,
+          recording: 'none',
+        },
       });
     });
 
@@ -295,7 +301,13 @@ describe('while a flow runs', () => {
     act(() => {
       useRunStore.getState().applyEvent({
         ok: true,
-        data: { type: 'finished', runId: 'run-1', outcome: 'passed', message: null },
+        data: {
+          type: 'finished',
+          runId: 'run-1',
+          outcome: 'passed',
+          message: null,
+          recording: 'none',
+        },
       });
     });
 

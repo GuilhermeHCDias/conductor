@@ -27,6 +27,7 @@ export const CHANNELS = {
   maestroSynthesizeSelector: 'maestro:synthesize-selector',
   runStart: 'run:start',
   runCancel: 'run:cancel',
+  runOpenRecording: 'run:open-recording',
   flowList: 'flow:list',
   flowRead: 'flow:read',
   flowSave: 'flow:save',
@@ -443,7 +444,27 @@ const runEvent: z.ZodType<RunEvent> = z.discriminatedUnion('type', [
     runId: z.string(),
     outcome: runOutcome,
     message: z.string().nullable(),
+    recording: z.enum(['pending', 'none']),
   }),
+  // Recording criteria 13–15. One `type`, two shapes, so the follow-up is a
+  // union of its own on `ok` — the same split `Result` draws.
+  z.discriminatedUnion('ok', [
+    z.object({
+      type: z.literal('recording'),
+      runId: z.string(),
+      ok: z.literal(true),
+      // A name, never a path (criterion 17): the file is main's, and only
+      // main opens it.
+      fileName: z.string().refine((name) => !/[\\/]/.test(name)),
+      fromSeconds: z.number().int().nonnegative().nullable(),
+    }),
+    z.object({
+      type: z.literal('recording'),
+      runId: z.string(),
+      ok: z.literal(false),
+      message: z.string(),
+    }),
+  ]),
 ]);
 
 /**
@@ -707,12 +728,22 @@ export const IPC = {
   },
   // The device id and the open flow's YAML text — what you see is what runs
   // (criterion 15), and an empty flow is refused at the boundary the way the
-  // Run button already disables it (criterion 17).
+  // Run button already disables it (criterion 17). The open flow's identity
+  // rides along (recording criterion 31): main names a failed run's video
+  // after it, and `null` — an unsaved flow — is a legitimate answer that has
+  // to be said rather than left out.
   [CHANNELS.runStart]: {
-    request: z.tuple([z.string(), z.string().refine((yaml) => yaml.trim() !== '')]),
+    request: z.tuple([
+      z.string(),
+      z.string().refine((yaml) => yaml.trim() !== ''),
+      z.string().nullable(),
+    ]),
     response: runRef,
   },
   [CHANNELS.runCancel]: { request: z.tuple([z.string()]), response: runRef },
+  // Recording criterion 17 — the run id and nothing else: main opens the file
+  // it wrote itself, and a path from the renderer would be a path it did not.
+  [CHANNELS.runOpenRecording]: { request: z.tuple([z.string()]), response: runRef },
   [CHANNELS.flowList]: { request: noArguments, response: flowIndex },
   [CHANNELS.flowRead]: {
     request: z.tuple([flowPathArgument]),
@@ -981,6 +1012,15 @@ export const ERROR_CODES = {
    * snapshot path. */
   runStartFailed: 'run/start-failed',
   /**
+   * Recording criteria 18–19. `run:open-recording` named a run that saved no
+   * video this session, or a video that has since left the Movies folder —
+   * refused, and nothing opens.
+   */
+  runRecordingMissing: 'run/recording-missing',
+  /** Recording criterion 18. The OS declined to open the file; the message is
+   * its own words. */
+  runRecordingOpenFailed: 'run/recording-open-failed',
+  /**
    * Criterion 36. The workspace root could not be created, read or written —
    * the sidebar's error state with its retry, never a silent empty tree. The
    * fallback for every flow operation the way `run/start-failed` is for the
@@ -1154,6 +1194,11 @@ export interface ConductorApi {
   /** Criterion 9. Cancellation is its own channel: a push against a device that
    * hangs must never be what stands between the person and the Stop button. */
   runCancel: (...args: Request<'run:cancel'>) => Promise<Result<Response<'run:cancel'>>>;
+  /** Recording criterion 17 — asks main to open the video it saved for this
+   * run in the OS's player. The renderer never sends a path. */
+  runOpenRecording: (
+    ...args: Request<'run:open-recording'>
+  ) => Promise<Result<Response<'run:open-recording'>>>;
   /** The index on demand — the retry behind criterion 36's error state. The
    * steady state arrives on `onFlowChanged` instead. */
   flowList: (...args: Request<'flow:list'>) => Promise<Result<Response<'flow:list'>>>;

@@ -410,7 +410,8 @@ export function FlowList(): JSX.Element {
         return;
       }
       setLowerPanel('run');
-      await startRun(deviceId, yaml);
+      // Recording criterion 31 — the file that was run names its video.
+      await startRun(deviceId, yaml, path);
     })();
   };
 

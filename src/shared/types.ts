@@ -120,6 +120,35 @@ export type RunEvent =
       /** What there is to say beyond the outcome — a spawn failure's cause, an
        * exit code worth naming. `null` when the outcome says it all. */
       readonly message: string | null;
+      /**
+       * Whether a video of this run is on its way (recording criterion 12):
+       * `pending` if and only if one is being saved — a `recording` event
+       * follows, the one documented exception to "the terminal event is
+       * terminal". `none` for a pass, a cancel, a run that never reached a
+       * step — or a failure whose recorder never started, which is `none`
+       * followed by a `recording` event saying why (criterion 15).
+       */
+      readonly recording: 'pending' | 'none';
+    }
+  /**
+   * The follow-up (recording criteria 13–15): the saved video's file name —
+   * never its path, which is main's alone (criterion 17) — and the whole
+   * second the failed step begins at, `null` when no step failed on record or
+   * the recorder had already stopped; or why there is no video, in the words
+   * the outcome bar shows.
+   */
+  | {
+      readonly type: 'recording';
+      readonly runId: string;
+      readonly ok: true;
+      readonly fileName: string;
+      readonly fromSeconds: number | null;
+    }
+  | {
+      readonly type: 'recording';
+      readonly runId: string;
+      readonly ok: false;
+      readonly message: string;
     };
 
 /**

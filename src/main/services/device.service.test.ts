@@ -89,6 +89,7 @@ function fakeGateway(devices: Device[] = [PHONE]): Gateway {
       throw new Error('DeviceService does not run flows.');
     },
     checkSyntax: () => Promise.reject(new Error('DeviceService does not check syntax.')),
+    startRecording: () => Promise.reject(new Error('DeviceService does not record.')),
     startMirror: (deviceId, handlers) => {
       gateway.mirrorCalls.push(deviceId);
       if (gateway.mirrorFailure !== null) {
