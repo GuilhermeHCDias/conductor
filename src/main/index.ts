@@ -28,6 +28,7 @@ import { DoctorService } from './services/doctor.service';
 import { hiddenTools, hideTools } from './services/doctor-hide';
 import { downloadToFile } from './services/download';
 import { FlowService } from './services/flow.service';
+import { findHomebrew } from './services/homebrew';
 import { MaestroMcpService } from './services/maestro-mcp.service';
 import { conductorPluginDir, PublishService } from './services/publish.service';
 import { RepoService, type RepoWorkspace } from './services/repo.service';
@@ -161,7 +162,7 @@ if (!app.requestSingleInstanceLock()) {
       flowsDir: CONFIG.FLOWS_DIR,
       extensions: CONFIG.FLOW_EXTENSIONS,
       resolveGh: () =>
-        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable: probe }),
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, home, isExecutable: probe }),
       run,
       emitChanged: (payload) => {
         broadcast(PUSH_CHANNELS.repoChanged, payload);
@@ -305,7 +306,7 @@ if (!app.requestSingleInstanceLock()) {
       describeBudgetUsd: CONFIG.AI_DESCRIBE_BUDGET_USD,
       activeClone: () => repoService.activeClone(),
       resolveGh: () =>
-        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable: probe }),
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, home, isExecutable: probe }),
       resolveClaude: () =>
         resolveClaude({
           configuredPath: CONFIG.CLAUDE_PATH,
@@ -416,22 +417,47 @@ if (!app.requestSingleInstanceLock()) {
         publishService.notifyFlowChanged();
       },
     });
-    // The environment doctor (§10): installs and pins Maestro under
-    // `userData`, reports the rest. It names the binaries and creates
-    // nothing — `run` and Electron's `net` arrive here, by injection.
+    // The environment doctor (§10, managed-tools amendment): installs the
+    // JDK, its pinned Maestro, gh and adb — Homebrew or direct download —
+    // drives gh's sign-in, reports the rest. It names the binaries and
+    // creates nothing — `run`, `spawnStreaming` and Electron's `net` arrive
+    // here, by injection.
     const doctorService = new DoctorService({
       managedDir: managedMaestroDir,
       installDir: join(userData, 'maestro-install'),
+      toolsInstallDir: join(userData, 'tools-install'),
+      skipsFile: join(userData, 'doctor-skips.json'),
       pinnedVersion: CONFIG.MAESTRO_VERSION,
       releaseUrl: CONFIG.MAESTRO_RELEASE_URL,
+      // Managed-tools criterion 13 — the three direct-download pins.
+      pins: {
+        ghVersion: CONFIG.GH_VERSION,
+        ghReleaseUrl: CONFIG.GH_RELEASE_URL,
+        platformToolsVersion: CONFIG.PLATFORM_TOOLS_VERSION,
+        platformToolsSha256: CONFIG.PLATFORM_TOOLS_SHA256,
+        platformToolsReleaseUrl: CONFIG.PLATFORM_TOOLS_RELEASE_URL,
+        zuluVersion: CONFIG.ZULU_VERSION,
+        zuluJavaVersion: CONFIG.ZULU_JAVA_VERSION,
+        zuluSha256: CONFIG.ZULU_SHA256,
+        zuluReleaseUrl: CONFIG.ZULU_RELEASE_URL,
+      },
+      arch: process.arch,
       maestroOverride: CONFIG.MAESTRO_PATH,
+      ghOverride: CONFIG.GH_PATH,
+      adbOverride: CONFIG.ADB_PATH,
       env: process.env,
       home,
+      // Where macOS keeps installed JDKs — the launch-time file probe for
+      // Java (managed-tools criterion 2), the same dirs `java_home` reads.
+      jvmRoots: [
+        '/Library/Java/JavaVirtualMachines',
+        join(home, 'Library', 'Java', 'JavaVirtualMachines'),
+      ],
       isExecutable: probe,
       isFile,
       resolveAdb: () => adb.resolve(),
       resolveGh: () =>
-        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, isExecutable: probe }),
+        resolveGh({ configuredPath: CONFIG.GH_PATH, env: process.env, home, isExecutable: probe }),
       resolveClaude: () =>
         resolveClaude({
           configuredPath: CONFIG.CLAUDE_PATH,
@@ -439,14 +465,24 @@ if (!app.requestSingleInstanceLock()) {
           home,
           isExecutable: probe,
         }),
+      // Managed-tools criterion 4 — `brew`, or null; `CONDUCTOR_HOMEBREW=0`
+      // is a dev knob, ignored when packaged.
+      homebrew: () => findHomebrew({ env: process.env, packaged: app.isPackaged, isExecutable }),
       hidden,
       run,
+      spawn: spawnStreaming,
       download: downloadToFile,
+      // Criteria 30, 37 — the service picks one of its two literal URLs by
+      // id; nothing the renderer sent ever reaches this call.
+      openExternal: (url) => shell.openExternal(url),
       emitChanged: (payload) => {
         broadcast(PUSH_CHANNELS.doctorChanged, payload);
       },
       emitInstallEvent: (payload) => {
         broadcast(PUSH_CHANNELS.doctorInstallEvent, payload);
+      },
+      emitLoginEvent: (payload) => {
+        broadcast(PUSH_CHANNELS.doctorLoginEvent, payload);
       },
       onSetupFinished: presentAfterSetup,
     });

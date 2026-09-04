@@ -158,6 +158,10 @@ export type ExitReason = {
 export interface StreamingProcess {
   /** Writes to the child's stdin. A no-op once it has exited. */
   write: (chunk: string) => void;
+  /** Closes the child's stdin — for a child that would otherwise wait on a
+   * prompt (`gh auth login`'s "Press Enter", doctor criterion 28). Optional
+   * so a test double need not carry it. */
+  endStdin?: () => void;
   onStdout: (listener: (chunk: string) => void) => void;
   onStderr: (listener: (chunk: string) => void) => void;
   /**
@@ -247,6 +251,11 @@ export function spawnStreaming(
     write: (chunk) => {
       if (reason === null && child.stdin.writable) {
         child.stdin.write(chunk);
+      }
+    },
+    endStdin: () => {
+      if (reason === null && child.stdin.writable) {
+        child.stdin.end();
       }
     },
     onStdout: (listener) => {

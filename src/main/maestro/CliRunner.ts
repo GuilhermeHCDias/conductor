@@ -1,5 +1,6 @@
 import { ERROR_CODES } from '@shared/ipc';
 import type { SpawnOptions, StreamingProcess } from '../process/run';
+import { maestroEnv } from '../services/tool-layout';
 import type { SyntaxCheck } from './MaestroGateway';
 import { resolveMaestro } from './resolve-maestro';
 
@@ -73,7 +74,7 @@ export class CliRunner {
       binary,
       ['--device', deviceId, 'test', '--no-reinstall-driver', flowPath],
       {
-        env: { ...this.deps.env, MAESTRO_CLI_NO_ANALYTICS: '1' },
+        env: maestroEnv(this.deps.env, this.deps.home, this.deps.isExecutable),
         killTree: true,
       },
     );
@@ -94,7 +95,7 @@ export class CliRunner {
     }
     const timeoutMs = options.timeoutMs ?? 30_000;
     const child = this.deps.spawn(binary, ['check-syntax', flowPath], {
-      env: { ...this.deps.env, MAESTRO_CLI_NO_ANALYTICS: '1' },
+      env: maestroEnv(this.deps.env, this.deps.home, this.deps.isExecutable),
       killTree: true,
     });
     return new Promise((resolve) => {

@@ -97,9 +97,10 @@ function idleConductor(): ConductorApi {
         data: {
           report: null,
           checking: false,
-          setup: { active: false, reason: null },
+          setup: { active: false, reason: null, plan: null },
           install: null,
-          maestroOverridden: false,
+          login: null,
+          overridden: [],
           version: '2.10.0',
         },
       }),
@@ -108,6 +109,11 @@ function idleConductor(): ConductorApi {
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     doctorSkipSetup: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    doctorLogin: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    doctorLoginCancel: () => Promise.resolve({ ok: true, data: {} }),
+    doctorOpenLoginUrl: () => Promise.resolve({ ok: true, data: {} }),
+    doctorOpenUrl: () => Promise.resolve({ ok: true, data: {} }),
     onDeviceChanged: () => () => {},
     onMirrorEvent: () => () => {},
     onRunEvent: () => () => {},
@@ -119,6 +125,7 @@ function idleConductor(): ConductorApi {
     onAiEvent: () => () => {},
     onDoctorChanged: () => () => {},
     onDoctorInstallEvent: () => () => {},
+    onDoctorLoginEvent: () => () => {},
   };
 }
 

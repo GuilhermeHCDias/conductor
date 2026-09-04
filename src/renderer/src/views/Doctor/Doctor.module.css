@@ -159,6 +159,26 @@
   background: var(--accent-strong);
 }
 
+/* Criterion 42 — the adb row's terms line, and criterion 43 — the sign-in
+   card, each on a full-width line under the row's own. */
+.terms,
+.card {
+  grid-column: 1 / -1;
+}
+
+.terms {
+  padding: 2px 0 2px 25px;
+}
+
+.card {
+  padding-top: 6px;
+}
+
+.install:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
 .footnote {
   color: var(--text-tertiary);
   font: var(--type-caption);

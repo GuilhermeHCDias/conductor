@@ -214,14 +214,14 @@ describe('createWindow', () => {
     ]);
   });
 
-  /** Doctor criterion 14 — the first-run installer: 520 × 360, fixed; close
+  /** Doctor criterion 14 — the first-run installer: 520 × 480, fixed; close
    * live, minimise and zoom dead, the way a macOS installer window renders. */
   it('opens at the installer geometry for the setup view', () => {
     createWindow('setup');
 
     expect(mock.constructed[0]).toMatchObject({
       width: 520,
-      height: 360,
+      height: 480,
       resizable: false,
       minimizable: false,
       maximizable: false,

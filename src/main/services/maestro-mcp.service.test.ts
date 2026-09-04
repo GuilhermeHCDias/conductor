@@ -181,6 +181,24 @@ describe('the maestro mcp child', () => {
     expect(h.spawns[0]?.options.env).toMatchObject({ MAESTRO_CLI_NO_ANALYTICS: '1' });
   });
 
+  /** Managed-tools criterion 22 — the managed JDK as JAVA_HOME, only when it
+   * is there; otherwise the process's own value is kept. */
+  it('points JAVA_HOME at the managed JDK when that is what resolves', async () => {
+    const managed = makeService({
+      executable: [
+        '/Users/someone/.maestro/bin/maestro',
+        '/Users/someone/.conductor/tools/java/bin/java',
+      ],
+      env: { JAVA_HOME: '/jdk' },
+    });
+    await managed.service.inspectScreen(DEVICE);
+    expect(managed.spawns[0]?.options.env?.JAVA_HOME).toBe('/Users/someone/.conductor/tools/java');
+
+    const own = makeService({ env: { JAVA_HOME: '/jdk' } });
+    await own.service.inspectScreen(DEVICE);
+    expect(own.spawns[0]?.options.env?.JAVA_HOME).toBe('/jdk');
+  });
+
   /**
    * Criterion 19, and the whole reason hierarchy moved here: the JVM cold start
    * is paid once per session. Measured on this hardware, the first

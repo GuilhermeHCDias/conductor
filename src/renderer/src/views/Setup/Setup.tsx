@@ -1,96 +1,225 @@
+import type { ToolId } from '@shared/ipc';
 import type { JSX } from 'react';
 import icon from '../../../../../build/icon.png';
-import { Icon } from '../../components/Icon/Icon';
-import { useDoctorStore } from '../../stores/doctor.store';
+import { Checkbox } from '../../components/Checkbox/Checkbox';
+import { Icon, type IconName } from '../../components/Icon/Icon';
+import { SignInCard } from '../../components/SignInCard/SignInCard';
+import { type SetupGlyph, type SetupRowModel, setupRows } from '../../lib/setup-rows';
+import { selectSignInPending, useDoctorStore } from '../../stores/doctor.store';
 import styles from './Setup.module.css';
 
 /**
- * The first-run installer (doctor criteria 14, 19, 21–24), the kit's
- * `CDoctorInstaller`: the whole 520 × 360 window while Conductor puts its
- * own Maestro on the machine. One bar, one step label, a percentage, and no
- * log — the person did not ask for this and cannot help with it. Every
- * number here arrived as a `doctor:install-event` (criterion 22); the view
- * holds no timer. The mark is the real Conductor icon, as Connect's is.
+ * The first-run installer (managed-tools criteria 34–41), the kit's
+ * `CDoctorInstallerB`: the whole 520 × 480 window while Conductor puts the
+ * four tools on the machine and walks the person through GitHub's sign-in.
+ * One screen, three moments — the plan and its one click, the rows moving
+ * one at a time, the sign-in card — and no log: the person did not ask for
+ * this and cannot help with it. Every pct, step, code and outcome here
+ * arrived as a push (criterion 41); the view holds no timer. The mark is the
+ * real Conductor icon, as Connect's is.
  */
+
+const COPY =
+  "Conductor needs a few tools to run tests on this Mac. It installs what's missing — no password needed.";
+
+const GLYPHS: Record<SetupGlyph, IconName> = {
+  present: 'circle-check',
+  install: 'circle-dashed',
+  alert: 'circle-alert',
+  fail: 'circle-x',
+  active: 'loader-circle',
+};
+
 export function Setup(): JSX.Element {
   const reason = useDoctorStore((state) => state.setup.reason);
+  const plan = useDoctorStore((state) => state.setup.plan);
   const version = useDoctorStore((state) => state.version);
+  const report = useDoctorStore((state) => state.report);
   const install = useDoctorStore((state) => state.install);
-  const installed = useDoctorStore((state) => state.installed);
-  const installMaestro = useDoctorStore((state) => state.installMaestro);
+  const outcomes = useDoctorStore((state) => state.outcomes.byTool);
+  const login = useDoctorStore((state) => state.login);
+  const signedInAs = useDoctorStore((state) => state.signedInAs);
+  const termsAccepted = useDoctorStore((state) => state.androidTermsAccepted);
+  const signInPending = useDoctorStore(selectSignInPending);
+  const setAndroidTerms = useDoctorStore((state) => state.setAndroidTerms);
+  const openAndroidTerms = useDoctorStore((state) => state.openAndroidTerms);
+  const installTools = useDoctorStore((state) => state.installTools);
   const skipSetup = useDoctorStore((state) => state.skipSetup);
+  const signIn = useDoctorStore((state) => state.signIn);
+  const signInCancel = useDoctorStore((state) => state.signInCancel);
+  const openLoginUrl = useDoctorStore((state) => state.openLoginUrl);
 
-  const failed = install !== null && 'failed' in install ? install.failed : null;
-  const progress = install !== null && 'pct' in install ? install : null;
-  const done = installed !== null && progress === null && failed === null;
-  const pct = done ? 100 : Math.round(progress?.pct ?? 0);
-  const update = reason === 'update';
+  const rows = setupRows({ plan, install, outcomes, report, termsAccepted });
+  const running = install !== null && 'pct' in install;
+  const settled = install !== null && 'failed' in install;
+  const failed: ToolId[] = settled
+    ? rows.filter((row) => install.failed[row.id] !== undefined).map((row) => row.id)
+    : [];
+  // Criterion 32 — after the tools land with nothing failed, gh is there
+  // and the sign-in is not: the card, before the app.
+  const signInStep =
+    (settled && failed.length === 0 && (signInPending || signedInAs !== null)) || login !== null;
+  const planScreen = !running && !settled && !signInStep && plan !== null;
+  const termsLine = planScreen && plan.androidTermsRequired;
 
   return (
     <section aria-label="Setup" className={styles.setup}>
       {/* The traffic lights sit over this strip; it is what drags the window. */}
       <div aria-hidden="true" className={styles.drag} data-testid="setup-drag" />
       <div className={styles.body}>
-        <img alt="" className={styles.mark} data-testid="setup-mark" src={icon} />
-        <h1 className={styles.title}>{update ? 'Updating Maestro' : 'Setting up Conductor'}</h1>
-        <p className={styles.copy}>
-          {update
-            ? `Conductor's test runner is moving to ${version}. This happens once.`
-            : 'Installing Maestro, the runner behind every test. This happens once.'}
-        </p>
-
-        <div
-          aria-label="Installing Maestro"
-          aria-valuemax={100}
-          aria-valuemin={0}
-          aria-valuenow={pct}
-          className={styles.track}
-          data-done={done ? 'true' : undefined}
-          role="progressbar"
-        >
-          <div className={styles.fill} style={{ width: `${pct}%` }} />
-        </div>
-
-        {failed === null ? (
-          <div className={styles.line}>
-            {done ? (
-              <Icon className={styles.check} data-testid="setup-check" name="check" size={13} />
-            ) : null}
-            <span className={styles.step} data-done={done ? 'true' : undefined}>
-              {done ? `maestro ${installed?.version} is ready` : (progress?.step ?? '')}
-            </span>
-            <span className={styles.pct}>{pct}%</span>
+        <header className={styles.header}>
+          <img alt="" className={styles.mark} data-testid="setup-mark" src={icon} />
+          <div className={styles.heading}>
+            <h1 className={styles.title}>
+              {reason === 'update' ? 'Updating Maestro' : 'Setting up Conductor'}
+            </h1>
+            <p className={styles.copy}>
+              {reason === 'update'
+                ? `Conductor's test runner is moving to ${version}. This happens once.`
+                : COPY}
+            </p>
           </div>
+        </header>
+
+        <ul aria-label="Tools" className={styles.rows}>
+          {rows.map((row) => (
+            <ToolRow key={row.id} row={row} />
+          ))}
+        </ul>
+
+        {signInStep ? (
+          <SignInCard
+            failedMessage={login !== null && 'failed' in login ? login.failed.message : null}
+            onCancel={() => {
+              void signInCancel();
+            }}
+            onOpen={() => {
+              void openLoginUrl();
+            }}
+            onSignIn={() => {
+              void signIn();
+            }}
+            onSkip={() => {
+              void skipSetup();
+            }}
+            running={login !== null && 'code' in login ? { code: login.code } : null}
+            signedInAs={signedInAs}
+          />
         ) : (
           <>
-            {/* Criterion 23 — the sentence, never the raw cause; that lives on
-                the doctor sheet's maestro row. */}
-            <p className={styles.failure} role="alert">
-              {failed.message}
-            </p>
-            <div className={styles.actions}>
-              <button
-                className={styles.ghost}
-                onClick={() => {
-                  void skipSetup();
-                }}
-                type="button"
-              >
-                Continue without Maestro
-              </button>
-              <button
-                className={styles.primary}
-                onClick={() => {
-                  void installMaestro();
-                }}
-                type="button"
-              >
-                Try again
-              </button>
-            </div>
+            {plan !== null && !running ? (
+              <p className={styles.method}>{methodLine(plan.homebrew, plan.profile)}</p>
+            ) : null}
+            {termsLine ? (
+              <div className={styles.terms}>
+                <Checkbox
+                  checked={termsAccepted}
+                  label="I accept the Android SDK Platform-Tools terms"
+                  onChange={setAndroidTerms}
+                />
+                <button
+                  className={styles.link}
+                  onClick={() => {
+                    void openAndroidTerms();
+                  }}
+                  type="button"
+                >
+                  Read the terms
+                </button>
+              </div>
+            ) : null}
           </>
         )}
+
+        {planScreen ? (
+          <div className={styles.actions}>
+            <button
+              className={styles.ghost}
+              onClick={() => {
+                void skipSetup();
+              }}
+              type="button"
+            >
+              Continue without installing
+            </button>
+            <button
+              className={styles.primary}
+              onClick={() => {
+                void installTools();
+              }}
+              type="button"
+            >
+              Install
+            </button>
+          </div>
+        ) : null}
+        {settled && failed.length > 0 && login === null ? (
+          <div className={styles.actions}>
+            <button
+              className={styles.ghost}
+              onClick={() => {
+                void skipSetup();
+              }}
+              type="button"
+            >
+              Continue
+            </button>
+            <button
+              className={styles.primary}
+              onClick={() => {
+                void installTools(failed);
+              }}
+              type="button"
+            >
+              Try again
+            </button>
+          </div>
+        ) : null}
       </div>
     </section>
+  );
+}
+
+/** Criterion 36 — where the tools come from, in one line. */
+function methodLine(homebrew: string | null, profile: string | null): string {
+  const method =
+    homebrew === null
+      ? "Homebrew isn't installed, so Conductor downloads everything into ~/.conductor and adds it to your PATH."
+      : `Homebrew found at ${homebrew} — GitHub CLI and platform-tools install through it. The JDK downloads from Azul.`;
+  return profile === null ? `${method} Add ~/.conductor/bin to your PATH by hand.` : method;
+}
+
+/** One row (criteria 35, 39): glyph, name, the mono state — and under the
+ * active row, the kit's 4 px bar with the step line. */
+function ToolRow({ row }: { readonly row: SetupRowModel }): JSX.Element {
+  return (
+    <li aria-label={row.name} className={styles.row} data-glyph={row.glyph} data-tool={row.id}>
+      <Icon className={styles.glyph} name={GLYPHS[row.glyph]} size={15} />
+      <span className={styles.rowBody}>
+        <span className={styles.rowLine}>
+          <span className={styles.name}>{row.name}</span>
+          {row.bar === null ? <span className={styles.mono}>{row.mono}</span> : null}
+        </span>
+        {row.bar !== null ? (
+          <>
+            <div
+              aria-label={row.name}
+              aria-valuemax={100}
+              aria-valuemin={0}
+              aria-valuenow={row.bar.pct === null ? undefined : Math.round(row.bar.pct)}
+              className={styles.track}
+              data-indeterminate={row.bar.pct === null ? 'true' : undefined}
+              role="progressbar"
+            >
+              <div
+                className={styles.fill}
+                style={row.bar.pct === null ? undefined : { width: `${row.bar.pct}%` }}
+              />
+            </div>
+            <span className={styles.step}>{row.mono}</span>
+          </>
+        ) : null}
+      </span>
+    </li>
   );
 }

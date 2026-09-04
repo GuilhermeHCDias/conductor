@@ -1,132 +1,410 @@
-import { render, screen } from '@testing-library/react';
+import type { DoctorPlan, DoctorReport } from '@shared/ipc';
+import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { resetDoctorStore, useDoctorStore } from '../../stores/doctor.store';
 import { Setup } from './Setup';
 
 /**
- * The first-run installer (doctor criteria 21–24), the kit's
- * `CDoctorInstaller` over the real doctor store: every pct and step on
- * screen arrived as a `doctor:install-event`; the view holds no timer.
+ * The first-run installer (managed-tools criteria 34–41), the kit's
+ * `CDoctorInstallerB` over the real doctor store: the plan screen with its
+ * one click, the progress screen with one row per tool, the sign-in card,
+ * the failures. Every pct, step, code and outcome on screen arrived as a
+ * push; the view holds no timer.
  */
+
+const PLAN: DoctorPlan = {
+  tools: [
+    { id: 'java', state: 'present', method: null, detail: 'openjdk version "21.0.4" · /jdk' },
+    { id: 'maestro', state: 'install', method: 'direct', detail: 'Will download' },
+    { id: 'gh', state: 'install', method: 'homebrew', detail: 'Will install with Homebrew' },
+    { id: 'adb', state: 'install', method: 'homebrew', detail: 'Will install with Homebrew' },
+  ],
+  homebrew: '/opt/homebrew/bin/brew',
+  androidTermsRequired: true,
+  profile: '~/.zprofile',
+};
+
+const DIRECT: DoctorPlan = {
+  tools: PLAN.tools.map((tool) =>
+    tool.state === 'install' ? { ...tool, method: 'direct', detail: 'Will download' } : tool,
+  ),
+  homebrew: null,
+  androidTermsRequired: true,
+  profile: null,
+};
+
+function report(auth: 'ok' | 'warn'): DoctorReport {
+  return {
+    rows: [
+      {
+        id: 'java',
+        name: 'Java Development Kit',
+        status: 'ok',
+        label: 'Ready',
+        detail: 'x',
+        short: 'java 21.0.4',
+      },
+      {
+        id: 'gh',
+        name: 'GitHub CLI',
+        status: 'ok',
+        label: 'Installed',
+        detail: 'x',
+        short: 'gh 2.100.0',
+      },
+      {
+        id: 'github-auth',
+        name: 'GitHub',
+        status: auth,
+        label: auth === 'ok' ? 'Signed in' : 'Signed out',
+        detail: 'x',
+        short: 'x',
+      },
+    ],
+    checkedAt: 0,
+    issues: auth === 'ok' ? 0 : 1,
+  };
+}
+
+function toolRow(name: string): HTMLElement {
+  return screen.getByRole('listitem', { name });
+}
 
 beforeEach(() => {
   resetDoctorStore();
   useDoctorStore.setState({
     loaded: true,
-    setup: { active: true, reason: 'first-run' },
+    setup: { active: true, reason: 'first-run', plan: PLAN },
+    report: report('warn'),
     version: '2.10.0',
   });
 });
 
 describe('Setup', () => {
-  /** Criterion 21 — the real icon, the heading, the body. */
-  it('shows the Conductor icon, the heading and the body', () => {
+  /** Criterion 35 — the mark, the title, the copy, the four rows in order. */
+  it('shows the mark, the title, the copy and one row per tool', () => {
     render(<Setup />);
 
     expect(screen.getByTestId('setup-mark')).toHaveAttribute('src');
     expect(screen.getByRole('heading', { name: 'Setting up Conductor' })).toBeInTheDocument();
     expect(
-      screen.getByText('Installing Maestro, the runner behind every test. This happens once.'),
+      screen.getByText(
+        "Conductor needs a few tools to run tests on this Mac. It installs what's missing — no password needed.",
+      ),
     ).toBeInTheDocument();
-  });
-
-  /** Criterion 19 — the same window, an update's words. */
-  it('reads as an update when the pin moved', () => {
-    useDoctorStore.setState({ setup: { active: true, reason: 'update' } });
-    render(<Setup />);
-
-    expect(screen.getByRole('heading', { name: 'Updating Maestro' })).toBeInTheDocument();
-    expect(
-      screen.getByText("Conductor's test runner is moving to 2.10.0. This happens once."),
-    ).toBeInTheDocument();
-  });
-
-  /** Criterion 24 — the drag strip, so the frameless window can be moved. */
-  it('reserves the drag strip', () => {
-    render(<Setup />);
-
+    const rows = within(screen.getByRole('list', { name: 'Tools' })).getAllByRole('listitem');
+    expect(rows.map((row) => row.getAttribute('aria-label'))).toEqual([
+      'Zulu JDK 21',
+      'Maestro',
+      'GitHub CLI',
+      'Android platform-tools',
+    ]);
+    expect(toolRow('Zulu JDK 21')).toHaveTextContent('Installed · java 21.0.4');
+    expect(toolRow('Zulu JDK 21')).toHaveAttribute('data-glyph', 'present');
+    expect(toolRow('Maestro')).toHaveTextContent('Will download');
+    expect(toolRow('GitHub CLI')).toHaveTextContent('Will install with Homebrew');
     expect(screen.getByTestId('setup-drag')).toBeInTheDocument();
   });
 
-  /** Criteria 21–23 — the bar, the step and the percentage from the store,
-   * and no button while the install runs. */
-  it('renders the install progress from the store', () => {
-    useDoctorStore.setState({ install: { installId: 'install-1', pct: 42, step: 'Extracting' } });
+  it('reads Checking on every row before the plan lands', () => {
+    useDoctorStore.setState({ setup: { active: true, reason: 'first-run', plan: null } });
     render(<Setup />);
 
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '42');
-    expect(screen.getByText('Extracting')).toBeInTheDocument();
-    expect(screen.getByText('42%')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(toolRow('Maestro')).toHaveTextContent('Checking…');
+    expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument();
   });
 
-  it('starts at zero with no step before the first event', () => {
+  /** Criterion 36 — the method line, with and without Homebrew. */
+  it('says how the tools install, with Homebrew and without', () => {
+    const { unmount } = render(<Setup />);
+    expect(
+      screen.getByText(
+        'Homebrew found at /opt/homebrew/bin/brew — GitHub CLI and platform-tools install through it. The JDK downloads from Azul.',
+      ),
+    ).toBeInTheDocument();
+    unmount();
+
+    useDoctorStore.setState({ setup: { active: true, reason: 'first-run', plan: DIRECT } });
+    render(<Setup />);
+    expect(
+      screen.getByText(
+        /Homebrew isn't installed, so Conductor downloads everything into ~\/\.conductor and adds it to your PATH\./,
+      ),
+    ).toBeInTheDocument();
+    expect(screen.getByText(/Add ~\/\.conductor\/bin to your PATH by hand/)).toBeInTheDocument();
+  });
+
+  /** Criterion 37 — the terms line; unchecked, the adb row says so. */
+  it('asks for the Android terms while adb installs, and links to them', async () => {
+    const openUrl = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
+    window.conductor.doctorOpenUrl = openUrl;
     render(<Setup />);
 
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '0');
-    expect(screen.getByText('0%')).toBeInTheDocument();
+    const box = screen.getByRole('checkbox', {
+      name: 'I accept the Android SDK Platform-Tools terms',
+    });
+    expect(box).not.toBeChecked();
+    expect(toolRow('Android platform-tools')).toHaveTextContent(
+      'Skipped — accept the terms to install',
+    );
+    await userEvent.click(box);
+    expect(toolRow('Android platform-tools')).toHaveTextContent('Will install with Homebrew');
+    await userEvent.click(screen.getByRole('button', { name: 'Read the terms' }));
+
+    expect(openUrl).toHaveBeenCalledExactlyOnceWith({ id: 'android-terms' });
   });
 
-  /** Criterion 21 — done: the bar turns pass, the check appears, the label
-   * names the version. */
-  it('shows the ready state once the install landed', () => {
-    useDoctorStore.setState({ installed: { installId: 'install-1', version: '2.10.0' } });
+  it('shows no terms line when adb is already there', () => {
+    useDoctorStore.setState({
+      setup: {
+        active: true,
+        reason: 'first-run',
+        plan: {
+          ...PLAN,
+          tools: PLAN.tools.map((tool) =>
+            tool.id === 'adb' ? { ...tool, state: 'present', method: null, detail: 'adb' } : tool,
+          ),
+          androidTermsRequired: false,
+        },
+      },
+    });
     render(<Setup />);
 
-    expect(screen.getByRole('progressbar')).toHaveAttribute('aria-valuenow', '100');
-    expect(screen.getByRole('progressbar')).toHaveAttribute('data-done', 'true');
-    expect(screen.getByText('maestro 2.10.0 is ready')).toBeInTheDocument();
-    expect(screen.getByTestId('setup-check')).toBeInTheDocument();
-    expect(screen.queryByRole('button')).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
-  /** Criterion 23 — the failure sentence replaces the step line; Try again
-   * and Continue without Maestro are the two ways on. */
-  describe('after a failure', () => {
+  /** Criterion 38 — the two buttons of the plan screen. */
+  it('Install sends the terms decision; Continue without installing skips', async () => {
+    const install = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { installId: 'install-1' } }),
+    );
+    const skip = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
+    window.conductor.doctorInstall = install;
+    window.conductor.doctorSkipSetup = skip;
+    render(<Setup />);
+
+    await userEvent.click(screen.getByRole('checkbox'));
+    await userEvent.click(screen.getByRole('button', { name: 'Install' }));
+    await userEvent.click(screen.getByRole('button', { name: 'Continue without installing' }));
+
+    expect(install).toHaveBeenCalledExactlyOnceWith({ androidTermsAccepted: true });
+    expect(skip).toHaveBeenCalledOnce();
+  });
+
+  /** Criterion 39 — the progress screen. */
+  describe('while installing', () => {
     beforeEach(() => {
       useDoctorStore.setState({
         install: {
           installId: 'install-1',
-          failed: {
-            code: 'doctor/download-failed',
-            message:
-              "Conductor couldn't reach GitHub to download Maestro. Check your connection and try again.",
-            detail: 'HTTP 503',
+          tool: 'gh',
+          pct: null,
+          step: 'Installing gh with Homebrew',
+        },
+        outcomes: {
+          installId: 'install-1',
+          byTool: { maestro: { kind: 'done', version: '2.10.0' } },
+        },
+      });
+    });
+
+    it('shows the active row with its bar and step, settled rows Installed, waiting rows Waiting', () => {
+      render(<Setup />);
+
+      const gh = toolRow('GitHub CLI');
+      expect(gh).toHaveTextContent('Installing gh with Homebrew');
+      expect(within(gh).getByRole('progressbar')).not.toHaveAttribute('aria-valuenow');
+      expect(toolRow('Maestro')).toHaveTextContent('Installed · 2.10.0');
+      expect(toolRow('Maestro')).toHaveAttribute('data-glyph', 'present');
+      expect(toolRow('Android platform-tools')).toHaveTextContent('Waiting');
+      expect(screen.queryByRole('button')).not.toBeInTheDocument();
+      expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
+    });
+
+    it('shows a download’s percentage on the bar', () => {
+      useDoctorStore.setState({
+        install: {
+          installId: 'install-1',
+          tool: 'adb',
+          pct: 43,
+          step: 'Downloading Android platform-tools',
+        },
+      });
+      render(<Setup />);
+
+      const adb = toolRow('Android platform-tools');
+      expect(adb).toHaveTextContent('Downloading Android platform-tools · 43%');
+      expect(within(adb).getByRole('progressbar')).toHaveAttribute('aria-valuenow', '43');
+    });
+  });
+
+  /** Criteria 17, 39 — a failure reads its sentence, never the cause, and
+   * Try again redoes only the failed ones. */
+  describe('after a failure', () => {
+    beforeEach(() => {
+      const failed = {
+        code: 'doctor/brew-failed',
+        message:
+          "Homebrew couldn't install the GitHub CLI. You can try again, or Conductor can download it instead.",
+        detail: 'Error: No available formula',
+      };
+      useDoctorStore.setState({
+        install: { installId: 'install-1', failed: { gh: failed } },
+        outcomes: {
+          installId: 'install-1',
+          byTool: {
+            maestro: { kind: 'done', version: '2.10.0' },
+            gh: { kind: 'failed', ...failed },
           },
         },
       });
     });
 
-    it('shows the sentence, not the raw cause', () => {
+    it('shows the sentence on the row, not the raw cause', () => {
       render(<Setup />);
 
-      expect(screen.getByRole('alert')).toHaveTextContent(
-        "Conductor couldn't reach GitHub to download Maestro. Check your connection and try again.",
-      );
-      expect(screen.queryByText('HTTP 503')).not.toBeInTheDocument();
+      expect(toolRow('GitHub CLI')).toHaveTextContent("Homebrew couldn't install the GitHub CLI.");
+      expect(toolRow('GitHub CLI')).toHaveAttribute('data-glyph', 'fail');
+      expect(screen.queryByText(/No available formula/)).not.toBeInTheDocument();
     });
 
-    it('Try again asks main for another install', async () => {
+    it('Try again reinstalls the failed tools; Continue skips', async () => {
       const install = vi.fn(() =>
         Promise.resolve({ ok: true as const, data: { installId: 'install-2' } }),
       );
-      window.conductor.doctorInstall = install;
-      render(<Setup />);
-
-      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
-
-      expect(install).toHaveBeenCalledOnce();
-    });
-
-    it('Continue without Maestro asks main to skip setup', async () => {
       const skip = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
+      window.conductor.doctorInstall = install;
       window.conductor.doctorSkipSetup = skip;
       render(<Setup />);
 
-      await userEvent.click(screen.getByRole('button', { name: 'Continue without Maestro' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
       expect(skip).toHaveBeenCalledOnce();
+      expect(install).toHaveBeenCalledExactlyOnceWith({
+        tools: ['gh'],
+        androidTermsAccepted: false,
+      });
     });
+  });
+
+  /** Criteria 32, 40 — the sign-in card once the tools landed and gh is
+   * there but signed out. */
+  describe('the sign-in step', () => {
+    beforeEach(() => {
+      useDoctorStore.setState({
+        install: { installId: 'install-1', failed: {} },
+        outcomes: {
+          installId: 'install-1',
+          byTool: { maestro: { kind: 'done', version: '2.10.0' } },
+        },
+      });
+    });
+
+    it('offers Sign in with GitHub and Skip for now', async () => {
+      const login = vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: { loginId: 'login-1' } }),
+      );
+      const skip = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
+      window.conductor.doctorLogin = login;
+      window.conductor.doctorSkipSetup = skip;
+      render(<Setup />);
+
+      expect(screen.getByRole('heading', { name: 'Sign in to GitHub' })).toBeInTheDocument();
+      expect(
+        screen.getByText(
+          'Conductor sends your tests to GitHub through the GitHub CLI. Sign in happens in your browser — Conductor never sees your password or token.',
+        ),
+      ).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
+
+      expect(login).toHaveBeenCalledOnce();
+      expect(skip).toHaveBeenCalledOnce();
+    });
+
+    it('does not appear while signed in already', () => {
+      useDoctorStore.setState({ report: report('ok') });
+      render(<Setup />);
+
+      expect(screen.queryByRole('heading', { name: 'Sign in to GitHub' })).not.toBeInTheDocument();
+    });
+
+    it('shows the code with Copy, the URL line, Open GitHub and Cancel once it arrives', async () => {
+      const writeText = vi.fn(() => Promise.resolve());
+      Object.assign(navigator, { clipboard: { writeText } });
+      const open = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
+      const cancel = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
+      window.conductor.doctorOpenLoginUrl = open;
+      window.conductor.doctorLoginCancel = cancel;
+      useDoctorStore.setState({ login: { loginId: 'login-1', code: '1234-ABCD' } });
+      render(<Setup />);
+
+      expect(screen.getByTestId('login-code')).toHaveTextContent('1234-ABCD');
+      expect(screen.getByText('Enter it at github.com/login/device')).toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Copy code' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Open GitHub' }));
+      await userEvent.click(screen.getByRole('button', { name: 'Cancel' }));
+
+      expect(writeText).toHaveBeenCalledExactlyOnceWith('1234-ABCD');
+      expect(open).toHaveBeenCalledOnce();
+      expect(cancel).toHaveBeenCalledOnce();
+    });
+
+    it('waits for the code with no code shown', () => {
+      useDoctorStore.setState({ login: { loginId: 'login-1', code: null } });
+      render(<Setup />);
+
+      expect(screen.queryByTestId('login-code')).not.toBeInTheDocument();
+      expect(screen.getByRole('button', { name: 'Cancel' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Sign in with GitHub' })).not.toBeInTheDocument();
+    });
+
+    it('reads Signed in as the account on done', () => {
+      useDoctorStore.setState({ report: report('ok'), signedInAs: 'octocat' });
+      render(<Setup />);
+
+      expect(screen.getByText('Signed in as octocat')).toBeInTheDocument();
+      expect(screen.getByTestId('setup-check')).toBeInTheDocument();
+    });
+
+    it('shows the failure sentence and Try again', async () => {
+      const login = vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: { loginId: 'login-2' } }),
+      );
+      window.conductor.doctorLogin = login;
+      useDoctorStore.setState({
+        login: {
+          loginId: 'login-1',
+          failed: {
+            code: 'doctor/login-failed',
+            message: "GitHub sign-in didn't finish. Try again when you're ready.",
+            detail: 'The device code has expired',
+          },
+        },
+      });
+      render(<Setup />);
+
+      expect(screen.getByRole('alert')).toHaveTextContent("GitHub sign-in didn't finish.");
+      expect(screen.queryByText(/device code has expired/)).not.toBeInTheDocument();
+      await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
+
+      expect(login).toHaveBeenCalledOnce();
+    });
+  });
+
+  /** Criterion 41 — no timer of its own: nothing on screen changes without
+   * a store change. */
+  it('holds no timer', () => {
+    vi.useFakeTimers();
+    try {
+      render(<Setup />);
+      const before = document.body.innerHTML;
+      vi.advanceTimersByTime(5_000);
+      expect(document.body.innerHTML).toBe(before);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 });

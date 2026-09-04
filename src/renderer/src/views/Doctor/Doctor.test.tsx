@@ -173,7 +173,7 @@ describe('Doctor', () => {
 
     expect(
       screen.getByText(
-        'Maestro is the only one Conductor installs and updates by itself. The rest live on your machine, and signing in is always yours to do.',
+        'Conductor installs Maestro, the JDK, the GitHub CLI and platform-tools by itself. Signing in to GitHub happens in your browser and stays yours.',
       ),
     ).toBeInTheDocument();
   });
@@ -238,7 +238,7 @@ describe('Doctor', () => {
 
     it('offers no Install while a path is configured, or while the row is ok', () => {
       open(TROUBLED);
-      useDoctorStore.setState({ maestroOverridden: true });
+      useDoctorStore.setState({ overridden: ['maestro'] });
       const { unmount } = render(<Doctor />);
       expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument();
       unmount();
@@ -250,7 +250,9 @@ describe('Doctor', () => {
 
     it('reads Installing with the step and percentage while the install runs', () => {
       open(TROUBLED);
-      useDoctorStore.setState({ install: { installId: 'install-1', pct: 93, step: 'Extracting' } });
+      useDoctorStore.setState({
+        install: { installId: 'install-1', tool: 'maestro', pct: 93, step: 'Extracting' },
+      });
       render(<Doctor />);
 
       const maestro = screen.getByRole('listitem', { name: 'Maestro' });
@@ -269,13 +271,137 @@ describe('Doctor', () => {
       useDoctorStore.setState({
         install: {
           installId: 'install-1',
-          failed: { code: 'doctor/download-failed', message: 'sentence', detail: 'HTTP 503' },
+          failed: {
+            maestro: { code: 'doctor/download-failed', message: 'sentence', detail: 'HTTP 503' },
+          },
         },
       });
       render(<Doctor />);
 
       expect(screen.getByRole('listitem', { name: 'Maestro' })).toHaveTextContent('HTTP 503');
       expect(screen.getByRole('button', { name: 'Install' })).toBeInTheDocument();
+    });
+  });
+
+  /** Managed-tools criterion 42 — Install on java, gh and adb too; adb
+   * asks for the terms first. */
+  describe('the managed rows', () => {
+    const MISSING: DoctorReport = {
+      ...TROUBLED,
+      rows: TROUBLED.rows.map((entry) =>
+        entry.id === 'java' || entry.id === 'gh' || entry.id === 'adb'
+          ? { ...entry, status: 'fail' as const, label: 'Not found' }
+          : entry,
+      ),
+      issues: 5,
+    };
+
+    it('offers Install on each managed row that is not ok, naming the tool', async () => {
+      const install = vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: { installId: 'install-1' } }),
+      );
+      window.conductor.doctorInstall = install;
+      open(MISSING);
+      render(<Doctor />);
+
+      await userEvent.click(
+        within(screen.getByRole('listitem', { name: 'Java Development Kit' })).getByRole('button', {
+          name: 'Install',
+        }),
+      );
+      await userEvent.click(
+        within(screen.getByRole('listitem', { name: 'GitHub CLI' })).getByRole('button', {
+          name: 'Install',
+        }),
+      );
+
+      expect(install).toHaveBeenNthCalledWith(1, { tools: ['java'], androidTermsAccepted: false });
+      expect(install).toHaveBeenNthCalledWith(2, { tools: ['gh'], androidTermsAccepted: false });
+      expect(
+        within(screen.getByRole('listitem', { name: 'Xcode command line tools' })).queryByRole(
+          'button',
+        ),
+      ).not.toBeInTheDocument();
+    });
+
+    it('enables Install on the adb row only once the terms are accepted', async () => {
+      const install = vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: { installId: 'install-1' } }),
+      );
+      window.conductor.doctorInstall = install;
+      open(MISSING);
+      render(<Doctor />);
+
+      const adb = screen.getByRole('listitem', { name: 'Android platform-tools' });
+      expect(within(adb).getByRole('button', { name: 'Install' })).toBeDisabled();
+      await userEvent.click(
+        within(adb).getByRole('checkbox', {
+          name: 'I accept the Android SDK Platform-Tools terms',
+        }),
+      );
+      await userEvent.click(within(adb).getByRole('button', { name: 'Install' }));
+
+      expect(install).toHaveBeenCalledExactlyOnceWith({
+        tools: ['adb'],
+        androidTermsAccepted: true,
+      });
+    });
+
+    it('reads Installing on the row of the tool in flight, with the step alone for Homebrew', () => {
+      open(MISSING);
+      useDoctorStore.setState({
+        install: {
+          installId: 'install-1',
+          tool: 'gh',
+          pct: null,
+          step: 'Installing gh with Homebrew',
+        },
+      });
+      render(<Doctor />);
+
+      const gh = screen.getByRole('listitem', { name: 'GitHub CLI' });
+      expect(gh).toHaveTextContent('Installing');
+      expect(gh).toHaveTextContent('Installing gh with Homebrew');
+      expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument();
+    });
+  });
+
+  /** Managed-tools criterion 43 — Sign in on the GitHub row, the card in
+   * the sheet. */
+  describe('the GitHub row', () => {
+    it('offers Sign in while gh is ok and the row is not, and runs the card in place', async () => {
+      const login = vi.fn(() =>
+        Promise.resolve({ ok: true as const, data: { loginId: 'login-1' } }),
+      );
+      window.conductor.doctorLogin = login;
+      open(TROUBLED);
+      render(<Doctor />);
+
+      const row = screen.getByRole('listitem', { name: 'GitHub' });
+      await userEvent.click(within(row).getByRole('button', { name: 'Sign in' }));
+      expect(login).toHaveBeenCalledOnce();
+
+      act(() => {
+        useDoctorStore.setState({ login: { loginId: 'login-1', code: '1234-ABCD' } });
+      });
+      expect(screen.getByTestId('login-code')).toHaveTextContent('1234-ABCD');
+      expect(screen.getByRole('button', { name: 'Open GitHub' })).toBeInTheDocument();
+    });
+
+    it('offers no Sign in while gh is missing or the row is ok', () => {
+      open({
+        ...TROUBLED,
+        rows: TROUBLED.rows.map((entry) =>
+          entry.id === 'gh' ? { ...entry, status: 'fail' as const } : entry,
+        ),
+      });
+      const { unmount } = render(<Doctor />);
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
+      unmount();
+
+      open(HEALTHY);
+      render(<Doctor />);
+      expect(screen.queryByRole('button', { name: 'Sign in' })).not.toBeInTheDocument();
     });
   });
 

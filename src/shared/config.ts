@@ -57,6 +57,32 @@ export const CONFIG = {
   /** Idem para o `gh`. Vazio = resolver sozinho (`resolve-gh`). */
   GH_PATH: process.env.CONDUCTOR_GH_PATH ?? '',
 
+  /**
+   * Os pins das ferramentas que o doctor baixa direto quando não há Homebrew
+   * (managed-tools, critério 13): GitHub CLI, Android platform-tools e o
+   * Zulu JDK 21. Cada um mira uma versão exata; o marcador ao lado da cópia
+   * em `~/.conductor/tools` é comparado com ela. Onde o publisher não
+   * publica um arquivo de checksums (Google, Azul), o digest é pinado aqui.
+   * Toda base de URL aceita o override `CONDUCTOR_<NOME>` para iterar
+   * offline contra um `python3 -m http.server` local (critério 48).
+   */
+  GH_VERSION: process.env.CONDUCTOR_GH_VERSION ?? '2.100.0',
+  GH_RELEASE_URL:
+    process.env.CONDUCTOR_GH_RELEASE_URL ?? 'https://github.com/cli/cli/releases/download',
+  PLATFORM_TOOLS_VERSION: process.env.CONDUCTOR_PLATFORM_TOOLS_VERSION ?? '37.0.1',
+  PLATFORM_TOOLS_SHA256:
+    process.env.CONDUCTOR_PLATFORM_TOOLS_SHA256 ??
+    'ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d',
+  PLATFORM_TOOLS_RELEASE_URL:
+    process.env.CONDUCTOR_PLATFORM_TOOLS_RELEASE_URL ?? 'https://dl.google.com/android/repository',
+  ZULU_VERSION: process.env.CONDUCTOR_ZULU_VERSION ?? '21.52.203',
+  /** A versão do Java dentro desse build do Zulu — o que `java -version` imprime. */
+  ZULU_JAVA_VERSION: process.env.CONDUCTOR_ZULU_JAVA_VERSION ?? '21.0.12.1',
+  ZULU_SHA256:
+    process.env.CONDUCTOR_ZULU_SHA256 ??
+    '042093e0895c940a02d68e727bc37b59f3958e58aa1463ec9080845d77af0a45',
+  ZULU_RELEASE_URL: process.env.CONDUCTOR_ZULU_RELEASE_URL ?? 'https://cdn.azul.com/zulu/bin',
+
   /** Idem para o `claude`. Vazio = resolver sozinho (`resolve-claude`). */
   CLAUDE_PATH: process.env.CONDUCTOR_CLAUDE_PATH ?? '',
 

@@ -57,6 +57,10 @@ describe('the channels', () => {
       'doctor:check',
       'doctor:install',
       'doctor:skip-setup',
+      'doctor:login',
+      'doctor:login-cancel',
+      'doctor:open-login-url',
+      'doctor:open-url',
     ]);
   });
 
@@ -85,6 +89,7 @@ describe('the channels', () => {
       'ai:event',
       'doctor:changed',
       'doctor:install-event',
+      'doctor:login-event',
     ]);
   });
 
@@ -1704,22 +1709,219 @@ describe('doctor:*', () => {
   const STATE = {
     report: REPORT,
     checking: false,
-    setup: { active: false, reason: null },
+    setup: { active: false, reason: null, plan: null },
     install: null,
-    maestroOverridden: false,
+    login: null,
+    overridden: [],
     version: '2.10.0',
   };
+  const PLAN = {
+    tools: [
+      { id: 'java', state: 'install', method: 'direct', detail: 'Will download' },
+      {
+        id: 'maestro',
+        state: 'present',
+        method: null,
+        detail:
+          'maestro 2.10.0 · /Users/x/Library/Application Support/conductor/maestro/bin/maestro',
+      },
+      { id: 'gh', state: 'install', method: 'homebrew', detail: 'Will install with Homebrew' },
+      {
+        id: 'adb',
+        state: 'skipped',
+        method: 'homebrew',
+        detail: 'Accept the Android SDK terms to install',
+      },
+    ],
+    homebrew: '/opt/homebrew/bin/brew',
+    androidTermsRequired: true,
+    profile: '~/.zprofile',
+  };
 
-  it('every doctor invoke takes no arguments', () => {
+  it('the invokes that send intent alone take no arguments', () => {
     for (const channel of [
       CHANNELS.doctorStatus,
       CHANNELS.doctorCheck,
-      CHANNELS.doctorInstall,
       CHANNELS.doctorSkipSetup,
+      CHANNELS.doctorLogin,
+      CHANNELS.doctorLoginCancel,
+      CHANNELS.doctorOpenLoginUrl,
     ]) {
       expect(IPC[channel].request.safeParse([]).success).toBe(true);
       expect(IPC[channel].request.safeParse(['/usr/local/bin/maestro']).success).toBe(false);
     }
+  });
+
+  /** Criterion 46 — which tools, and whether the Android terms were accepted;
+   * never a path, a URL or a command. */
+  it('install takes the tools to install and the terms decision', () => {
+    const schema = IPC[CHANNELS.doctorInstall].request;
+
+    expect(schema.safeParse([{ androidTermsAccepted: false }]).success).toBe(true);
+    expect(schema.safeParse([{ tools: ['gh', 'adb'], androidTermsAccepted: true }]).success).toBe(
+      true,
+    );
+    expect(schema.safeParse([{ tools: [], androidTermsAccepted: true }]).success).toBe(true);
+    expect(schema.safeParse([]).success).toBe(false);
+    expect(schema.safeParse([{}]).success).toBe(false);
+    expect(schema.safeParse([{ tools: ['git'], androidTermsAccepted: true }]).success).toBe(false);
+    expect(
+      schema.safeParse([{ tools: ['gh'], androidTermsAccepted: true, url: 'https://x' }]).success,
+    ).toBe(false);
+  });
+
+  /** Criterion 37 — the renderer names a page by id; main holds the URL. */
+  it('open-url takes one of the ids main knows, never a URL', () => {
+    const schema = IPC[CHANNELS.doctorOpenUrl].request;
+
+    expect(schema.safeParse([{ id: 'android-terms' }]).success).toBe(true);
+    expect(schema.safeParse([{ id: 'https://developer.android.com' }]).success).toBe(false);
+    expect(schema.safeParse([{ url: 'https://developer.android.com' }]).success).toBe(false);
+    expect(schema.safeParse([]).success).toBe(false);
+  });
+
+  it('carries the plan, the per-tool install state and the sign-in state (criterion 46)', () => {
+    const schema = IPC[CHANNELS.doctorStatus].response;
+
+    expect(
+      schema.safeParse({ ...STATE, setup: { active: true, reason: 'first-run', plan: PLAN } })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        setup: {
+          active: true,
+          reason: 'first-run',
+          plan: { ...PLAN, homebrew: null, androidTermsRequired: false, profile: null },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        setup: {
+          active: true,
+          reason: 'first-run',
+          plan: {
+            ...PLAN,
+            tools: [
+              {
+                id: 'java',
+                state: 'unavailable',
+                method: null,
+                detail: 'Not available on Intel Macs',
+              },
+            ],
+          },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        setup: {
+          active: true,
+          reason: 'first-run',
+          plan: { ...PLAN, tools: [{ id: 'java', state: 'later', method: null, detail: '' }] },
+        },
+      }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        install: {
+          installId: 'install-1',
+          tool: 'gh',
+          pct: null,
+          step: 'Installing gh with Homebrew',
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        install: { installId: 'install-1', failed: {} },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        install: {
+          installId: 'install-1',
+          failed: { adb: { code: 'doctor/brew-failed', message: 'sentence', detail: 'Error: x' } },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        install: {
+          installId: 'install-1',
+          failed: { git: { code: 'c', message: 'm', detail: 'd' } },
+        },
+      }).success,
+    ).toBe(false);
+    expect(schema.safeParse({ ...STATE, login: { loginId: 'login-1', code: null } }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({ ...STATE, login: { loginId: 'login-1', code: '1234-ABCD' } }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({
+        ...STATE,
+        login: {
+          loginId: 'login-1',
+          failed: { code: 'doctor/login-failed', message: 'sentence', detail: 'expired' },
+        },
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ ...STATE, login: { loginId: 'login-1', token: 'gho_x' } }).success,
+    ).toBe(false);
+  });
+
+  it('answers login with its id, and the cancel and open invokes with nothing', () => {
+    expect(IPC[CHANNELS.doctorLogin].response.safeParse({ loginId: 'login-1' }).success).toBe(true);
+    expect(IPC[CHANNELS.doctorLogin].response.safeParse({}).success).toBe(false);
+    expect(IPC[CHANNELS.doctorLoginCancel].response.safeParse({}).success).toBe(true);
+    expect(IPC[CHANNELS.doctorOpenLoginUrl].response.safeParse({}).success).toBe(true);
+    expect(IPC[CHANNELS.doctorOpenUrl].response.safeParse({}).success).toBe(true);
+  });
+
+  it('pushes the code, done, failed and cancelled sign-in events, each naming its login', () => {
+    const schema = PUSH[PUSH_CHANNELS.doctorLoginEvent];
+
+    expect(
+      schema.safeParse({
+        kind: 'code',
+        loginId: 'login-1',
+        code: '1234-ABCD',
+        url: 'https://github.com/login/device',
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ kind: 'done', loginId: 'login-1', account: 'octocat' }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({
+        kind: 'failed',
+        loginId: 'login-1',
+        code: 'doctor/login-failed',
+        message: 'sentence',
+        detail: 'expired',
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ kind: 'cancelled', loginId: 'login-1' }).success).toBe(true);
+    expect(
+      schema.safeParse({ kind: 'code', code: '1234-ABCD', url: 'https://github.com/login/device' })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ kind: 'done', loginId: 'login-1', account: 'octocat', token: 'gho_x' })
+        .success,
+    ).toBe(false);
   });
 
   it('answers status with the whole doctor state', () => {
@@ -1728,15 +1930,21 @@ describe('doctor:*', () => {
     expect(schema.safeParse(STATE).success).toBe(true);
     expect(schema.safeParse({ ...STATE, report: null, checking: true }).success).toBe(true);
     expect(
-      schema.safeParse({ ...STATE, setup: { active: true, reason: 'first-run' } }).success,
+      schema.safeParse({ ...STATE, setup: { active: true, reason: 'first-run', plan: null } })
+        .success,
     ).toBe(true);
-    expect(schema.safeParse({ ...STATE, setup: { active: true, reason: 'update' } }).success).toBe(
-      true,
-    );
+    expect(
+      schema.safeParse({ ...STATE, setup: { active: true, reason: 'update', plan: null } }).success,
+    ).toBe(true);
     expect(
       schema.safeParse({
         ...STATE,
-        install: { installId: 'install-1', pct: 42, step: 'Downloading maestro 2.10.0' },
+        install: {
+          installId: 'install-1',
+          tool: 'maestro',
+          pct: 42,
+          step: 'Downloading maestro 2.10.0',
+        },
       }).success,
     ).toBe(true);
     expect(
@@ -1744,21 +1952,22 @@ describe('doctor:*', () => {
         ...STATE,
         install: {
           installId: 'install-1',
-          failed: { code: 'doctor/download-failed', message: 'sentence', detail: 'HTTP 503' },
+          failed: {
+            maestro: { code: 'doctor/download-failed', message: 'sentence', detail: 'HTTP 503' },
+          },
         },
       }).success,
     ).toBe(true);
   });
 
   /** Criterion 31's guard travels in the state: the sheet never learns the
-   * path, only that the person set one. */
-  it('carries whether CONFIG.MAESTRO_PATH is set, and nothing more about it', () => {
+   * path, only which tools the person set one for. */
+  it('carries which tools have a configured path, and nothing more about it', () => {
     const schema = IPC[CHANNELS.doctorStatus].response;
 
-    expect(schema.safeParse({ ...STATE, maestroOverridden: true }).success).toBe(true);
-    expect(schema.safeParse({ ...STATE, maestroOverridden: '/custom/maestro' }).success).toBe(
-      false,
-    );
+    expect(schema.safeParse({ ...STATE, overridden: ['maestro', 'gh'] }).success).toBe(true);
+    expect(schema.safeParse({ ...STATE, overridden: ['git'] }).success).toBe(false);
+    expect(schema.safeParse({ ...STATE, maestroOverridden: true }).success).toBe(false);
     expect(schema.safeParse({ ...STATE, maestroPath: '/custom/maestro' }).success).toBe(false);
   });
 
@@ -1787,32 +1996,78 @@ describe('doctor:*', () => {
     expect(PUSH[PUSH_CHANNELS.doctorChanged].safeParse(STATE).success).toBe(true);
   });
 
-  it('pushes progress, done and failed install events, each naming its install', () => {
+  it('pushes progress, done, failed, skipped and settled install events, each naming its install and tool', () => {
     const schema = PUSH[PUSH_CHANNELS.doctorInstallEvent];
 
     expect(
-      schema.safeParse({ installId: 'install-1', kind: 'progress', pct: 12, step: 'Extracting' })
-        .success,
+      schema.safeParse({
+        installId: 'install-1',
+        kind: 'progress',
+        tool: 'maestro',
+        pct: 12,
+        step: 'Extracting',
+      }).success,
     ).toBe(true);
     expect(
-      schema.safeParse({ installId: 'install-1', kind: 'done', version: '2.10.0' }).success,
+      schema.safeParse({
+        installId: 'install-1',
+        kind: 'progress',
+        tool: 'gh',
+        pct: null,
+        step: 'Installing gh with Homebrew',
+      }).success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'done', tool: 'maestro', version: '2.10.0' })
+        .success,
     ).toBe(true);
     expect(
       schema.safeParse({
         installId: 'install-1',
         kind: 'failed',
+        tool: 'maestro',
         code: 'doctor/checksum-mismatch',
         message: 'sentence',
         detail: 'sha256 mismatch',
       }).success,
     ).toBe(true);
-    expect(schema.safeParse({ kind: 'progress', pct: 12, step: 'Extracting' }).success).toBe(false);
     expect(
-      schema.safeParse({ installId: 'install-1', kind: 'progress', pct: 101, step: 'x' }).success,
+      schema.safeParse({
+        installId: 'install-1',
+        kind: 'skipped',
+        tool: 'adb',
+        detail: 'Accept the Android SDK terms to install',
+      }).success,
+    ).toBe(true);
+    expect(schema.safeParse({ installId: 'install-1', kind: 'settled', failed: [] }).success).toBe(
+      true,
+    );
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'settled', failed: ['java', 'adb'] })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'settled', failed: ['git'] }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ installId: 'install-1', kind: 'progress', pct: 12, step: 'Extracting' })
+        .success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({ kind: 'progress', tool: 'gh', pct: 12, step: 'Extracting' }).success,
+    ).toBe(false);
+    expect(
+      schema.safeParse({
+        installId: 'install-1',
+        kind: 'progress',
+        tool: 'gh',
+        pct: 101,
+        step: 'x',
+      }).success,
     ).toBe(false);
   });
 
-  it('declares the seven doctor codes', () => {
+  it('declares the twelve doctor codes', () => {
     expect([
       ERROR_CODES.doctorInstallActive,
       ERROR_CODES.doctorMaestroOverridden,
@@ -1821,6 +2076,11 @@ describe('doctor:*', () => {
       ERROR_CODES.doctorChecksumMismatch,
       ERROR_CODES.doctorExtractFailed,
       ERROR_CODES.doctorVerifyFailed,
+      ERROR_CODES.doctorBrewFailed,
+      ERROR_CODES.doctorGhMissing,
+      ERROR_CODES.doctorLoginActive,
+      ERROR_CODES.doctorLoginFailed,
+      ERROR_CODES.doctorUnsupportedArch,
     ]).toEqual([
       'doctor/install-active',
       'doctor/maestro-overridden',
@@ -1829,6 +2089,11 @@ describe('doctor:*', () => {
       'doctor/checksum-mismatch',
       'doctor/extract-failed',
       'doctor/verify-failed',
+      'doctor/brew-failed',
+      'doctor/gh-missing',
+      'doctor/login-active',
+      'doctor/login-failed',
+      'doctor/unsupported-arch',
     ]);
   });
 });

@@ -2,6 +2,7 @@ import { ERROR_CODES, type ErrorCode } from '@shared/ipc';
 import { McpClient, McpTimeoutError } from '../maestro/McpClient';
 import { resolveMaestro } from '../maestro/resolve-maestro';
 import type { SpawnOptions, StreamingProcess } from '../process/run';
+import { maestroEnv } from './tool-layout';
 
 /**
  * The one persistent `maestro mcp` child this app talks to, and its whole
@@ -163,7 +164,7 @@ export class MaestroMcpService {
     const child = this.deps.spawn(binary, ['mcp', '--no-viewer'], {
       // Criterion 18. §12 rule 10 in full now: `--no-viewer` was the one part of
       // it this child used to drop, and only because the Viewer was the point.
-      env: { ...this.deps.env, MAESTRO_CLI_NO_ANALYTICS: '1' },
+      env: maestroEnv(this.deps.env, this.deps.home, this.deps.isExecutable),
     });
 
     const session = (this.deps.connect ?? defaultConnect)(child);

@@ -9,6 +9,9 @@ import { resolveGh } from './resolve-gh';
  * second copy.
  */
 
+const HOME = '/Users/someone';
+const MANAGED = join(HOME, '.conductor', 'bin', 'gh');
+
 function pathOf(...dirs: string[]): string {
   return dirs.join(delimiter);
 }
@@ -20,16 +23,31 @@ function executable(...paths: string[]): (candidate: string) => boolean {
 describe('resolveGh', () => {
   it('answers the configured path first, before any searching', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '/custom/gh',
       env: { PATH: pathOf('/somewhere/bin') },
-      isExecutable: executable('/custom/gh', join('/somewhere/bin', 'gh')),
+      isExecutable: executable('/custom/gh', join('/somewhere/bin', 'gh'), MANAGED),
     });
 
     expect(gh).toBe('/custom/gh');
   });
 
+  /** Managed-tools criterion 24 — the copy Conductor downloaded, by absolute
+   * path, before PATH: a GUI launch reads no profile (criterion 21). */
+  it('answers the managed launcher before PATH and the Homebrew shelves', () => {
+    const gh = resolveGh({
+      home: HOME,
+      configuredPath: '',
+      env: { PATH: pathOf('/somewhere/bin') },
+      isExecutable: executable(MANAGED, join('/somewhere/bin', 'gh'), '/opt/homebrew/bin/gh'),
+    });
+
+    expect(gh).toBe(MANAGED);
+  });
+
   it('falls through a configured path that is not there', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '/custom/gh',
       env: { PATH: pathOf('/somewhere/bin') },
       isExecutable: executable(join('/somewhere/bin', 'gh')),
@@ -40,6 +58,7 @@ describe('resolveGh', () => {
 
   it('walks PATH in order and answers the first hit', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '',
       env: { PATH: pathOf('/first/bin', '/second/bin') },
       isExecutable: executable(join('/first/bin', 'gh'), join('/second/bin', 'gh')),
@@ -52,6 +71,7 @@ describe('resolveGh', () => {
    * resolve against whatever the working directory happens to be. */
   it('skips empty PATH segments', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '',
       env: { PATH: pathOf('', '/real/bin', '') },
       isExecutable: executable('gh', join('/real/bin', 'gh')),
@@ -63,6 +83,7 @@ describe('resolveGh', () => {
   /** The GUI-app case: `PATH` has no Homebrew, the machine does. */
   it('reaches the Homebrew shelves when PATH misses', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '',
       env: { PATH: pathOf('/usr/bin') },
       isExecutable: executable('/opt/homebrew/bin/gh'),
@@ -73,6 +94,7 @@ describe('resolveGh', () => {
 
   it('still answers with no PATH in the environment at all', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '',
       env: {},
       isExecutable: executable('/usr/local/bin/gh'),
@@ -83,6 +105,7 @@ describe('resolveGh', () => {
 
   it('answers null when gh is nowhere', () => {
     const gh = resolveGh({
+      home: HOME,
       configuredPath: '/custom/gh',
       env: { PATH: pathOf('/somewhere/bin') },
       isExecutable: () => false,

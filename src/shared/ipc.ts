@@ -51,6 +51,10 @@ export const CHANNELS = {
   doctorCheck: 'doctor:check',
   doctorInstall: 'doctor:install',
   doctorSkipSetup: 'doctor:skip-setup',
+  doctorLogin: 'doctor:login',
+  doctorLoginCancel: 'doctor:login-cancel',
+  doctorOpenLoginUrl: 'doctor:open-login-url',
+  doctorOpenUrl: 'doctor:open-url',
 } as const;
 
 /** Channels main pushes on. They read as events, and carry the same `Result`
@@ -68,6 +72,7 @@ export const PUSH_CHANNELS = {
   aiEvent: 'ai:event',
   doctorChanged: 'doctor:changed',
   doctorInstallEvent: 'doctor:install-event',
+  doctorLoginEvent: 'doctor:login-event',
 } as const;
 
 /** Channels that take no request payload still validate their argument list. */
@@ -638,40 +643,92 @@ const doctorReport = z
   })
   .strict();
 
-/** The whole-number percentage of an install, and the step it is in. */
+/** The four tools the doctor manages (managed-tools criterion 1), in install
+ * order: the JDK first so Maestro's verify runs against a real JVM. */
+const toolId = z.enum(['java', 'maestro', 'gh', 'adb']);
+
+/**
+ * One line of the plan (managed-tools criterion 3): what the setup window
+ * will do about a tool. `present` carries the doctor row's detail; `install`
+ * the method; `unavailable` is an Intel Mac (criterion 6); `skipped` a tool
+ * the person continued without (criteria 8, 10).
+ */
+const doctorPlanEntry = z
+  .object({
+    id: toolId,
+    state: z.enum(['present', 'install', 'unavailable', 'skipped']),
+    method: z.enum(['homebrew', 'direct']).nullable(),
+    detail: z.string(),
+  })
+  .strict();
+
+/** The plan the setup window shows before its one click: the four entries,
+ * where `brew` was found (or not), whether the Android terms are in play,
+ * and which shell profile gets the `PATH` block — home-relative, `null` for a
+ * shell Conductor does not write (criterion 20). */
+const doctorPlan = z
+  .object({
+    tools: z.array(doctorPlanEntry).readonly(),
+    homebrew: z.string().nullable(),
+    androidTermsRequired: z.boolean(),
+    profile: z.string().nullable(),
+  })
+  .strict();
+
+/** The whole-number percentage of an install, and the step it is in. `pct`
+ * is `null` while Homebrew runs — it prints no progress (criterion 12). */
 const doctorInstallProgress = z.object({
   installId: z.string(),
-  pct: z.number().min(0).max(100),
+  tool: toolId,
+  pct: z.number().min(0).max(100).nullable(),
   step: z.string(),
 });
 
 /** How an install failed (criterion 17): the stable code, one product-language
- * sentence chosen by code, and the raw cause for the `maestro` row. */
+ * sentence chosen by code, and the raw cause for the doctor row. */
 const doctorInstallFailure = z
   .object({ code: z.string(), message: z.string(), detail: z.string() })
   .strict();
 
+/** The sign-in's failure carries the same three fields. */
+const doctorLoginFailure = doctorInstallFailure;
+
 /**
  * The doctor state (criterion 36): the last report or none, whether a check is
- * in flight, whether this launch is the setup window and why, and the install
- * in flight or the one that failed. Main owns every field; the renderer holds
- * a projection.
+ * in flight, whether this launch is the setup window and why — with the plan
+ * once it is built — the install in flight or the one that settled (its
+ * failures by tool), and the sign-in in flight or the one that failed. Main
+ * owns every field; the renderer holds a projection.
  */
 const doctorState = z
   .object({
     report: doctorReport.nullable(),
     checking: z.boolean(),
     setup: z
-      .object({ active: z.boolean(), reason: z.enum(['first-run', 'update']).nullable() })
+      .object({
+        active: z.boolean(),
+        reason: z.enum(['first-run', 'update']).nullable(),
+        plan: doctorPlan.nullable(),
+      })
       .strict(),
     install: z.union([
       z.null(),
       doctorInstallProgress.strict(),
-      z.object({ installId: z.string(), failed: doctorInstallFailure }).strict(),
+      z
+        .object({ installId: z.string(), failed: z.partialRecord(toolId, doctorInstallFailure) })
+        .strict(),
     ]),
-    /** `CONFIG.MAESTRO_PATH` is set (criterion 10): the sheet offers no
-     * Install then (criterion 31). The path itself never crosses. */
-    maestroOverridden: z.boolean(),
+    /** The sign-in (criteria 28–31): running, with the one-time code once gh
+     * printed it — shown, never stored — or the way it failed. No token. */
+    login: z.union([
+      z.null(),
+      z.object({ loginId: z.string(), code: z.string().nullable() }).strict(),
+      z.object({ loginId: z.string(), failed: doctorLoginFailure }).strict(),
+    ]),
+    /** The tools whose path the person configured (`CONFIG.MAESTRO_PATH`,
+     * `GH_PATH`, `ADB_PATH` — doctor criterion 10, managed-tools 42): the
+     * sheet offers no Install on those. The paths themselves never cross. */
+    overridden: z.array(toolId).readonly(),
     /** The pin, `CONFIG.MAESTRO_VERSION` — what the Setup view names
      * (criteria 19, 21). A push carries the constant; nothing else does. */
     version: z.string(),
@@ -679,11 +736,38 @@ const doctorState = z
   .strict();
 
 /** Install progress as pushes (criterion 15): the invoke answered with the id
- * at once, and everything after it arrives here, naming that id. */
+ * at once, and everything after it arrives here, naming that id and the tool
+ * it is about; `settled` closes the whole run (managed-tools criterion 17). */
 const doctorInstallEvent = z.discriminatedUnion('kind', [
   doctorInstallProgress.extend({ kind: z.literal('progress') }).strict(),
-  z.object({ kind: z.literal('done'), installId: z.string(), version: z.string() }).strict(),
-  doctorInstallFailure.extend({ kind: z.literal('failed'), installId: z.string() }).strict(),
+  z
+    .object({ kind: z.literal('done'), installId: z.string(), tool: toolId, version: z.string() })
+    .strict(),
+  doctorInstallFailure
+    .extend({ kind: z.literal('failed'), installId: z.string(), tool: toolId })
+    .strict(),
+  z
+    .object({ kind: z.literal('skipped'), installId: z.string(), tool: toolId, detail: z.string() })
+    .strict(),
+  z
+    .object({
+      kind: z.literal('settled'),
+      installId: z.string(),
+      failed: z.array(toolId).readonly(),
+    })
+    .strict(),
+]);
+
+/** The sign-in as pushes (criteria 29, 31): the one-time code with the URL to
+ * enter it at, then done with the account, failed with the sentence, or
+ * cancelled. The token never appears in any of them (§9.0). */
+const doctorLoginEvent = z.discriminatedUnion('kind', [
+  z
+    .object({ kind: z.literal('code'), loginId: z.string(), code: z.string(), url: z.string() })
+    .strict(),
+  z.object({ kind: z.literal('done'), loginId: z.string(), account: z.string() }).strict(),
+  doctorLoginFailure.extend({ kind: z.literal('failed'), loginId: z.string() }).strict(),
+  z.object({ kind: z.literal('cancelled'), loginId: z.string() }).strict(),
 ]);
 
 export const IPC = {
@@ -839,9 +923,10 @@ export const IPC = {
     request: noArguments,
     response: z.object({ ready: z.literal(true) }),
   },
-  // The doctor's four invokes take nothing (criterion 37): the renderer sends
-  // no path, URL or command — main decides everything about where Maestro
-  // lives. Status is the boot query; the steady state is `doctor:changed`.
+  // The doctor's invokes send intent (criterion 37): which tools, a terms
+  // decision, a page by id — never a path, URL or command. Main decides
+  // everything about where a tool lives and which URL a name means. Status
+  // is the boot query; the steady state is `doctor:changed`.
   [CHANNELS.doctorStatus]: { request: noArguments, response: doctorState },
   // `started` is false when the trigger was coalesced into a check already
   // in flight (criterion 6) — a state, not a failure.
@@ -852,10 +937,30 @@ export const IPC = {
   // The id immediately; the pipeline streams as `doctor:install-event` and is
   // never awaited in the handler (criterion 15).
   [CHANNELS.doctorInstall]: {
-    request: noArguments,
+    request: z.tuple([
+      z
+        .object({
+          tools: z.array(toolId).readonly().optional(),
+          androidTermsAccepted: z.boolean(),
+        })
+        .strict(),
+    ]),
     response: z.object({ installId: z.string() }).strict(),
   },
   [CHANNELS.doctorSkipSetup]: { request: noArguments, response: z.object({}).strict() },
+  // The id immediately; the code and the outcome stream as `doctor:login-event`.
+  [CHANNELS.doctorLogin]: {
+    request: noArguments,
+    response: z.object({ loginId: z.string() }).strict(),
+  },
+  [CHANNELS.doctorLoginCancel]: { request: noArguments, response: z.object({}).strict() },
+  // The one device-flow URL, held in main (managed-tools criterion 30).
+  [CHANNELS.doctorOpenLoginUrl]: { request: noArguments, response: z.object({}).strict() },
+  // A page by id, resolved to its URL in main (managed-tools criterion 37).
+  [CHANNELS.doctorOpenUrl]: {
+    request: z.tuple([z.object({ id: z.enum(['android-terms']) }).strict()]),
+    response: z.object({}).strict(),
+  },
 } as const;
 
 /** Push payloads, by channel. Same schemas, travelling the other way. */
@@ -871,6 +976,7 @@ export const PUSH = {
   [PUSH_CHANNELS.aiEvent]: aiEvent,
   [PUSH_CHANNELS.doctorChanged]: doctorState,
   [PUSH_CHANNELS.doctorInstallEvent]: doctorInstallEvent,
+  [PUSH_CHANNELS.doctorLoginEvent]: doctorLoginEvent,
 } as const;
 
 export type Channel = keyof typeof IPC;
@@ -912,6 +1018,12 @@ export type DoctorReport = z.infer<typeof doctorReport>;
 export type DoctorInstallFailure = z.infer<typeof doctorInstallFailure>;
 export type DoctorState = z.infer<typeof doctorState>;
 export type DoctorInstallEvent = z.infer<typeof doctorInstallEvent>;
+export type DoctorLoginEvent = z.infer<typeof doctorLoginEvent>;
+export type ToolId = z.infer<typeof toolId>;
+export type DoctorPlan = z.infer<typeof doctorPlan>;
+export type DoctorPlanEntry = z.infer<typeof doctorPlanEntry>;
+export type DoctorPlanState = DoctorPlanEntry['state'];
+export type DoctorInstallMethod = NonNullable<DoctorPlanEntry['method']>;
 
 /**
  * Expected failures cross the boundary as values, not exceptions: Electron
@@ -1139,6 +1251,17 @@ export const ERROR_CODES = {
   doctorChecksumMismatch: 'doctor/checksum-mismatch',
   doctorExtractFailed: 'doctor/extract-failed',
   doctorVerifyFailed: 'doctor/verify-failed',
+  /** Homebrew exited non-zero (managed-tools criterion 15); the next attempt
+   * downloads directly. */
+  doctorBrewFailed: 'doctor/brew-failed',
+  /** `doctor:login` with no `gh` on the ladder (criterion 28). */
+  doctorGhMissing: 'doctor/gh-missing',
+  /** A second `doctor:login` while one runs. */
+  doctorLoginActive: 'doctor/login-active',
+  /** `gh auth login` exited non-zero — gh's own device-code expiry lands here. */
+  doctorLoginFailed: 'doctor/login-failed',
+  /** A direct install asked for on an Intel Mac (criterion 6). */
+  doctorUnsupportedArch: 'doctor/unsupported-arch',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -1266,16 +1389,33 @@ export interface ConductorApi {
   /** Runs every check again (criterion 6); the report lands on
    * `onDoctorChanged` once all have settled. */
   doctorCheck: (...args: Request<'doctor:check'>) => Promise<Result<Response<'doctor:check'>>>;
-  /** Starts installing Conductor's pinned Maestro and answers with the id at
-   * once — progress arrives on `onDoctorInstallEvent` (criterion 15). */
+  /** Starts installing the tools whose plan state is `install` — all of them,
+   * or the ones named — and answers with the id at once; progress arrives on
+   * `onDoctorInstallEvent`, one tool at a time (managed-tools criterion 9). */
   doctorInstall: (
     ...args: Request<'doctor:install'>
   ) => Promise<Result<Response<'doctor:install'>>>;
-  /** "Continue without Maestro" (criterion 18) — main presents the app in the
-   * same window; refused outside the setup window. */
+  /** "Continue without installing" (criterion 18) — main records the skips,
+   * presents the app in the same window; refused outside the setup window. */
   doctorSkipSetup: (
     ...args: Request<'doctor:skip-setup'>
   ) => Promise<Result<Response<'doctor:skip-setup'>>>;
+  /** Starts gh's own device flow and answers with the id at once; the code
+   * and the outcome arrive on `onDoctorLoginEvent` (criterion 28). */
+  doctorLogin: (...args: Request<'doctor:login'>) => Promise<Result<Response<'doctor:login'>>>;
+  /** Kills the sign-in child (criterion 31). */
+  doctorLoginCancel: (
+    ...args: Request<'doctor:login-cancel'>
+  ) => Promise<Result<Response<'doctor:login-cancel'>>>;
+  /** Opens github.com/login/device in the browser — the one URL, held in
+   * main (criterion 30). */
+  doctorOpenLoginUrl: (
+    ...args: Request<'doctor:open-login-url'>
+  ) => Promise<Result<Response<'doctor:open-login-url'>>>;
+  /** Opens a page by id — the Android SDK terms (criterion 37). */
+  doctorOpenUrl: (
+    ...args: Request<'doctor:open-url'>
+  ) => Promise<Result<Response<'doctor:open-url'>>>;
   /** Returns its own unsubscribe — a listener at poll rate that outlives its
    * view is a memory leak on a timer. */
   onDeviceChanged: (listener: (payload: PushPayload<'device:changed'>) => void) => () => void;
@@ -1313,5 +1453,9 @@ export interface ConductorApi {
    * the unsubscribe is consumed in effect cleanup like every other stream. */
   onDoctorInstallEvent: (
     listener: (payload: PushPayload<'doctor:install-event'>) => void,
+  ) => () => void;
+  /** The sign-in's code and outcome (criteria 29, 31) — same rule. */
+  onDoctorLoginEvent: (
+    listener: (payload: PushPayload<'doctor:login-event'>) => void,
   ) => () => void;
 }
