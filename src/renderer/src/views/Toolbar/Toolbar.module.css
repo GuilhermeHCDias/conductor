@@ -20,11 +20,14 @@
 
 /* The OS draws the traffic lights over this. Three 12px lights with 8px gaps is
    52px, offset 18px from the window edge — so nothing of ours starts before
-   70px, less the toolbar's own 14px of left padding. */
+   70px, less the toolbar's own 14px of left padding and the 10px flex gap that
+   follows the inset. The 20px on top is air: the sidebar toggle tints its
+   whole box when the sidebar is open, and a tinted box butted against the
+   close button reads as part of the lights. */
 .trafficLightInset {
   flex: none;
   height: 12px;
-  width: calc(70px - 14px);
+  width: calc(70px - 14px - 10px + 20px);
 }
 
 .document {
@@ -56,37 +59,6 @@
   flex: 1;
 }
 
-.environment {
-  align-items: center;
-  background: var(--a-well);
-  border: 1px solid var(--a-hair);
-  border-radius: var(--a-radius-field);
-  color: var(--text-secondary);
-  cursor: pointer;
-  display: flex;
-  flex: none;
-  font: var(--type-caption);
-  gap: var(--space-3);
-  height: 28px;
-  padding: 0 11px;
-  transition: var(--t-hover);
-}
-
-.environment:hover {
-  background: var(--glass-hover);
-}
-
-/* The kit sets these one step quieter than the label between them. */
-.environmentGlyph {
-  color: var(--text-tertiary);
-}
-
-.environment:focus-visible,
-.run:focus-visible {
-  box-shadow: var(--glow-accent);
-  outline: none;
-}
-
 /* Criterion 11: the one saturated control in the window. */
 .run {
   align-items: center;
@@ -107,6 +79,11 @@
 
 .run:active {
   transform: scale(var(--press-scale));
+}
+
+.run:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
 }
 
 /* Run criterion 17: no device, or nothing to run. Still visibly the accent

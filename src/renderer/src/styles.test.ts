@@ -271,8 +271,11 @@ describe('the traffic-light inset', () => {
     expect(rule(toolbar, '.toolbar')).toContain('padding: 0 10px 0 14px');
   });
 
-  it('reserves the rest of the 70px the lights span', () => {
-    expect(rule(toolbar, '.trafficLightInset')).toContain('width: calc(70px - 14px)');
+  // The 70px the lights span, less the toolbar's own padding and the flex gap
+  // that follows the inset, plus 20px of air — the sidebar toggle tints its
+  // whole box when the sidebar is open, and it must not touch the close button.
+  it('reserves the rest of the 70px the lights span, plus room to breathe', () => {
+    expect(rule(toolbar, '.trafficLightInset')).toContain('width: calc(70px - 14px - 10px + 20px)');
   });
 
   // The lights are positioned from the real window's origin. Inset the drawn
@@ -567,7 +570,6 @@ describe('what the criteria name', () => {
  * coming back.
  */
 describe('what the kit fixes', () => {
-  const toolbar = cssOf('views/Toolbar/Toolbar.module.css');
   const editor = cssOf('views/FlowEditor/FlowEditor.module.css');
   const flowList = cssOf('views/FlowList/FlowList.module.css');
   const connect = cssOf('views/Connect/Connect.module.css');
@@ -619,11 +621,8 @@ describe('what the kit fixes', () => {
    * Inheriting the control's own colour — which is what happens when an icon
    * carries no class — made both a shade too loud.
    */
-  it.each([
-    ['the environment chip’s glyphs', () => rule(toolbar, '.environmentGlyph')],
-    ['the suite-run glyph', () => rule(flowList, '.suiteRunGlyph')],
-  ])('quiets %s to --text-tertiary', (_label, declarations) => {
-    expect(declarations()).toContain('color: var(--text-tertiary)');
+  it('quiets the suite-run glyph to --text-tertiary', () => {
+    expect(rule(flowList, '.suiteRunGlyph')).toContain('color: var(--text-tertiary)');
   });
 
   /**

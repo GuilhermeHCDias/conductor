@@ -161,7 +161,7 @@ function useStudioC(opts = {}) {
     const first = (r.tests || [])[0];
     setTabs(first ? [{ id: first.id, label: first.name }] : []);
     setActiveTab(first ? first.id : null);
-    setYaml(window.FLOW_START.replace("com.example.app", r.bundle));
+    setYaml(first ? window.FLOW_START.replace("com.example.app", r.bundle) : "");
   }
 
   function startNew(kind, folder = "") {
@@ -499,8 +499,8 @@ function CToolbar({ s, dark, setDark }) {
       </Tooltip>
       {/* Document title, macOS-style: name plus a quiet subtitle, left of centre. */}
       <div style={{ display: "grid", gap: 1, minWidth: 0, marginLeft: 4 }}>
-        <span style={{ font: "var(--type-body-strong)", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active ? active.label : "Conductor"}</span>
-        <span style={{ font: "var(--type-mono-label)", color: "var(--text-disabled)" }}>{s.commandCount()} {s.commandCount() === 1 ? "command" : "commands"} · {s.running ? "running" : "saved on this Mac"}</span>
+        <span style={{ font: "var(--type-body-strong)", color: "var(--text-primary)", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{active ? active.label : s.repo.name}</span>
+        <span style={{ font: "var(--type-mono-label)", color: "var(--text-disabled)" }}>{active ? s.commandCount() + (s.commandCount() === 1 ? " command · " : " commands · ") + (s.running ? "running" : "saved on this Mac") : s.repo.org + "/" + s.repo.name + " · " + s.repo.branch}</span>
       </div>
       <span style={{ flex: 1 }} />
       <window.CDoctorBadge count={window.DOCTOR_ISSUES} selected={s.doctor} onClick={() => s.setDoctor((v) => !v)} />

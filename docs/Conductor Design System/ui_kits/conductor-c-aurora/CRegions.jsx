@@ -490,9 +490,22 @@ function CEditorColumn({ s }) {
   return (
     <div style={{ background: "var(--a-content)", display: "grid", gridTemplateColumns: "minmax(0, 1fr)", gridTemplateRows: "auto minmax(120px, 0.95fr) auto minmax(0, 1.05fr) auto", minHeight: 0, minWidth: 0 }}>
       <CTabStrip s={s} />
-      <div className="a-scroll" style={{ display: "grid", overflow: "auto", minHeight: 0 }}>
-        <YamlEditor value={s.yaml} activeLine={activeLine} aiLines={s.aiLines} />
-      </div>
+      {/* No open document is a real state now that a repo can arrive with an empty conductor/.
+          Showing seeded YAML with no tab above it would be a file that does not exist. */}
+      {s.activeTab ? (
+        <div className="a-scroll" style={{ display: "grid", overflow: "auto", minHeight: 0 }}>
+          <YamlEditor value={s.yaml} activeLine={activeLine} aiLines={s.aiLines} />
+        </div>
+      ) : (
+        <div style={{ display: "grid", placeItems: "center", alignContent: "center", gap: 10, minHeight: 0, padding: 32 }}>
+          <Icon name="file-code" size={20} color="var(--text-disabled)" />
+          <span style={{ font: "var(--type-caption)", color: "var(--text-tertiary)", textAlign: "center", textWrap: "pretty" }}>No flow open. Pick one in the sidebar, or create the first one.</span>
+          <button type="button" onClick={() => s.startNew("flow", "")} style={{ display: "flex", alignItems: "center", gap: 6, height: 26, padding: "0 11px", background: "var(--a-well)", border: A_HAIR, borderRadius: "var(--a-radius-field)", cursor: "pointer", font: "var(--type-caption)", color: "var(--text-primary)" }}>
+            <Icon name="plus" size={12} color="var(--accent)" />
+            New flow
+          </button>
+        </div>
+      )}
       <CSubTabs value={s.lower} onChange={s.setLower} running={s.running} />
       <div ref={scroller} className="a-scroll" style={{ overflow: "auto", minHeight: 0 }}>
         {s.lower === "run" ? <CRunPanel s={s} /> : <CAssistantPanel s={s} />}
