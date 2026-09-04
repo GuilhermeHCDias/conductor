@@ -133,7 +133,7 @@
   --glow-accent: 0 0 0 var(--focus-ring-w) oklch(66% 0.068 200 / 0.34);
   --glow-ai: 0 0 0 var(--focus-ring-w) oklch(50% 0.150 259 / 0.30);
   /* Single-layer, for filter: drop-shadow() — which accepts one shadow, not a list. */
-  --device-drop: 0 14px 30px oklch(28% 0.020 240 / 0.24); /* @kind other */
+  --device-drop: 0 6px 16px oklch(28% 0.020 240 / 0.20); /* @kind other */
   --scrim-top: linear-gradient(to bottom, oklch(100% 0 0 / 0.80), transparent); /* @kind color */
   --scrim-bottom: linear-gradient(to top, oklch(100% 0 0 / 0.80), transparent); /* @kind color */
 }

@@ -153,8 +153,13 @@ describe('motion', () => {
     }
   });
 
+  // ⏸️ Amended 2026-09-04: a module that restates a design-system keyframe
+  // (see "design-system keyframes inside a module" below) carries the DS's own
+  // `scale()` frames, which are entrances, not presses — the rule reads past
+  // `@keyframes` blocks and still holds for every declaration outside them.
   it.each(MODULES)('$name scales presses by the token, not by a number', ({ css }) => {
-    expect(css).not.toMatch(/transform:\s*scale\(\s*[\d.]/);
+    const outsideKeyframes = css.replace(/@keyframes[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}/g, '');
+    expect(outsideKeyframes).not.toMatch(/transform:\s*scale\(\s*[\d.]/);
   });
 
   // Everything that animates is a DS entrance on token clocks (the inspect
@@ -384,10 +389,17 @@ describe('what the criteria name', () => {
     expect(rule(flowList, '.aiMark')).toContain('color: var(--ai)');
   });
 
-  /** Criterion 22. */
-  it('lays the working area out as five rows', () => {
-    expect(rule(editor, '.column')).toContain(
-      'grid-template-rows: 38px minmax(120px, 0.95fr) 38px minmax(0, 1.05fr) auto',
+  /**
+   * Criterion 22 — ⏸️ amended 2026-09-04 on the person's ask: a sixth row, the
+   * hairline divider, sits between the YAML and the tab bar, and the two
+   * flexible rows take their share from `--editor-top` / `--editor-bottom`.
+   * The fallbacks are the proportions the criterion named, so a column with no
+   * variables set still lays out exactly as it did.
+   */
+  it('lays the working area out as five rows around a movable divider', () => {
+    expect(rule(editor, '.column').replace(/\s+/g, ' ')).toContain(
+      'grid-template-rows: 38px minmax(120px, var(--editor-top, 0.95fr)) auto 38px' +
+        ' minmax(120px, var(--editor-bottom, 1.05fr)) auto',
     );
   });
 
@@ -712,5 +724,26 @@ describe('the vendored glass utilities', () => {
 
   it.each(TSX)('$name uses none of them', ({ code }) => {
     expect(code).not.toMatch(/cd-glass-[123]|cd-vibrant|cd-content|cd-sheen|cd-sunken/);
+  });
+});
+
+/**
+ * CSS Modules rewrites every `animation-name` in a module to a hashed one, so
+ * a reference to a keyframe declared only in `utilities/animation.css`
+ * resolves to nothing and the animation is silently dead. Every module that
+ * rides a design-system keyframe must restate it beside the reference.
+ */
+describe('design-system keyframes inside a module', () => {
+  it('are declared in the same module that animates with them', () => {
+    for (const module of MODULES) {
+      const used = new Set(
+        [...module.css.matchAll(/animation(?:-name)?:\s*(cd-[\w-]+)/g)].map((match) => match[1]),
+      );
+      const declared = new Set(
+        [...module.css.matchAll(/@keyframes\s+(cd-[\w-]+)/g)].map((match) => match[1]),
+      );
+      const dead = [...used].filter((name) => !declared.has(name));
+      expect(dead, `${module.name} animates with an undeclared keyframe`).toEqual([]);
+    }
   });
 });

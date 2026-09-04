@@ -62,10 +62,15 @@
   flex: 1;
 }
 
+/* The clip lives here rather than on the bay: the phone's shadow is wider than
+   the phone, and a bay that clipped would cut it off square 14px inside the
+   panel — a hard seam down both sides of the picture. Clipped at the padded box
+   instead, the shadow spends the gutter and ends at the panel's own edge. */
 .bayPad {
   display: grid;
   min-height: 0;
   min-width: 0;
+  overflow: hidden;
   padding: 14px;
 }
 
@@ -73,7 +78,6 @@
   display: grid;
   min-height: 0;
   min-width: 0;
-  overflow: hidden;
   place-items: center;
 }
 

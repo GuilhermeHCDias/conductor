@@ -2,10 +2,11 @@ import { act, fireEvent, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { RUN_STATUS_LINE } from '../../fixtures/flows';
+import { DEFAULT_SPLIT, MIN_PANE, STEP_SPLIT } from '../../lib/editor-split';
 import { resetAiStore, useAiStore } from '../../stores/ai.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
 import { resetRunStore, useRunStore } from '../../stores/run.store';
-import { resetUiStore, useUiStore } from '../../stores/ui.store';
+import { EDITOR_SPLIT_KEY, resetUiStore, useUiStore } from '../../stores/ui.store';
 import { FlowEditor } from './FlowEditor';
 
 const ui = () => useUiStore.getState();
@@ -31,6 +32,9 @@ function placeCaret(index: number): void {
 }
 
 beforeEach(() => {
+  // The editor split persists, so a test that drags one leaks into the next
+  // unless the storage behind it is cleared first.
+  localStorage.clear();
   resetUiStore();
   resetFlowStore();
   resetRunStore();
@@ -612,5 +616,157 @@ describe('FlowEditor', () => {
 
       expect(screen.queryByRole('button', { name: 'New conversation' })).not.toBeInTheDocument();
     });
+  });
+});
+
+/**
+ * The column's two flexible rows are the person's to size (their ask, 2026-09-04):
+ * a YAML flow that runs past the fold and a conversation squeezed under it are
+ * the same window, and only they know which they are reading. The divider is a
+ * real separator — draggable, focusable, and arrow-driven — and what it lands
+ * on outlives the window.
+ */
+describe('the editor split', () => {
+  const handle = () => screen.getByRole('separator', { name: 'Resize the editor' });
+
+  /** jsdom lays nothing out, so the band is stubbed: the YAML body above and
+   * the lower panel below, 400px each, starting at y=100. */
+  function measure(bodyHeight = 400, lowerHeight = 400, bandTop = 100): void {
+    vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockImplementation(function (
+      this: HTMLElement,
+    ) {
+      const rect = (top: number, height: number) =>
+        ({
+          top,
+          height,
+          bottom: top + height,
+          left: 0,
+          right: 0,
+          width: 800,
+          x: 0,
+          y: top,
+        }) as DOMRect;
+      if (this.dataset.testid === 'editor-body') {
+        return rect(bandTop, bodyHeight);
+      }
+      if (this.dataset.testid === 'editor-lower') {
+        return rect(bandTop + bodyHeight, lowerHeight);
+      }
+      return rect(0, 0);
+    });
+  }
+
+  it('sizes both rows from the stored split', () => {
+    useUiStore.setState({ editorSplit: 0.6 });
+    render(<FlowEditor />);
+
+    const column = screen.getByRole('region', { name: 'Editor' });
+    expect(column.style.getPropertyValue('--editor-top')).toBe('0.6fr');
+    expect(column.style.getPropertyValue('--editor-bottom')).toBe('0.4fr');
+  });
+
+  it('reports the split it is showing', () => {
+    render(<FlowEditor />);
+
+    expect(handle()).toHaveAttribute('aria-valuenow', String(Math.round(DEFAULT_SPLIT * 100)));
+    expect(handle()).toHaveAttribute('aria-orientation', 'horizontal');
+  });
+
+  /** The boundary follows the cursor: dropped at 500 in a band running 100 to
+   * 900, the YAML takes exactly half. */
+  it('follows the pointer as it is dragged', () => {
+    measure();
+    render(<FlowEditor />);
+
+    fireEvent.pointerDown(handle(), { pointerId: 1, clientY: 420 });
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientY: 500 });
+
+    expect(ui().editorSplit).toBeCloseTo(0.5);
+  });
+
+  /** Storage is synchronous and the pointer moves at mouse rate: the drag only
+   * moves the boundary, and where it is dropped is what outlives the window. */
+  it('persists the split on the drop, not on every move', () => {
+    measure();
+    render(<FlowEditor />);
+
+    fireEvent.pointerDown(handle(), { pointerId: 1, clientY: 420 });
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientY: 500 });
+    expect(localStorage.getItem(EDITOR_SPLIT_KEY)).toBeNull();
+
+    fireEvent.pointerUp(handle(), { pointerId: 1, clientY: 500 });
+    expect(Number(localStorage.getItem(EDITOR_SPLIT_KEY))).toBeCloseTo(0.5);
+  });
+
+  it('ignores a pointer that never went down on it', () => {
+    measure();
+    render(<FlowEditor />);
+
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientY: 700 });
+
+    expect(ui().editorSplit).toBe(DEFAULT_SPLIT);
+  });
+
+  it('stops following once the pointer is released', () => {
+    measure();
+    render(<FlowEditor />);
+
+    fireEvent.pointerDown(handle(), { pointerId: 1, clientY: 420 });
+    fireEvent.pointerUp(handle(), { pointerId: 1, clientY: 500 });
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientY: 800 });
+
+    expect(ui().editorSplit).toBe(DEFAULT_SPLIT);
+  });
+
+  /** Criterion 9's rule for every control in this window: it is reachable
+   * without a mouse. */
+  it('moves on the arrow keys', async () => {
+    measure();
+    render(<FlowEditor />);
+    handle().focus();
+
+    await userEvent.keyboard('{ArrowDown}');
+    expect(ui().editorSplit).toBeCloseTo(DEFAULT_SPLIT + STEP_SPLIT);
+
+    await userEvent.keyboard('{ArrowUp}{ArrowUp}');
+    expect(ui().editorSplit).toBeCloseTo(DEFAULT_SPLIT - STEP_SPLIT);
+  });
+
+  /** The separator pattern's other keys: Home and End go to either limit,
+   * Enter is the keyboard's double click. */
+  it('jumps to either limit on Home and End, and resets on Enter', async () => {
+    measure();
+    render(<FlowEditor />);
+    handle().focus();
+
+    await userEvent.keyboard('{End}');
+    expect(ui().editorSplit).toBeCloseTo(1 - MIN_PANE / 800);
+
+    await userEvent.keyboard('{Home}');
+    expect(ui().editorSplit).toBeCloseTo(MIN_PANE / 800);
+
+    await userEvent.keyboard('{Enter}');
+    expect(ui().editorSplit).toBe(DEFAULT_SPLIT);
+  });
+
+  /** Neither pane can be dragged out of existence. */
+  it('keeps a pane on both sides of the divider', () => {
+    measure();
+    render(<FlowEditor />);
+
+    fireEvent.pointerDown(handle(), { pointerId: 1, clientY: 420 });
+    fireEvent.pointerMove(handle(), { pointerId: 1, clientY: 4000 });
+
+    expect(ui().editorSplit).toBeCloseTo(1 - MIN_PANE / 800);
+  });
+
+  it('puts the column back to its own proportions on a double click', () => {
+    measure();
+    useUiStore.setState({ editorSplit: 0.8 });
+    render(<FlowEditor />);
+
+    fireEvent.doubleClick(handle());
+
+    expect(ui().editorSplit).toBe(DEFAULT_SPLIT);
   });
 });

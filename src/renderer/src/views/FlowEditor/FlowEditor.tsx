@@ -1,8 +1,17 @@
-import { type JSX, type KeyboardEvent, useEffect, useRef, useState } from 'react';
+import {
+  type CSSProperties,
+  type JSX,
+  type KeyboardEvent,
+  useEffect,
+  useRef,
+  useState,
+} from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
+import { ResizeHandle } from '../../components/ResizeHandle/ResizeHandle';
 import { SegmentedControl } from '../../components/SegmentedControl/SegmentedControl';
 import { RUN_STATUS_LINE } from '../../fixtures/flows';
+import { clampSplit, DEFAULT_SPLIT, STEP_SPLIT, splitFromPointer } from '../../lib/editor-split';
 import { type EditorKey, indentEdit } from '../../lib/yaml-indent';
 import { tokenizeYamlLine } from '../../lib/yaml-tokens';
 import {
@@ -272,12 +281,41 @@ export function FlowEditor(): JSX.Element {
   const availability = useAiStore(selectAvailability);
   const streaming = useAiStore(selectStreaming);
   const resetConversation = useAiStore((state) => state.reset);
+  const split = useUiStore((state) => state.editorSplit);
+  const setSplit = useUiStore((state) => state.setEditorSplit);
+  const previewSplit = useUiStore((state) => state.previewEditorSplit);
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const lowerRef = useRef<HTMLDivElement>(null);
+
+  /**
+   * The band the two flexible rows share, measured live. It is the same
+   * number all through a gesture — the split moves the boundary inside the
+   * band, never the band itself — so the drag needs no state of its own, and
+   * cannot drift away from the pointer over a long one.
+   */
+  const band = (): { top: number; height: number } => {
+    const above = bodyRef.current?.getBoundingClientRect();
+    const below = lowerRef.current?.getBoundingClientRect();
+    return {
+      top: above?.top ?? 0,
+      height: (above?.height ?? 0) + (below?.height ?? 0),
+    };
+  };
 
   return (
-    <section aria-label="Editor" className={styles.column}>
+    <section
+      aria-label="Editor"
+      className={styles.column}
+      style={
+        {
+          '--editor-top': `${split}fr`,
+          '--editor-bottom': `${1 - split}fr`,
+        } as CSSProperties
+      }
+    >
       <DocumentBar />
 
-      <div className={`${styles.body} a-scroll`}>
+      <div className={`${styles.body} a-scroll`} data-testid="editor-body" ref={bodyRef}>
         {openPath === null ? (
           /* Criteria 5–7 — the kit's `CEditorColumn` empty state: one glyph,
              one caption, one action. No body, no gutter and no caret behind
@@ -302,6 +340,30 @@ export function FlowEditor(): JSX.Element {
           <YamlBody />
         )}
       </div>
+
+      {/* The person's ask, 2026-09-04: how much of the column is code and how
+          much is the conversation is theirs to decide, and what they decide
+          outlives the window. */}
+      <ResizeHandle
+        label="Resize the editor"
+        onDrag={(pointerY) => {
+          const { top, height } = band();
+          previewSplit(splitFromPointer(pointerY, top, height));
+        }}
+        onDragEnd={() => {
+          setSplit(split);
+        }}
+        onJump={(edge) => {
+          setSplit(clampSplit(edge === 'start' ? 0 : 1, band().height));
+        }}
+        onReset={() => {
+          setSplit(clampSplit(DEFAULT_SPLIT, band().height));
+        }}
+        onStep={(direction) => {
+          setSplit(clampSplit(split + direction * STEP_SPLIT, band().height));
+        }}
+        value={split}
+      />
 
       <div className={styles.subTabs}>
         <SegmentedControl
@@ -339,7 +401,9 @@ export function FlowEditor(): JSX.Element {
       <div
         aria-labelledby={`${PANEL_ID}-tab-${lowerPanel}`}
         className={`${styles.lower} a-scroll`}
+        data-testid="editor-lower"
         id={PANEL_ID}
+        ref={lowerRef}
         role="tabpanel"
       >
         {lowerPanel === 'run' ? <RunPanel /> : <AIPanel />}

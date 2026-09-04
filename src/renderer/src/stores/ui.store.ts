@@ -1,6 +1,7 @@
 import { create } from 'zustand';
 import { ERROR_LINES } from '../fixtures/flows';
 import { layoutForWidth } from '../lib/breakpoints';
+import { DEFAULT_SPLIT } from '../lib/editor-split';
 
 /**
  * The shell's own state: appearance, which panes are showing, and what the
@@ -10,6 +11,10 @@ import { layoutForWidth } from '../lib/breakpoints';
 
 /** Light/dark is a property of the window, so nobody re-picks it every launch. */
 export const APPEARANCE_KEY = 'conductor.aurora.dark';
+
+/** How the editor column was last divided. A size the person chose is a size
+ * they chose for good, so it outlives the window like the appearance does. */
+export const EDITOR_SPLIT_KEY = 'conductor.editor.split';
 
 /**
  * The packaged renderer loads from `file://`, whose origin some Chromium builds
@@ -41,6 +46,19 @@ export function initialAppearance(): boolean {
   return matchMedia('(prefers-color-scheme: dark)').matches;
 }
 
+/**
+ * The stored split, or the column's own proportions. Anything unreadable,
+ * unparseable, or far enough out to collapse a pane is refused here; the
+ * honest minimum is in px and needs a measured band, so the view clamps that.
+ */
+export function initialEditorSplit(): number {
+  const stored = Number(readStored(EDITOR_SPLIT_KEY));
+  if (!Number.isFinite(stored) || stored < 0.05 || stored > 0.95) {
+    return DEFAULT_SPLIT;
+  }
+  return stored;
+}
+
 export type SidebarPreference = 'auto' | 'shown' | 'hidden';
 export type LowerPanel = 'run' | 'assistant';
 
@@ -53,6 +71,9 @@ export type UiData = {
   /** `auto` follows the breakpoint; anything else is the user overriding it. */
   readonly sidebarPreference: SidebarPreference;
   readonly lowerPanel: LowerPanel;
+  /** The share of the editor column's flexible band the YAML takes, 0–1. The
+   * lower panel takes the rest. */
+  readonly editorSplit: number;
   readonly query: string;
   /** 1-based line numbers Maestro reported as failing — still a fixture; the
    * assistant's wash is real state and lives in `ai.store`. */
@@ -66,6 +87,12 @@ export type UiActions = {
   toggleSidebar: () => void;
   setLowerPanel: (panel: LowerPanel) => void;
   toggleLowerPanel: () => void;
+  /** Already clamped against the measured band by the caller — the store has
+   * no pixels to clamp with. */
+  setEditorSplit: (split: number) => void;
+  /** The split mid-gesture: moves the boundary and writes nothing, because
+   * the pointer moves at mouse rate and storage is synchronous. */
+  previewEditorSplit: (split: number) => void;
   setQuery: (query: string) => void;
   clearQuery: () => void;
 };
@@ -80,6 +107,7 @@ function createUiData(): UiData {
     windowWidth: 1280,
     sidebarPreference: 'auto',
     lowerPanel: 'assistant',
+    editorSplit: initialEditorSplit(),
     query: '',
     errorLines: ERROR_LINES,
   };
@@ -110,6 +138,15 @@ export const useUiStore = create<UiState>((set, get) => ({
 
   toggleLowerPanel: () => {
     set({ lowerPanel: get().lowerPanel === 'assistant' ? 'run' : 'assistant' });
+  },
+
+  setEditorSplit: (editorSplit) => {
+    writeStored(EDITOR_SPLIT_KEY, String(editorSplit));
+    set({ editorSplit });
+  },
+
+  previewEditorSplit: (editorSplit) => {
+    set({ editorSplit });
   },
 
   setQuery: (query) => {

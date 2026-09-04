@@ -169,7 +169,7 @@ export function PublishSheet(): JSX.Element | null {
               }}
               placeholder={writing ? '' : 'Fixed the checkout test after the button moved'}
               readOnly={writing}
-              rows={2}
+              rows={6}
               value={note}
             />
           </span>

@@ -1,3 +1,27 @@
+/*
+ * These two are `utilities/animation.css`'s own keyframes, restated here
+ * because CSS Modules rewrites every `animation-name` in this file to a hashed
+ * one — a reference to a keyframe declared globally resolves to nothing, and
+ * the animation is silently dead. Declared beside their use, the definition is
+ * hashed with the reference and they run. Same names, same frames, so the DS
+ * stays the source of the motion; `:global(...)` does not help, since it fixes
+ * the definition's name and not the reference's.
+ */
+@keyframes cd-shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes cd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
 .thread {
   align-content: start;
   display: grid;
@@ -38,6 +62,24 @@
   font: var(--type-label);
   letter-spacing: var(--ls-caps);
   text-transform: uppercase;
+}
+
+/* The turn is in flight and has said nothing yet: the byline is the only thing
+   on screen, so the byline itself carries the wait — a sheen travelling across
+   the name, the same `cd-shimmer` the publish sheet's writing state rides. It
+   is a state, not an entrance, so it loops on a token clock and dies outright
+   under reduced motion (criterion 9). */
+.bylineName[data-thinking="true"] {
+  animation: cd-shimmer calc(var(--dur-lazy) * 4) linear infinite;
+  background: linear-gradient(
+    100deg,
+    var(--text-ai) 40%,
+    var(--text-primary) 50%,
+    var(--text-ai) 60%
+  );
+  background-clip: text;
+  background-size: 200% 100%;
+  color: transparent;
 }
 
 .body {
