@@ -17,7 +17,7 @@ import { RunService } from './run.service';
  * The run lifecycle against a fake Gateway and a fake snapshot gate: ordering,
  * outcome-from-exit, cancellation, the temp-file's life, §4.3.2's mutual
  * exclusion — and, since the recording spec, the recorder's life beside the
- * run's: started before the spawn, kept or discarded by the outcome, saved
+ * run's: started with its first step, kept or discarded by the outcome, saved
  * into the Movies folder, reported as one event after the terminal one. No
  * maestro, no adb, and no filesystem beyond a scratch temp dir.
  */
@@ -266,7 +266,16 @@ const recordingEvents = (events: RunEvent[]): RunEvent[] =>
 /** A local wall-clock moment, so the file name reads in the person's time. */
 const RUN_STARTED = new Date(2026, 8, 2, 14, 30, 15);
 
-/** Runs a flow through one started step and the given exit. */
+/**
+ * One macrotask. The fake Gateway answers in microtasks and so does the
+ * service's start of the recorder, so a tick is all it takes for a recorder
+ * asked by a step event to have landed — or to have been refused.
+ */
+const recorderLanded = (): Promise<void> => new Promise((resolve) => setTimeout(resolve, 0));
+
+/** Runs a flow through one started step and the given exit. The recorder
+ * comes up with that step (criterion 1 as amended), and the tick between the
+ * step and its verdict stands for the seconds a real step takes. */
 async function failedRun(
   bundle: Harness,
   identity: string | null = 'login.yml',
@@ -274,6 +283,7 @@ async function failedRun(
 ): Promise<void> {
   await bundle.service.start(DEVICE, YAML, identity);
   bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Tap on "Entrar"' });
+  await recorderLanded();
   bundle.runs[0]?.handlers.onProgress({ type: 'step-failed', label: 'Tap on "Entrar"' });
   bundle.runs[0]?.handlers.onExit(exit);
 }
@@ -512,43 +522,105 @@ describe('dispose', () => {
 
 /** Recording criteria 1, 2 and 4 — the recorder beside the run. */
 describe('recording the run', () => {
-  /** Criterion 1 — the recorder is asked before the child is spawned, after
-   * the gate, and named after the run so its file carries the id. */
-  it('starts the recorder before spawning maestro, named after the run', async () => {
+  /** Criterion 1 as amended (2026-09-04) — the recorder is not asked before
+   * the spawn: Maestro's JVM takes seconds to reach its first command, and
+   * that was dead footage at the head of every video. */
+  it('asks for no recorder until the first step begins', async () => {
     const { service, order, recordings } = harness();
 
     await service.start(DEVICE, YAML, 'login.yml');
 
-    expect(order).toEqual(['suspend', `record:${DEVICE}:run-1`, 'spawn']);
-    expect(recordings).toHaveLength(1);
+    expect(order).toEqual(['suspend', 'spawn']);
+    expect(recordings).toEqual([]);
+  });
+
+  /** Criterion 1 as amended — the first step event starts the recorder, once,
+   * named after the run so its file carries the id. */
+  it('starts the recorder on the first step, once, named after the run', async () => {
+    const bundle = harness();
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Launch app "x"' });
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-passed', label: 'Launch app "x"' });
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Tap on "Entrar"' });
+    await recorderLanded();
+
+    expect(bundle.order).toEqual(['suspend', 'spawn', `record:${DEVICE}:run-1`]);
+    expect(bundle.recordings).toHaveLength(1);
+  });
+
+  /** "The first step" is the first step event of any kind — a verdict whose
+   * start was never parsed still means the device is doing something. */
+  it('starts the recorder on a verdict whose start was never seen', async () => {
+    const bundle = harness();
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-passed', label: 'Launch app "x"' });
+    await recorderLanded();
+
+    expect(bundle.recordings).toHaveLength(1);
+  });
+
+  /** Log lines are not steps: Maestro's preamble starts nothing. */
+  it('does not start the recorder on a log line', async () => {
+    const bundle = harness();
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+
+    bundle.runs[0]?.handlers.onProgress({ type: 'log', lines: ['Running on R9QYC01EMXL'] });
+    await recorderLanded();
+
+    expect(bundle.recordings).toEqual([]);
   });
 
   /** Criteria 1 and 4 — a recorder that cannot start does not stop the run;
    * the cause is logged, and kept (criterion 15 reads it). */
   it('runs the flow anyway when the recorder cannot start, and logs why', async () => {
     const warn = vi.spyOn(console, 'warn').mockImplementation(() => {});
-    const { service, runs } = harness({ recorder: 'refuses' });
+    const bundle = harness({ recorder: 'refuses' });
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
 
-    const result = await service.start(DEVICE, YAML, 'login.yml');
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Launch app "x"' });
+    await recorderLanded();
+    bundle.runs[0]?.handlers.onExit({ code: 0, error: null });
+    await bundle.service.settled();
 
-    expect(result.ok).toBe(true);
-    expect(runs).toHaveLength(1);
     expect(warn).toHaveBeenCalledWith(
       expect.stringContaining('not recorded'),
       expect.stringContaining('No adb found'),
     );
+    expect(bundle.events.at(-1)).toMatchObject({ type: 'finished', outcome: 'passed' });
   });
 
-  /** A start that dies after the recorder began leaves no recorder behind. */
-  it('discards the recording when the spawn itself fails', async () => {
+  /** A spawn that fails reached no step, so no recorder was ever asked. */
+  it('asks for no recorder when the spawn itself fails', async () => {
     const missing = coded(ERROR_CODES.runMaestroNotFound, 'The Maestro CLI is not installed.');
-    const { service, recordings } = harness({ spawnError: missing });
+    const { service, order, recordings } = harness({ spawnError: missing });
 
     await service.start(DEVICE, YAML, 'login.yml');
     await service.settled();
 
-    expect(recordings[0]?.discarded).toBe(1);
-    expect(recordings[0]?.saved).toEqual([]);
+    expect(order).toEqual(['suspend', 'spawn']);
+    expect(recordings).toEqual([]);
+  });
+
+  /** Criterion 12 as amended — an exit that lands while the recorder is still
+   * coming up: the terminal event is not held for it (criterion 6), it says
+   * `pending`, and the recorder that arrives is saved and reported. */
+  it('announces pending when the recorder is still coming up at the exit, then saves', async () => {
+    const bundle = harness({ holdRecord: true });
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Tap on "Entrar"' });
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-failed', label: 'Tap on "Entrar"' });
+
+    bundle.runs[0]?.handlers.onExit({ code: 1, error: null });
+    expect(bundle.events.at(-1)).toMatchObject({ type: 'finished', recording: 'pending' });
+    bundle.releaseRecord();
+    await recorderLanded();
+    await bundle.service.settled();
+
+    expect(recordingEvents(bundle.events)).toEqual([
+      expect.objectContaining({ ok: true, runId: 'run-1' }),
+    ]);
   });
 });
 
@@ -575,9 +647,9 @@ describe('keeping or discarding the recording', () => {
     expect(recordingEvents(bundle.events)).toEqual([]);
   });
 
-  /** Criterion 9 — a failure that never reached a step recorded nothing
-   * worth watching: discarded, and `none`. */
-  it('discards a failure that never reached a step, reporting none', async () => {
+  /** Criterion 9 — a failure that never reached a step never started a
+   * recorder (criterion 1 as amended): `none`, and nothing on the device. */
+  it('records nothing for a failure that never reached a step, reporting none', async () => {
     const bundle = harness();
     await bundle.service.start(DEVICE, YAML, 'login.yml');
     bundle.runs[0]?.handlers.onProgress({ type: 'log', lines: ['Invalid syntax'] });
@@ -590,7 +662,7 @@ describe('keeping or discarding the recording', () => {
       outcome: 'failed',
       recording: 'none',
     });
-    expect(bundle.recordings[0]?.discarded).toBe(1);
+    expect(bundle.recordings).toEqual([]);
     expect(recordingEvents(bundle.events)).toEqual([]);
   });
 
@@ -633,6 +705,8 @@ describe('keeping or discarding the recording', () => {
     bundle.runs[0]?.handlers.onExit({ code: 1, error: null });
 
     expect(bundle.events.at(-1)).toMatchObject({ type: 'finished', recording: 'pending' });
+    await recorderLanded();
+    await bundle.service.settled();
   });
 });
 
@@ -728,7 +802,8 @@ describe('the follow-up event', () => {
   });
 
   /** Criterion 13 — whole seconds, floored, from the recorder's start to the
-   * moment the failed step started. */
+   * moment the failed step started; the recorder started with the first
+   * step, three seconds in, not with the run. */
   it('reports the failed step’s offset from the recorder’s start, floored', async () => {
     vi.useFakeTimers({ toFake: ['Date'] });
     vi.setSystemTime(RUN_STARTED);
@@ -745,7 +820,7 @@ describe('the follow-up event', () => {
     handlers?.onExit({ code: 1, error: null });
     await bundle.service.settled();
 
-    expect(recordingEvents(bundle.events)[0]).toMatchObject({ ok: true, fromSeconds: 12 });
+    expect(recordingEvents(bundle.events)[0]).toMatchObject({ ok: true, fromSeconds: 9 });
   });
 
   it('reports null when no step failed on record', async () => {
@@ -1020,6 +1095,8 @@ describe('the recorder’s lifecycle', () => {
   it('aborts and discards a live recording on dispose', async () => {
     const bundle = harness();
     await bundle.service.start(DEVICE, YAML, 'login.yml');
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Launch app "x"' });
+    await recorderLanded();
 
     const disposing = bundle.service.dispose();
     expect(bundle.recordings[0]?.aborted).toBe(1);
@@ -1060,35 +1137,52 @@ describe('the recorder’s lifecycle', () => {
     expect(bundle.recordings).toEqual([]);
   });
 
-  /** Criterion 21 — a recorder that came up while the app was quitting is
-   * cut at once and its file removed; the disposal waits for that, and
-   * maestro is never spawned. */
+  /** Criterion 21 — a recorder still coming up when the app quits is cut the
+   * moment it arrives and its file removed; the disposal waits for that. */
   it('cuts a recorder that came up while the app was quitting', async () => {
     const bundle = harness({ holdRecord: true });
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Launch app "x"' });
+    expect(bundle.recordings).toHaveLength(1);
 
-    const starting = bundle.service.start(DEVICE, YAML, 'login.yml');
-    await vi.waitFor(() => expect(bundle.recordings).toHaveLength(1));
     const disposing = bundle.service.dispose();
     bundle.releaseRecord();
-
-    expect((await starting).ok).toBe(false);
     await disposing;
-    expect(bundle.runs).toEqual([]);
+
+    expect(bundle.runs[0]?.killed).toBe(1);
     expect(bundle.recordings[0]?.aborted).toBe(1);
     expect(bundle.recordings[0]?.discarded).toBe(1);
   });
 
-  /** Criterion 21 — the discard behind a refused spawn, still waiting on the
-   * device, is ours to cut; the disposal waits for it and no longer. */
-  it('cuts the discard behind a refused spawn on dispose', async () => {
+  /** Criterion 21 — the run ended, its recorder is still coming up, and the
+   * app quits: the recorder is cut when it arrives, nothing is saved, and the
+   * disposal waits for it. */
+  it('cuts a recorder that came up after its run had ended, when the app quits', async () => {
+    const bundle = harness({ holdRecord: true });
+    await bundle.service.start(DEVICE, YAML, 'login.yml');
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-started', label: 'Tap on "Entrar"' });
+    bundle.runs[0]?.handlers.onProgress({ type: 'step-failed', label: 'Tap on "Entrar"' });
+    bundle.runs[0]?.handlers.onExit({ code: 1, error: null });
+
+    const disposing = bundle.service.dispose();
+    bundle.releaseRecord();
+    await disposing;
+
+    expect(bundle.recordings[0]?.aborted).toBe(1);
+    expect(bundle.recordings[0]?.discarded).toBe(1);
+    expect(bundle.recordings[0]?.saved).toEqual([]);
+  });
+
+  /** A refused spawn reached no step, so there is no recorder to cut: the
+   * disposal has nothing to wait for. */
+  it('has no recorder to cut behind a refused spawn', async () => {
     const missing = coded(ERROR_CODES.runMaestroNotFound, 'The Maestro CLI is not installed.');
-    const bundle = harness({ spawnError: missing, recorder: { holdDiscard: true } });
+    const bundle = harness({ spawnError: missing });
     await bundle.service.start(DEVICE, YAML, 'login.yml');
 
     await bundle.service.dispose();
 
-    expect(bundle.recordings[0]?.aborted).toBe(1);
-    expect(bundle.recordings[0]?.discarded).toBe(1);
+    expect(bundle.recordings).toEqual([]);
   });
 
   /** Criterion 22 — a new run while the previous video is still saving is

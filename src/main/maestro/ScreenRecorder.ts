@@ -44,11 +44,14 @@ export type RecorderAdb = {
 
 /**
  * Bits per second. Well below `screenrecord`'s 20 Mbps default and far above
- * Maestro's 100 kbps: chosen so on-screen text stays legible on the reference
- * Galaxy A07 while a minute of video stays around 30 MB. Adjusted on hardware
- * if text is not legible — never by a setting.
+ * Maestro's 100 kbps: on the reference Galaxy A07, 2 Mbps keeps on-screen
+ * text crisp even mid-scroll while a minute of continuous motion stays around
+ * 15 MB — and a still screen costs almost nothing at any rate, because the
+ * encoder only writes frames when the picture changes. Lowered from 4 Mbps on
+ * 2026-09-04 to save disk; 1.5 Mbps bought nothing more on that device.
+ * Adjusted on hardware, never by a setting.
  */
-export const RECORDING_BITRATE = 4_000_000;
+export const RECORDING_BITRATE = 2_000_000;
 
 /**
  * From API 34 (Android 14) on, `--time-limit 0` lifts `screenrecord`'s

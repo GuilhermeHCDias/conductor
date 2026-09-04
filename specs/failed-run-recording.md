@@ -6,7 +6,7 @@ created: 2026-09-02
 ## Goal
 
 When a run fails, the person can watch what the device did. Every run is recorded on the
-device while `maestro test` executes; a run that fails keeps its video in the person's Movies
+device from its first step while `maestro test` executes; a run that fails keeps its video in the person's Movies
 folder (`~/Movies/Conductor/`), and the failed step's row in the Run tab gains an **Open video**
 action that opens the file in the OS's default player, captioned with the second at which that
 step begins in the video. Passed and canceled runs leave nothing behind. This closes the "what
@@ -79,9 +79,10 @@ Maestro's log, and the picture is gone.
 
 ### Recording during the run (main)
 
-1. When `run:start` is invoked, the system shall start a screen recording of the selected
-   device before spawning `maestro test`, and the run shall proceed whether or not the recorder
-   started.
+1. When the run's first step event arrives — any step event parsed from Maestro's output,
+   never a plain log line and never before the spawn — the system shall start a screen
+   recording of the selected device, and the run shall proceed whether or not the recorder
+   started. *(Amended 2026-09-04; it read "before spawning `maestro test`" — see Decisions.)*
 2. The system shall record through `MaestroGateway.startRecording`, whose local implementation
    is a `ScreenRecorder` that names `adb` and receives its runner by injection, invoking exactly
    `adb -s <deviceId> shell screenrecord --bit-rate <RECORDING_BITRATE> [--time-limit 0]
@@ -110,8 +111,8 @@ Maestro's log, and the picture is gone.
    `<flow>-<YYYY-MM-DD>-<HHmmss>.mp4`, written under a `.partial` name and renamed on
    completion, and shall remove the device-side file afterwards.
 9. If the run's outcome is `failed` or `error` but no step ever started (a syntax error, a
-   device gone before the first command), then the system shall discard the recording as in
-   criterion 7 and report `recording: 'none'`.
+   device gone before the first command), then no recorder was ever asked for (criterion 1),
+   nothing is on the device, and the system shall report `recording: 'none'`.
 10. The file name's `<flow>` shall derive from the flow identity passed on `run:start`: the
     path relative to `conductor/` without its extension, `/` replaced by `-`, every character
     outside `[A-Za-z0-9._-]` replaced by `-`, and `flow` when no identity was given; the
@@ -123,7 +124,9 @@ Maestro's log, and the picture is gone.
 ### The follow-up event
 
 12. The `finished` event shall carry `recording: 'pending' | 'none'` — `pending` if and only
-    if a video is being saved for this run.
+    if a video is being saved for this run, or the recorder its first step asked for is still
+    coming up when the exit lands (the follow-up event then says whether it was saved or the
+    run was never recorded).
 13. When the save completes, the system shall push exactly one `run:event` of type
     `recording` carrying the `runId`, `ok: true`, the saved file name, and `fromSeconds`: the
     whole seconds (floored) elapsed between the recorder's start and the moment the failed step
@@ -155,9 +158,9 @@ Maestro's log, and the picture is gone.
 
 20. When `run:cancel` kills the run, the system shall stop the recorder and discard the
     recording (criterion 7).
-21. On `before-quit`, `RunService.dispose()` shall stop any live recorder and remove the
-    device-side file best-effort — no `adb shell screenrecord` child and no half-written
-    `.partial` survives the app.
+21. On `before-quit`, `RunService.dispose()` shall stop any live recorder — one still coming
+    up included, cut the moment it arrives — and remove the device-side file best-effort: no
+    `adb shell screenrecord` child and no half-written `.partial` survives the app.
 22. When `run:start` arrives while the previous run's video is still being saved, the system
     shall accept the new run; the earlier save runs to completion in the background and its
     event is stale to the store by construction (criterion 16).
@@ -199,8 +202,9 @@ Maestro's log, and the picture is gone.
 ## Constraints
 
 - **Bitrate** is one named module constant (`RECORDING_BITRATE`, like `MIRROR_MAX_SIZE`),
-  defaulting to 4 Mbps — chosen so on-screen text is legible on the reference Galaxy A07 and
-  files stay around 30 MB per minute. Legibility, coexistence with the scrcpy mirror (two
+  defaulting to 2 Mbps (4 until 2026-09-04) — chosen so on-screen text is legible on the
+  reference Galaxy A07 while a minute of continuous motion stays around 15 MB; a still screen
+  costs almost nothing at any rate. Legibility, coexistence with the scrcpy mirror (two
   encoders on the device) and stop→pull latency are verified on that device before merge.
 - Never `sendSync`; never block main on the pull — it is awaited off the handler, and the
   20-second deadline turns a device that never answers into a reported failure.
@@ -269,8 +273,10 @@ Maestro's log, and the picture is gone.
 - **Recording via the scrcpy stream was rejected** (assumed): the H.264 packets are already in
   main, but writing an MP4 needs a muxer we do not have, and it would tie the video to the
   mirror view being mounted.
-- **4 Mbps** (assumed) — well below `screenrecord`'s 20 Mbps default, far above Maestro's
-  100 kbps; adjusted on hardware if text is not legible, not by a setting.
+- **2 Mbps** (engineer, 2026-09-04; 4 Mbps until then) — well below `screenrecord`'s 20 Mbps
+  default, far above Maestro's 100 kbps. On the A07 text stays crisp mid-scroll at 2 Mbps, and
+  1.5 Mbps produced the same file size (the encoder's floor for that content), so 2 is where
+  the disk savings stop; adjusted on hardware, not by a setting.
 - **Android < 14 keeps the 3-minute cap** (assumed): the reference device is Android 16;
   `--time-limit 0` is accepted from API 34 on (the same gate Maestro's own driver uses).
 - **The `play` glyph is reused** (assumed): the design system's 78-glyph set has no `video` or
@@ -284,8 +290,9 @@ Maestro's log, and the picture is gone.
 - **`startRecording(deviceId, name)`** (implementation): the Gateway method takes the run id
   as the recording's name, because the device-side file must carry it (criterion 2) and the
   Gateway cannot invent one that matches the run. It is opaque there, like `deviceId`.
-- **The recorder resolves at spawn; an early death is kept as the cause** (implementation):
-  waiting to learn whether `screenrecord` refuses would delay every `maestro test` spawn.
+- **The recorder resolves when its shell is spawned; an early death is kept as the cause**
+  (implementation): waiting to learn whether `screenrecord` refuses would hold the step that
+  asked for it.
   The session records the child's exit and its stderr; a non-zero exit *before* the stop
   was asked for is a `record`-phase failure ("This run wasn't recorded: <last stderr
   line>."), reported when the failed run's save finds out (criteria 4, 15). An exit that
@@ -382,22 +389,74 @@ Maestro's log, and the picture is gone.
   `ipc/run.test.ts`; 23–29 → `RunPanel.test.tsx`, `run.store.test.ts`; 30–31 → `ipc.test.ts`,
   `preload/index.test.ts`, `ipc/run.test.ts`, `Toolbar.test.tsx`, `FlowList.test.tsx`;
   32–33 → `ScreenRecorder.test.ts` (module pins), `LocalGateway.test.ts`, Biome.
-- ⚠️ **Hardware verification is pending — do it on the Galaxy A07 before merge.** No device
-  was attached while this was implemented, so nothing below has run against a phone:
-  1. `--time-limit 0` is accepted on the A07 (Android 16, API 36) and the run records past
-     three minutes.
-  2. `adb -s <id> shell pkill -INT -f 'conductor-recording-run-1[.]mp4'` stops only our
-     `screenrecord` (a second, hand-started `screenrecord` survives), the local shell exits,
-     and the pulled MP4 plays in QuickTime — including when the device's shell reports the
-     exit as 130.
-  3. Legibility of on-screen text at 4 Mbps; adjust `RECORDING_BITRATE` if not.
-  4. Coexistence with the scrcpy mirror (two encoders on the device): the mirror keeps its
-     framerate while recording.
-  5. Stop → pull latency for a ~1-minute run stays well inside the 20-second budget.
-  6. The `[.]` pattern reaches `pkill` intact through the installed platform-tools' `adb
-     shell` argument escaping (the streaming shell already carries `CLASSPATH=` args, so
-     the same path is exercised by the mirror).
-  7. On an Android < 14 device, if one is at hand: `screenrecord` exits 0 at its 3-minute
-     cap — criterion 3 reads that exit as a clean stop, and a non-zero code there would
-     be reported as "This run wasn't recorded".
-  Record the numbers here, the way `flow-run-execution` did for the kill settle.
+- ⏸️ **Emenda (2026-09-04) — the recorder starts with the first step, not with the spawn**
+  (engineer, after watching the first hardware run's video): the recorder used to start
+  before `maestro test` was spawned, and the video opened on eleven seconds of a still screen
+  — Maestro's JVM took 4.5 s to reach its first command, and `launchApp` a further 6 s. The
+  first step event is now what asks for the recorder (criterion 1), off the event's own path;
+  a recorder still coming up when the exit lands makes `finished` say `pending` and the
+  follow-up event tell the rest (criterion 12), and a quit cuts it the moment it arrives
+  (criterion 21). What the video loses is the moment before the recorder's first frame —
+  under a second of the first step, usually the app being killed for its relaunch;
+  `fromSeconds` still measures from the recorder's start and floors at 0. A run that never
+  reached a step now never starts a recorder at all (criterion 9). **The tail is not cut**:
+  after the failing step's last visible reaction the video keeps going until Maestro gives up
+  on the step — its own retry window, 17 s for `assertVisible` — because the recorder cannot
+  know the step will fail before Maestro says so, and a step that is still waiting may yet
+  pass. That tail costs almost nothing on disk (the encoder only writes frames when the
+  picture changes; the first run's 53 s weighed 1.5 MB), and trimming it after the fact would
+  need a video muxer the app does not ship. A flow that wants a shorter wait sets the step's
+  own `timeout`. In the same change the raw Maestro log left the Run tab (`flow-run-execution`,
+  amended) and the bitrate dropped to 2 Mbps.
+- ✅ **Verified on hardware (2026-09-04) — Galaxy A07 (SM-A075M), Android 16 / API 36, the
+  installed platform-tools `adb`, maestro 2.8.0.** Driven end to end from the app itself (the
+  built `out/`, Playwright over the real window) with a nine-step flow against
+  `com.vtex.pnp.preview` whose last assertion never comes true, plus hand-run `adb` checks for
+  what a single run cannot show. The seven items above, in order:
+  1. `--time-limit 0` is accepted on API 36: a `screenrecord` started by hand with the run's
+     exact flags ran for 199 s before its stop and the file plays — the 3-minute cap is lifted.
+  2. With two recorders live, `adb -s <id> shell pkill -INT -f 'conductor-recording-run-1[.]mp4'`
+     stopped only ours: the hand-started `other-recording.mp4` kept going and was stopped
+     separately, and our MP4 came out finalised (6.4 s, h264 720×1600, plays in QuickTime).
+     The local `adb shell screenrecord` exits **0** on this device after the SIGINT. The
+     `pkill` shell exits **130** whether or not it matched: a bracket in the pattern makes mksh
+     keep its `sh -c` wrapper, and toybox 0.8.12's `pkill -SIG` signals that wrapper too
+     (143/129/130 for TERM/HUP/INT, even for a pattern that matches nothing) — which is exactly
+     why the stop's exit code is ignored and the wait for the recorder's own exit is what counts.
+  3. Legibility at 4 Mbps: the typed `conductor.teste`, the keyboard and the app's error banner
+     ("Nome de usuário ou senha incorretos.") are crisp in frames pulled at 20 s, 34 s and 50 s
+     of the run's video — `RECORDING_BITRATE` stays. The run's 53-second video weighed 1.5 MB
+     (mostly still screens, 222 kbps average); 12.6 s of continuous scrolling weighed 5.3 MB
+     (3.3 Mbps), so a minute of motion is ~25 MB, in line with the estimate.
+  4. Coexistence with the scrcpy mirror (`max_fps=60`), counted at the renderer while the
+     Settings list scrolled without pause: mirror alone 55 fps → mirror with the recorder
+     42 fps → mirror alone again 56 fps. The mirror stays smooth; the second encoder costs about
+     a quarter of its frame rate under heavy motion and nothing on a still screen.
+  5. Stop → pull latency: `finished` left at 12:52:59.281, the `recording` event landed at
+     12:52:59.840 — 0.56 s for the 1.5 MB file, stop signal, exit wait, pull and `rm` included,
+     far inside the 20-second budget.
+  6. The `[.]` reaches `pkill` intact through the installed adb's `shell`: it matched
+     `screenrecord`'s literal `…run-1.mp4` and not its own `…run-1[.]mp4` command line (item 2
+     is the proof).
+  7. Android < 14: no such device at hand — the cap's exit code there stays unverified.
+
+  The run itself: eight steps passed, `Assert that "Pedidos para separar" is visible` failed
+  after Maestro's retry window, `finished` carried `recording: 'pending'`, and the file landed
+  as `~/Movies/Conductor/login-pnp-falha-proposital-2026-09-04-095205.mp4` — the flow's
+  identity and the local time. `fromSeconds: 34` points at the frame right after the tap on
+  "Entrar" (the button reads "Carregando…"). The failed row showed **Open video** with
+  `from 0:34`, and the action opened the file in QuickTime Player with no note in the outcome
+  bar. Afterwards: nothing under `/sdcard`, no `screenrecord` on the device, no `adb shell`
+  child, no `.partial`, and the runs folder empty. Seen beside it, outside this spec: the
+  end-of-run recapture reported "Device server died during 'deviceInfo' … UNAVAILABLE" and
+  its Retry did not recover — the `maestro mcp` child's driver session does not survive the
+  CLI's run; that is `flow-run-execution` criterion 13's path, untouched here.
+
+  A second run after the amendment above — same flow, same device, 10:28 local: the recorder
+  started with `Launch app`, 4.0 s after `run:start`, and the video runs 49.8 s against the
+  first run's 53.4 s. It opens on the app's last screen a beat before the relaunch, and
+  `fromSeconds: 30` lands on the "Carregando…" frame right after the tap on "Entrar". 1.35 MB
+  at 2 Mbps (217 kbps average — still screens dominate, so the bitrate mostly bounds the
+  scrolling moments); `finished` → `recording` in 0.64 s; the Run tab shows the steps and the
+  failed row's action with no Maestro text beneath; `/sdcard`, the device's process list and
+  the runs folder clean afterwards.

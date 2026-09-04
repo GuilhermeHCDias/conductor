@@ -1,12 +1,10 @@
-import { type JSX, memo, type UIEvent, useEffect, useRef } from 'react';
+import type { JSX } from 'react';
 import { Icon } from '../../components/Icon/Icon';
 import { StatusDot } from '../../components/StatusDot/StatusDot';
 import { formatClock } from '../../lib/clock';
 import { recordingRowIndex } from '../../lib/recording-row';
 import {
   type RunRecording,
-  selectDroppedLines,
-  selectLogLines,
   selectOutcome,
   selectOutcomeMessage,
   selectRecording,
@@ -19,13 +17,15 @@ import styles from './RunPanel.module.css';
 
 /**
  * The run report (run criteria 19–23): the parsed step list growing as Maestro
- * advances, the raw log streaming beneath it, and the outcome when the
- * terminal event lands — and, on a failed run, the video (recording criteria
- * 23–28): the failed step's row carries the action to open it, the outcome
- * bar the note when there is none. Everything is `run.store`'s; the panel
- * only selects — narrowly, because log appends arrive continuously
- * (criterion 26) and a recording event must not re-render the log or the
- * mirror (recording criterion 29).
+ * advances and the outcome when the terminal event lands — and, on a failed
+ * run, the video (recording criteria 23–28): the failed step's row carries
+ * the action to open it, the outcome bar the note when there is none. The
+ * raw Maestro log is not shown (criterion 20 as amended, 2026-09-04): the
+ * step list already tells the story, and the text under it read as noise.
+ * The store still buffers it; nothing here selects it, so its appends
+ * re-render nothing (criterion 26). Everything is `run.store`'s; the panel
+ * only selects — narrowly, so a recording event re-renders the failed row
+ * and the bar, never the mirror (recording criterion 29).
  */
 
 const OUTCOME_LABEL = {
@@ -34,56 +34,6 @@ const OUTCOME_LABEL = {
   canceled: 'Run canceled',
   error: 'Run error',
 } as const;
-
-/** How close to the bottom still counts as "at the bottom" — one line of
- * slack, so a sub-pixel scroll position cannot unpin the tail. */
-const PIN_SLACK_PX = 24;
-
-/**
- * Criterion 20: pinned to the bottom while the person hasn't scrolled up,
- * holding position when they have. The pin is a ref, not state — scrolling is
- * not a render. Memoised with no props: it re-renders for its own slices and
- * never because the panel around it did — a recording event lands on the
- * failed row, not on thousands of log lines (recording criterion 29).
- */
-const RunLog = memo(function RunLog(): JSX.Element | null {
-  const lines = useRunStore(selectLogLines);
-  const dropped = useRunStore(selectDroppedLines);
-  const region = useRef<HTMLDivElement>(null);
-  const pinned = useRef(true);
-
-  useEffect(() => {
-    const element = region.current;
-    if (lines.length > 0 && pinned.current && element !== null) {
-      element.scrollTop = element.scrollHeight;
-    }
-  }, [lines]);
-
-  if (lines.length === 0) {
-    return null;
-  }
-
-  const onScroll = (event: UIEvent<HTMLDivElement>): void => {
-    const element = event.currentTarget;
-    pinned.current =
-      element.scrollHeight - element.scrollTop - element.clientHeight <= PIN_SLACK_PX;
-  };
-
-  return (
-    <div aria-label="Run log" className={styles.log} onScroll={onScroll} ref={region} role="log">
-      {dropped > 0 ? (
-        // The cap is visible, never silent: a looping flow's tail is real,
-        // and pretending the buffer is the whole story would be a lie.
-        <div className={styles.droppedNote}>… earlier output dropped</div>
-      ) : null}
-      {/* One pre-wrap block, not a node per line: the buffer is thousands of
-          lines and every chunk appends — a text node replace beats keying. */}
-      <div className={styles.logText} data-testid="log-text">
-        {lines.join('\n')}
-      </div>
-    </div>
-  );
-});
 
 /**
  * Recording criteria 23–24: what sits in the action's place on the failed
@@ -187,8 +137,6 @@ export function RunPanel(): JSX.Element {
           ) : null}
         </div>
       ) : null}
-
-      <RunLog />
     </div>
   );
 }
