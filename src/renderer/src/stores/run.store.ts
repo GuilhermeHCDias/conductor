@@ -1,6 +1,7 @@
 import type { Result } from '@shared/ipc';
 import type { RunEvent, RunOutcome } from '@shared/types';
 import { create } from 'zustand';
+import { formatClock } from '../lib/clock';
 
 /**
  * The open run, as the window holds it: main owns the truth — the child, the
@@ -37,6 +38,15 @@ export type RunStep = {
  */
 export const MAX_LOG_LINES = 5000;
 
+/**
+ * The video of the open run (recording criteria 23–24): `saving` while the
+ * terminal event says one is on its way, `saved` once it landed with its name
+ * and where the failed step begins — `null` seconds when that is unknown.
+ */
+export type RunRecording =
+  | { readonly status: 'saving' }
+  | { readonly status: 'saved'; readonly fileName: string; readonly fromSeconds: number | null };
+
 export type RunData = {
   readonly running: boolean;
   /** The active run — or the last one, kept so its late events still land and
@@ -51,14 +61,26 @@ export type RunData = {
   /** Monotonic. The inspector watches it for §5.5's end-of-run recapture
    * (criterion 13), the way it watches `inputsSettled` for taps. */
   readonly completedRuns: number;
+  /** The run's video, or `null` while there is none to speak of (recording
+   * criterion 27). Its own slice, so a recording event re-renders only the
+   * row and the bar that read it (criterion 29). */
+  readonly recording: RunRecording | null;
+  /** What the outcome bar says beneath the label about the video — a save
+   * that failed, a run that was never recorded, an open the OS refused
+   * (recording criteria 25–26). */
+  readonly recordingNote: string | null;
 };
 
 export type RunActions = {
   /** Criterion 15 — what you see is what runs: the caller hands the open
-   * flow's current in-memory YAML, dirty state included. */
-  start: (deviceId: string, yaml: string) => Promise<void>;
+   * flow's current in-memory YAML, dirty state included — and the flow's
+   * identity, which names a failed run's video (recording criterion 31). */
+  start: (deviceId: string, yaml: string, flowPath: string | null) => Promise<void>;
   /** Criterion 16 — asks; only the terminal event flips `running` back. */
   cancel: () => Promise<void>;
+  /** Recording criterion 25 — asks main to open the video it saved for this
+   * run; the renderer never knows where it is. A refusal lands as the note. */
+  openRecording: () => Promise<void>;
   /** Applies one pushed event, however it arrived. */
   applyEvent: (payload: Result<RunEvent>) => void;
 };
@@ -75,6 +97,8 @@ function createRunData(): RunData {
     outcome: null,
     outcomeMessage: null,
     completedRuns: 0,
+    recording: null,
+    recordingNote: null,
   };
 }
 
@@ -89,7 +113,7 @@ let startInFlight = false;
 export const useRunStore = create<RunState>((set, get) => ({
   ...createRunData(),
 
-  start: async (deviceId, yaml) => {
+  start: async (deviceId, yaml, flowPath) => {
     // Two clicks racing the invoke would start two runs; main would refuse
     // the second, and its refusal would then paint an error over the first.
     if (startInFlight || get().running) {
@@ -97,7 +121,7 @@ export const useRunStore = create<RunState>((set, get) => ({
     }
     startInFlight = true;
     try {
-      const result = await window.conductor.runStart(deviceId, yaml);
+      const result = await window.conductor.runStart(deviceId, yaml, flowPath);
       stepStartedAt.clear();
       if (!result.ok) {
         // Criterion 22: a run refused before it began is still a reported
@@ -131,6 +155,19 @@ export const useRunStore = create<RunState>((set, get) => ({
     // The store changes nothing here: the run is over when main says it is —
     // the terminal event — not when the request leaves (criterion 16).
     await window.conductor.runCancel(runId);
+  },
+
+  openRecording: async () => {
+    const { runId, recording } = get();
+    if (runId === null || recording?.status !== 'saved') {
+      return;
+    }
+    const result = await window.conductor.runOpenRecording(runId);
+    // A refusal belongs to the run it was asked for: a start in between
+    // cleared the report, and a dead run's note must not land on the new one.
+    if (!result.ok && get().runId === runId) {
+      set({ recordingNote: result.error.message });
+    }
   },
 
   applyEvent: (payload) => {
@@ -182,7 +219,27 @@ export const useRunStore = create<RunState>((set, get) => ({
           outcomeMessage: event.message,
           steps: settleRun(state.steps, event.outcome),
           completedRuns: state.completedRuns + 1,
+          // Recording criterion 23 — `pending` is the one word that puts
+          // "Saving video…" on the failed row.
+          recording: event.recording === 'pending' ? { status: 'saving' } : null,
         });
+        return;
+      case 'recording':
+        // The one event after the terminal one (recording criterion 13) —
+        // its own slice and nothing else, so the log and the steps keep
+        // their identity (criterion 29).
+        set(
+          event.ok
+            ? {
+                recording: {
+                  status: 'saved',
+                  fileName: event.fileName,
+                  fromSeconds: event.fromSeconds,
+                },
+                recordingNote: null,
+              }
+            : { recording: null, recordingNote: event.message },
+        );
         return;
     }
   },
@@ -233,8 +290,7 @@ function durationOf(stepId: string): string | undefined {
   if (startedAt === undefined) {
     return undefined;
   }
-  const seconds = Math.floor((Date.now() - startedAt) / 1000);
-  return `${Math.floor(seconds / 60)}:${String(seconds % 60).padStart(2, '0')}`;
+  return formatClock((Date.now() - startedAt) / 1000);
 }
 
 /** Restores the initial state — the timing map and the in-flight guard live
@@ -273,6 +329,16 @@ export function selectOutcomeMessage(state: RunState): string | null {
 
 export function selectCompletedRuns(state: RunState): number {
   return state.completedRuns;
+}
+
+/** Recording criterion 29 — the slice the failed row reads; it changes only
+ * on the terminal event and the one that follows it, never per log chunk. */
+export function selectRecording(state: RunState): RunRecording | null {
+  return state.recording;
+}
+
+export function selectRecordingNote(state: RunState): string | null {
+  return state.recordingNote;
 }
 
 /** Criterion 24's numerator: steps that settled, against the flow's own

@@ -304,7 +304,9 @@ describe('the Run button', () => {
   });
 
   /** Criterion 15 — what you see is what runs: the store's current text,
-   * dirty or not, on the selected device. And the button flips. */
+   * dirty or not, on the selected device. And the button flips. Recording
+   * criterion 31 — the open flow's identity rides along, so main can name a
+   * failed run's video after it. */
   it('starts the open flow on the selected device and flips to Stop', async () => {
     connectDevice();
     useFlowStore.getState().appendStep('- tapOn: "Entrar"');
@@ -314,8 +316,22 @@ describe('the Run button', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'Run' }));
 
-    expect(runStart).toHaveBeenCalledWith(DEVICE, useFlowStore.getState().yaml);
+    expect(runStart).toHaveBeenCalledWith(DEVICE, useFlowStore.getState().yaml, 'teste.yaml');
     expect(screen.getByRole('button', { name: 'Stop' })).toBeInTheDocument();
+  });
+
+  /** Recording criterion 31 — the identity is the store's `openPath`, taken
+   * as it is: a nested flow keeps its folder. */
+  it('passes the open flow’s path, folder included', async () => {
+    connectDevice();
+    useFlowStore.setState({ openPath: 'checkout/pix.yml', yaml: FLOW_YAML });
+    const runStart = vi.fn(() => Promise.resolve({ ok: true as const, data: { runId: 'run-1' } }));
+    window.conductor.runStart = runStart;
+    render(<Toolbar />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Run' }));
+
+    expect(runStart).toHaveBeenCalledWith(DEVICE, FLOW_YAML, 'checkout/pix.yml');
   });
 
   /** Criterion 18 — the report is in the Run tab, so that is where a click
@@ -349,7 +365,13 @@ describe('the Run button', () => {
     act(() => {
       useRunStore.getState().applyEvent({
         ok: true,
-        data: { type: 'finished', runId: 'run-1', outcome: 'canceled', message: null },
+        data: {
+          type: 'finished',
+          runId: 'run-1',
+          outcome: 'canceled',
+          message: null,
+          recording: 'none',
+        },
       });
     });
 

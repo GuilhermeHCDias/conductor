@@ -30,8 +30,8 @@ src/
     index.ts                  # composition root: window, services, IPC registration
     window.ts                 # the one BrowserWindow factory — carries the §9.3 flags
     ipc/                      # <domain>.ts — thin handlers: validate, call a service
-    maestro/                  # MaestroGateway, LocalGateway, CliRunner,
-                              # ScreenCapture, HierarchyParser, SelectorSynth (§9.2)
+    maestro/                  # MaestroGateway, LocalGateway, CliRunner, ScreenCapture,
+                              # ScreenRecorder, HierarchyParser, SelectorSynth (§9.2)
     services/                 # <name>.service.ts — repo, gh, publish, flow,
                               # doctor, ai. Plus TreeWatcher, the recursive
                               # fs.watch behind flow:changed — a class module

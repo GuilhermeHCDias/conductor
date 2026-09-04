@@ -18,6 +18,7 @@ import { LocalGateway } from './maestro/LocalGateway';
 import { resolveMaestro } from './maestro/resolve-maestro';
 import { connectLoopback, ScrcpySource, scrcpyJarPath } from './maestro/ScrcpySource';
 import { ScreenCapture } from './maestro/ScreenCapture';
+import { ScreenRecorder } from './maestro/ScreenRecorder';
 import { isExecutable } from './process/executable';
 import { run, runBinary, spawnStreaming } from './process/run';
 import { AiService } from './services/ai.service';
@@ -221,6 +222,10 @@ if (!app.requestSingleInstanceLock()) {
     // `run`, because the latter decodes stdout as UTF-8 and a PNG does not
     // survive it.
     const capture = new ScreenCapture({ adb, run: runBinary });
+    // The run's video, through the OS like the screenshot (§12 rule 13 as
+    // amended): the bridge's streaming shell keeps `screenrecord` up for the
+    // length of the run, and `run` carries the stop signal and the cleanup.
+    const recorder = new ScreenRecorder({ adb, run });
     // The raw-CLI door (§9.2) — the only maestro-spawner besides the mcp child.
     const cli = new CliRunner({
       spawn: spawnStreaming,
@@ -229,7 +234,7 @@ if (!app.requestSingleInstanceLock()) {
       home,
       configuredPath: CONFIG.MAESTRO_PATH,
     });
-    const gateway = new LocalGateway(adb, scrcpy, mcp, capture, cli);
+    const gateway = new LocalGateway(adb, scrcpy, mcp, capture, cli, recorder);
     // The publish domain (§8): owns the send pipeline, the AI note and the
     // publication state — its own file, keyed by repo slug. Git runs as the
     // `git` binary through `run` (§9.1 as amended); `gh` and `claude` resolve
@@ -285,7 +290,10 @@ if (!app.requestSingleInstanceLock()) {
     // stays `MaestroMcpService`'s — so it is not in the disposal registry.
     const snapshot = new SnapshotService({ gateway });
     // Owns the live `maestro test` child and §4.3.2's exclusion: it suspends
-    // the snapshot path before the CLI spawns and resumes it on settle.
+    // the snapshot path before the CLI spawns and resumes it on settle — and,
+    // beside it, the run's recording, kept in the person's Movies folder when
+    // the run fails. `openPath` is injected the way `openExternal` is above:
+    // the service only ever opens a file it wrote itself.
     const runService = new RunService({
       gateway,
       snapshots: snapshot,
@@ -293,6 +301,8 @@ if (!app.requestSingleInstanceLock()) {
         broadcast(PUSH_CHANNELS.runEvent, payload);
       },
       runsDir: join(app.getPath('userData'), 'runs'),
+      videosDir: app.getPath('videos'),
+      openPath: (path) => shell.openPath(path),
     });
     // The AI window's engine (§6): one `claude -p` child per message, the
     // conversation carried by `--resume`, the device held through the same

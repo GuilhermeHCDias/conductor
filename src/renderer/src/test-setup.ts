@@ -50,6 +50,8 @@ function idleConductor(): ConductorApi {
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     runStart: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     runCancel: () => Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
+    runOpenRecording: () =>
+      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     // The workspace's quiet default is emptiness, not failure: a view test
     // mounts a sidebar with no flows, the way `deviceList` answers no devices.
     flowList: () => Promise.resolve({ ok: true, data: { flows: [], folders: [] } }),

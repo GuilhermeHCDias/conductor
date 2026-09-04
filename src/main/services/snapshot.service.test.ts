@@ -74,6 +74,7 @@ function fakeGateway(tree: TreeNode = parseHierarchy(CAPTURE)): Gateway {
       Promise.reject(new Error('SnapshotService does not read device properties.')),
     appIdentity: () => Promise.reject(new Error('SnapshotService does not read app identity.')),
     startMirror: () => Promise.reject(new Error('SnapshotService does not open mirrors.')),
+    startRecording: () => Promise.reject(new Error('SnapshotService does not record.')),
     runFlow: () => {
       throw new Error('SnapshotService does not run flows.');
     },
