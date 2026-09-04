@@ -1,0 +1,165 @@
+# Managed tools — the first run installs the JDK, gh and adb, and signs in to GitHub
+status: todo
+created: 2026-09-04
+
+## Goal
+
+Extend the first-run installer (spec `environment-doctor`) from one tool to four: on a fresh Mac, Conductor detects the Zulu JDK, Maestro, the GitHub CLI and Android platform-tools, shows what is already there, installs what is missing — through Homebrew when the machine has it, by direct pinned download when it does not — puts its own installs on the person's `PATH`, and then walks the person through GitHub's sign-in without a terminal. Done means: a clean Apple-silicon Mac with no Homebrew goes from the installer to the connect screen with `java`, `maestro`, `gh` and `adb` working in the app *and* in a new Terminal tab, and `gh auth status` reporting the account they signed in with. Xcode CLT and `claude` stay report-only.
+
+## Context
+
+- **Builds on** `feat/environment-doctor` (branch base): `DoctorService` (checks, the report, the Maestro install pipeline, `dispose()`), `download.ts`, `doctor-parse.ts`, `ipc/doctor.ts`, `views/Setup`, `views/Doctor`, `stores/doctor.store.ts`. Read `specs/environment-doctor.md` first — this spec amends it and keeps everything it does not name.
+- **Files/modules this touches**
+  - `src/main/services/doctor.service.ts` (+test) — the plan, the multi-tool pipeline, per-tool state, the sign-in child, the recheck after each tool. Pure helpers beside it, each with a test: `src/main/services/homebrew.ts` (find `brew`, the argv and env per tool, the outcome parser — no I/O), `src/main/services/shell-profile.ts` (the marked `PATH` block: which file, idempotent insert, no I/O), `src/main/services/gh-login-parse.ts` (the one-time code and URL out of `gh auth login` output — no I/O), `src/main/services/tool-layout.ts` (where each archive's launcher sits and where the managed copy lands).
+  - `src/main/services/resolve-gh.ts` (+test), `src/main/maestro/AdbBridge.ts` (+test), the Java resolution inside `doctor.service.ts` — each gains the managed rung; `src/main/maestro/CliRunner.ts` and `src/main/services/maestro-mcp.service.ts` — `JAVA_HOME` for the managed JDK.
+  - `src/shared/config.ts` (the pins), `src/shared/ipc.ts` (the plan, per-tool install state, `doctor:login*`, new codes), `src/preload/index.ts` + `index.d.ts`, `src/main/index.ts` (window geometry, `shell.openExternal` allowlist for github.com, wiring), `src/main/window.ts` (setup geometry 520 × 480).
+  - Renderer: `views/Setup/*` (the plan, progress, sign-in, failures — one view, kit variant `CDoctorInstallerB`), `views/Doctor/*` (Install on `java`/`gh`/`adb`, Sign in on `github-auth`, the footnote), `stores/doctor.store.ts`, `hooks/useDoctorEvents.ts`.
+  - **Amendments this change must write**: `.context.md` §10 (the doctor installs the JDK, gh and adb too; the sign-in is gh's own device flow driven from the app; the "never installs the rest" sentence of the 2026-09-03 amendment is superseded), §10.1 rule 1b (the doctor now names `brew` and `tar` as well), §8.1 rollout note (the gh sign-in from the UI is here, without a `RemoteGateway`; the token is still gh's, in the keychain — §9.0 holds), §12 (installs write to `~/.conductor` and one marked block in the shell profile — the "nothing outside `userData`" rule of the previous spec is narrowed to *nothing else*), §13. `specs/environment-doctor.md`: criteria 11 and the "Out of scope" line are superseded by this spec (edit them to say so, do not rewrite that spec). `AGENTS.md`: Commands gains the dev knobs of criterion 47.
+- **Existing patterns to follow**: the Maestro pipeline in `runInstall`/`swapIn` (download → checksum → extract → marker → rename, `InstallFailure` codes, product sentences); `spawnStreaming` (run.service, publish.service) for the two long children that print progress — `brew` and `gh auth login`; `resolveMaestro`'s managed rung for the three new ladders; `handle()`; `components/Dialog`; the `Setup` view's store-driven progress (no timers).
+- **Product & decision docs**: `.context.md` §10, §10.1, §8.1, §9.0 (no credential is ours — gh keeps the token), §9.3 (`shell.openExternal` allowlist), §12.10, §12.24. The engineer's decisions of 2026-09-04 are recorded below.
+- **Design & conventions**: kit `docs/Conductor Design System/ui_kits/conductor-c-aurora/` — `CDoctor.jsx` (`CDoctorInstaller`: chrome, mark, title, bar, mono step line), `CDoctorB.jsx` (row shape: glyph, name, mono detail, coloured state word), README "Doctor". Read the kit from the main checkout `/Users/gui/Projects/conductor`. The installer layout below is the engineer's delegation ("you decide") and is written here in words; the kit gains `CDoctorInstallerB` + `doctor-first-run-b.html` **during implementation**, matching this text, so the view has a reference to adhere to. Strings in this spec are final unless the kit pass improves them.
+- **Tests**: Vitest `main` — `doctor.service.test.ts` extended through the same fake `run`/`spawnStreaming`/`download` and temp `HOME` + `userData` (the fake `brew`, `tar`, `unzip` and `gh auth login` answer canned output; the fake home has its own `.zprofile`); `homebrew.test.ts`, `shell-profile.test.ts`, `gh-login-parse.test.ts`, `tool-layout.test.ts` over the strings in the appendix; `resolve-gh.test.ts`, `AdbBridge.test.ts`, `resolve-maestro.test.ts` for the rungs; `ipc.test.ts`, `ipc/doctor.test.ts`, `preload/index.test.ts`. Renderer — `doctor.store.test.ts`, `Setup.test.tsx`, `Doctor.test.tsx`, `useDoctorEvents.test.tsx`, mocking exactly `window.conductor`. TDD per `.claude/skills/test-driven-development`. No E2E.
+
+## Acceptance criteria
+
+### The tools and the plan
+
+1. The system shall manage exactly four tools, in this order: `java` (Zulu JDK 21), `maestro`, `gh` (GitHub CLI), `adb` (Android platform-tools). `xcode-clt`, `claude`, `claude-auth` stay report-only as in `environment-doctor`.
+2. When the app starts, the system shall decide `setup.active` from file probes alone (no process before first paint — `environment-doctor` criterion 13 extended): `true` when any of the four tools has no executable on its ladder (criteria 24–26) **and** is not skipped (criterion 8), or when the managed Maestro's marker does not match the pin; the sign-in never decides it.
+3. When the setup window first shows, the system shall build a **plan** and push it in the doctor state as `setup.plan`: for each tool `{ id, state: 'present' | 'install' | 'unavailable', method: 'homebrew' | 'direct' | null, detail }` — `present` with `detail` the doctor row's detail (e.g. `gh version 2.76.0 (2026-05-13) · /opt/homebrew/bin/gh`), `install` with the method of criterion 5, `unavailable` per criterion 6 — plus `homebrew: string | null` (the `brew` path found, criterion 4) and `androidTermsRequired: boolean` (true iff `adb` is `install`).
+4. The system shall find Homebrew as the first executable of `/opt/homebrew/bin/brew`, `/usr/local/bin/brew`; the dev knob `CONDUCTOR_HOMEBREW=0` makes it `null` (packaged: ignored).
+5. The system shall choose the method per tool: `gh` and `adb` → `homebrew` when Homebrew is found, else `direct`; `java` → always `direct` (the `zulu@21` cask is a `.pkg` and asks for an administrator password, which a child of the app cannot answer); `maestro` → always `direct` into `userData/maestro`, as today.
+6. If `process.arch` is not `arm64`, then every `direct` install shall be `unavailable` with `detail` "Not available on Intel Macs" — the plan still shows the tool, nothing is downloaded, and the doctor row keeps reporting it.
+7. While a tool is `present`, the system shall never reinstall or update it, whoever installed it; the exception is `maestro`, whose managed copy follows the pin as before. A `java` that is present but reports a major below 17 counts as **not** present for the plan (Zulu 21 installs beside it).
+8. When the person continues without a tool (criterion 17's "Continue" with tools left uninstalled, or `adb` without the terms), the system shall remember the skip per tool in `userData/doctor-skips.json` (`{ "adb": "2026-09-04T…" }`); a skipped tool no longer opens the installer at launch (criterion 2) but keeps its row and its Install button in the Doctor sheet; a successful install of that tool, or a change of that tool's pin, clears the skip.
+
+### The install pipeline
+
+9. When `doctor:install` is invoked with `{ tools?: ToolId[], androidTermsAccepted: boolean }`, the system shall answer `{ installId }` immediately and install the tools whose plan state is `install` (all of them when `tools` is omitted) **in the order of criterion 1**, one at a time, continuing past a failed tool to the next; progress arrives as `doctor:install-event` pushes carrying `tool`.
+10. If `adb` is among the tools to install and `androidTermsAccepted` is false, then the system shall skip `adb` (criterion 8) and install the rest; the plan entry becomes `{ state: 'skipped', detail: 'Accept the Android SDK terms to install' }`.
+11. The `direct` pipeline shall be, per tool: download the archive to `userData/tools-install/<installId>/<tool>/` streamed (60 s stall, as `download.ts` does), progress by bytes 0–90; verify sha256 against the pinned digest (criterion 13) — `gh` from `gh_<v>_checksums.txt` downloaded beside it, `adb` and `java` from the digest pinned in `CONFIG`; extract — `.zip` through `/usr/bin/unzip -qo`, `.tar.gz` through `/usr/bin/tar -xzf` — into the job dir; locate the launcher per the appendix layouts (checked, never assumed); write a `version` marker beside it; `rename` the tree to `~/.conductor/tools/<tool>-<version>/` (moving any previous same-named tree aside first and restoring it if the rename fails, as `swapIn` does); replace the symlink `~/.conductor/bin/<launcher>` → the launcher (`gh`, `adb`, `java`; for `java` also `~/.conductor/tools/java` → `<Contents/Home>` as a stable `JAVA_HOME`); verify by running the launcher's version command (appendix) with a 15 s timeout; report `done`.
+12. The `homebrew` pipeline shall be, per tool: run `<brew> install gh` or `<brew> install --cask android-platform-tools` through `spawnStreaming` with env `HOMEBREW_NO_AUTO_UPDATE=1`, `HOMEBREW_NO_INSTALL_CLEANUP=1`, `HOMEBREW_NO_ENV_HINTS=1`, `NONINTERACTIVE=1` and `PATH` including the brew prefix's `bin`; progress events carry `pct: null` (indeterminate) and `step` "Installing gh with Homebrew" / "Installing platform-tools with Homebrew"; exit 0 → verify the tool resolves on its ladder (criteria 24–25) and report `done`; a child that prints nothing for 10 minutes is killed and fails.
+13. `CONFIG` shall pin, beside `MAESTRO_VERSION`: `GH_VERSION` (`'2.100.0'`), `PLATFORM_TOOLS_VERSION` (`'37.0.1'`) with `PLATFORM_TOOLS_SHA256`, `ZULU_VERSION` (`'21.52.203'`, Java `21.0.12.1`) with `ZULU_SHA256`, and the three base URLs (appendix); each overridable by `CONDUCTOR_<NAME>` as `MAESTRO_VERSION` is.
+14. If a `direct` install fails, then `message` shall be one product sentence chosen by code — `doctor/download-failed`: "Conductor couldn't download <Tool name>. Check your connection and try again."; `doctor/checksum-mismatch`: "The download didn't match what <Publisher> published, so it was discarded."; `doctor/extract-failed`: "<Tool name> couldn't be unpacked on this Mac."; `doctor/verify-failed`: "<Tool name> was installed but didn't answer as expected." — with `<Tool name>` ∈ {Maestro, the Zulu JDK, the GitHub CLI, Android platform-tools} and `<Publisher>` ∈ {Maestro, Azul, GitHub, Google}; `detail` keeps the raw cause for the doctor row. Maestro's existing sentences are unchanged.
+15. If a `homebrew` install fails, then the failure shall be `doctor/brew-failed` with `message` "Homebrew couldn't install <Tool name>. You can try again, or Conductor can download it instead." and `detail` the first non-empty stderr line; the plan entry's `method` flips to `direct` for the next attempt when `process.arch` is `arm64`.
+16. When a tool's install settles (done, failed or skipped), the system shall recheck that tool's doctor row (and `github-auth` after `gh`) and push the report before starting the next tool.
+17. When every tool has settled, the system shall push `doctor:install-event { kind: 'settled', installId, failed: ToolId[] }`; when `failed` is empty and no sign-in is pending (criterion 32), the ready state is held ≈ 800 ms and the app presents connect/workspace as in `environment-doctor` criterion 16; otherwise the Setup view stays with "Try again" (re-invokes `doctor:install` with `tools: failed`) and "Continue" (invokes `doctor:skip-setup`, which records the skips of criterion 8 for the tools still missing).
+18. On `before-quit`, `dispose()` shall abort the download, kill a running `brew`, `tar`, `unzip`, version probe or `gh auth login`, and remove `userData/tools-install/`; an interrupted `direct` install can never resolve as installed (the marker is written before the rename, the rename is the only step that makes the tree visible).
+
+### The PATH and the JDK for Maestro
+
+19. When at least one `direct` install of `gh`, `adb` or `java` has landed, the system shall ensure the person's shell profile carries exactly one marked block:
+    ```
+    # >>> Conductor >>>
+    export PATH="$HOME/.conductor/bin:$PATH"
+    # <<< Conductor <<<
+    ```
+    appended with a leading blank line; a second run finds the block and writes nothing; a block whose inner line differs is replaced in place.
+20. The profile file shall be `~/.zprofile` when `$SHELL` ends in `zsh` or is unset, `~/.bash_profile` when it ends in `bash`, and for any other shell no file is written and the plan's method line (criterion 36) says so ("Add ~/.conductor/bin to your PATH by hand"). The file is created if absent, never truncated, never written with `sudo`.
+21. The system shall never depend on that profile itself: every ladder resolves `~/.conductor/bin/<tool>` by absolute path (criteria 24–26), and a GUI launch (which reads no profile) works identically.
+22. When Conductor spawns `maestro` (`CliRunner`, `MaestroMcpService`), it shall pass `JAVA_HOME=~/.conductor/tools/java` in the child's env whenever the doctor's Java resolution is the managed JDK; when it is the person's own, `JAVA_HOME` is left as the process has it.
+23. The system shall never write `JAVA_HOME` into the shell profile — `java` reaches the terminal only through `~/.conductor/bin/java`.
+
+### The ladders
+
+24. `resolveGh`'s ladder shall become: `CONFIG.GH_PATH` → `~/.conductor/bin/gh` → `PATH` → `/opt/homebrew/bin/gh` → `/usr/local/bin/gh`.
+25. `AdbBridge`'s ladder shall become: configured path → `~/.conductor/bin/adb` → `$ANDROID_HOME`, `$ANDROID_SDK_ROOT` → `~/Library/Android/sdk/platform-tools/adb` → `PATH`.
+26. The doctor's Java resolution shall become: `~/.conductor/tools/java/bin/java` (managed) → `$JAVA_HOME/bin/java` → `/usr/libexec/java_home`; the `java` row's detail names the path it chose, and the managed one reads `java 21.0.12.1 · ~/.conductor/tools/java` (home-relative, as the sheet shows paths).
+27. `CONDUCTOR_DOCTOR_HIDE` shall hide the managed rungs too (a hidden `gh` never resolves, wherever it is), so `HOME=<empty dir> npm run dev:fresh` still shows a Mac with nothing.
+
+### The GitHub sign-in
+
+28. When `doctor:login` is invoked, the system shall answer `{ loginId }` immediately and run `<gh> auth login --hostname github.com --git-protocol https --web --skip-ssh-key` through `spawnStreaming` with stdin closed after one newline; it refuses with `doctor/gh-missing` when no `gh` resolves, and with `doctor/login-active` while one runs.
+29. When the child prints the one-time code line (appendix — `! First copy your one-time code: XXXX-XXXX`), the system shall push `doctor:login-event { kind: 'code', loginId, code, url: 'https://github.com/login/device' }`; the code is never logged and never stored.
+30. When `doctor:open-login-url` is invoked, the system shall open `https://github.com/login/device` with `shell.openExternal` — the one URL, allowlisted by host and path in main, the renderer sends nothing; gh's own browser launch is left in place (a second tab is acceptable; a blocked one is what the button is for).
+31. When the child exits 0, the system shall recheck `gh` and `github-auth`, push the report, and push `doctor:login-event { kind: 'done', loginId, account }` with `account` from the `Logged in to github.com account <name>` line; when it exits non-zero, `{ kind: 'failed', loginId, message, detail }` with `doctor/login-failed` and message "GitHub sign-in didn't finish. Try again when you're ready." (`detail` the last non-empty stderr line — gh's own device-code expiry after ~15 minutes lands here); `doctor:login-cancel` kills the child and pushes `{ kind: 'cancelled', loginId }`.
+32. While the setup is active and, after the tools settle, `gh` resolves but `github-auth` is not `ok`, the Setup view shall show the sign-in step (criterion 40) before presenting the app; "Skip for now" records nothing and presents the app (the amber badge carries the row).
+33. The system shall keep only the first line of any `gh auth` output in the report and never place a token in any event, log or file — the token is gh's, in the system keychain (§9.0).
+
+### The Setup view (kit `CDoctorInstallerB`, 520 × 480 fixed)
+
+34. The window shall keep the installer chrome of `environment-doctor` criterion 14 at 520 × 480: close live, minimise and zoom dead; closing it quits.
+35. **The plan screen.** Below the mark and the title "Setting up Conductor", the copy shall read "Conductor needs a few tools to run tests on this Mac. It installs what's missing — no password needed." Then one row per tool of criterion 1, in order: state glyph (kit's `circle-check` teal for `present`, `circle-dashed` tertiary for `install`, `circle-alert` amber for `unavailable`/`skipped`), the tool's display name (Zulu JDK 21 · Maestro · GitHub CLI · Android platform-tools), and a right-aligned mono state — `present`: "Installed · <version>" (the doctor row's `short`); `install`: "Will install with Homebrew" / "Will download"; `unavailable`: "Not available on Intel Macs"; `skipped`: "Skipped".
+36. Under the rows, one method line in tertiary type shall read, when Homebrew is found: "Homebrew found at <path> — GitHub CLI and platform-tools install through it. The JDK downloads from Azul." ; when not: "Homebrew isn't installed, so Conductor downloads everything into ~/.conductor and adds it to your PATH." ; plus the criterion 20 sentence when no profile applies.
+37. While `androidTermsRequired` is true, the plan screen shall show a checkbox "I accept the Android SDK Platform-Tools terms" followed by a link "Read the terms" that invokes `doctor:open-url { id: 'android-terms' }` → `https://developer.android.com/studio/terms` (allowlisted by id in main, like criterion 30); unchecked, the `adb` row reads "Skipped — accept the terms to install".
+38. The plan screen's footer shall offer "Continue without installing" (ghost; `doctor:skip-setup`) and "Install" (primary; `doctor:install` with `androidTermsAccepted` = the checkbox). While every tool is `present` at first paint (setup opened only for a Maestro pin change), the installer starts by itself as today — no plan screen.
+39. **The progress screen.** When an install starts, the rows shall stay and the active row shall show, under its name, the kit's 4 px bar (determinate for `direct` with the pct; indeterminate shimmer for `homebrew`) and the mono step line ("Downloading Zulu JDK 21 · 43%", "Installing gh with Homebrew"); settled rows read "Installed · <version>" with the teal check; waiting rows read "Waiting"; a failed row reads its product sentence in the fail colour and the raw detail is **not** shown (it lives on the Doctor sheet). No button while installs run (criterion 34's close is the way out).
+40. **The sign-in step.** When criterion 32 applies, the view shall replace the method line with a card: title "Sign in to GitHub", copy "Conductor sends your tests to GitHub through the GitHub CLI. Sign in happens in your browser — Conductor never sees your password or token.", primary "Sign in with GitHub" (`doctor:login`), ghost "Skip for now". Once the code event arrives: the code in `--type-title-2` mono (`XXXX-XXXX`), a "Copy code" button (clipboard, via `navigator.clipboard`), the line "Enter it at github.com/login/device", a link "Open GitHub" (`doctor:open-login-url`), and "Cancel" (`doctor:login-cancel`). On `done`: "Signed in as <account>" with the teal check, then the ready hold and the app presents itself. On `failed`: the message and "Try again".
+41. The view shall hold no timers of its own; every pct, step, code and outcome arrives through the store from push events.
+
+### The Doctor sheet and the badge
+
+42. The `java`, `gh` and `adb` rows shall carry the "Install" button under the same rule as `maestro` (row not `ok`, no explicit path configured for that tool, `arm64` or method `homebrew`); clicking it invokes `doctor:install { tools: [id], androidTermsAccepted }` — for `adb` the sheet first shows the criterion 37 checkbox inline in the row and enables Install only once checked.
+43. The `github-auth` row shall carry a "Sign in" button while `gh` is `ok` and the row is not; clicking it runs the criterion 40 card inside the sheet (same events), and the row updates on `done`.
+44. The footnote shall read "Conductor installs Maestro, the JDK, the GitHub CLI and platform-tools by itself. Signing in to GitHub happens in your browser and stays yours." (replaces `environment-doctor` criterion 29).
+45. The badge, the verdict band and the Needs you / Ready split are unchanged.
+
+### IPC contract
+
+46. `src/shared/ipc.ts` shall declare: `doctor:install` → `{ installId }` with input `{ tools?: ToolId[], androidTermsAccepted: boolean }`; `doctor:login` → `{ loginId }`; `doctor:login-cancel` → `{}`; `doctor:open-login-url` → `{}`; `doctor:open-url { id: 'android-terms' }` → `{}`; pushes `doctor:install-event` (`progress` gains `tool` and `pct: number | null`; new `settled`), `doctor:login-event`; codes `doctor/brew-failed`, `doctor/gh-missing`, `doctor/login-active`, `doctor/login-failed`, `doctor/unsupported-arch`; the doctor state gains `setup.plan: DoctorPlan | null`, `install: null | { installId, tool, pct: number | null, step } | { installId, failed: Record<ToolId, { code, message, detail }> }`, `login: null | { loginId, code: string | null } | { loginId, failed: { code, message, detail } }`. Every handler goes through `handle()`; the preload exposes one function per channel; the renderer sends no path or URL.
+
+### Seeing it happen
+
+47. `AGENTS.md`'s Commands table shall document, beside the existing knobs: `HOME=<empty dir>` now also empties `~/.conductor` and the shell profile (the whole managed-tools first run in a sandbox); `CONDUCTOR_HOMEBREW=0` forces the direct path on a Mac that has Homebrew; `CONDUCTOR_DOCTOR_HIDE=gh` still makes a tool absent everywhere; `CONDUCTOR_GH_VERSION` etc. as pins.
+48. The first run shall be reproducible offline with `CONDUCTOR_*_RELEASE_URL` pointing at a local `python3 -m http.server` serving the four archives and their checksum files, as `environment-doctor` criterion 39 does for Maestro.
+
+## Constraints
+
+- Process creation only through `run.ts` / `spawnStreaming`, injected; `DoctorService` and its helpers name `brew`, `tar`, `unzip`, `gh` and create nothing (§10.1 rule 1b — amend). Biome's `child_process` rule stays.
+- No `sudo`, ever; nothing under `/usr/local`, `/Library` or `/etc`. The only writes outside `userData` are `~/.conductor/**` and the one marked block of criterion 19.
+- Homebrew is invoked with an argv array, the four env flags of criterion 12, and never `brew update`/`upgrade`/`uninstall`; Conductor never uninstalls anything it did not install, and uninstalling its own is out of scope.
+- Apple silicon only for `direct` installs (criterion 6); the service shape stays arch-agnostic so an `amd64` asset is one config line later.
+- The archive layouts of the appendix are checked, not assumed (as Maestro's is).
+- `gh`'s token is never read, logged or forwarded; the device code is shown in the UI only and is not written to any log (§9.0, §9.3). `shell.openExternal` receives only the two literal URLs of criteria 30 and 37, chosen in main by id.
+- Timeouts: 60 s download stall; 15 s version probes; 10 min silence for `brew`; `gh auth login` has no clock of ours (gh expires the code itself) but dies on cancel and dispose.
+- Strings: product language in the view (criteria 14, 15, 31, 35–40, 44), CLI text verbatim in `detail`; no Git vocabulary beyond the tool names (§12.24). English, as the kit.
+- §9.3 flags untouched; the setup, connect and workspace geometries stay three presentations of the one `BrowserWindow`.
+- Strict TS, Biome, `npm`.
+
+## Out of scope
+
+- Intel Macs, Windows, Linux.
+- Installing Xcode CLT, `claude`, or signing in to Claude; a `RemoteGateway`.
+- Installing Homebrew itself; `brew upgrade` of anything; uninstalling Conductor's tools when Conductor is removed.
+- Disk-space preflight (a clean Mac downloads ≈ 550 MB across the four).
+- Android emulator / `maestro start-device`; the Android SDK beyond platform-tools.
+- SSH keys for GitHub (`--skip-ssh-key`), enterprise hosts (`--hostname` is fixed to github.com), fine-grained tokens (`--with-token` is not offered).
+- Remembering an unchecked terms box across launches beyond the per-tool skip of criterion 8.
+
+## Decisions & assumptions
+
+- Homebrew first, direct download when absent, the screen says which → engineer chose (2026-09-04). The JDK is direct always because the cask is a `.pkg` needing an admin password (verified: `brew info --cask zulu@21` → artifacts `pkg`); `android-platform-tools` is binaries only and `gh` is a bottle (verified).
+- Direct installs live in `~/.conductor/tools`, launchers linked from `~/.conductor/bin`, that dir added to the profile → engineer approved the recommendation.
+- Profile file `~/.zprofile` (Homebrew's precedent; zsh is macOS's default) / `~/.bash_profile` for bash; a marked idempotent block; no `JAVA_HOME` in the profile (Conductor passes it to its own `maestro` children) → engineer approved.
+- One click on the first run — a plan screen with the terms checkbox, then a hands-off run; declining the terms skips `adb` and installs the rest → engineer approved.
+- Order JDK → Maestro → gh → adb, so Maestro's verify runs against a real JVM → engineer approved.
+- A failed tool never stops the others; "Try again" redoes only the failed ones; "Continue" is always there → engineer approved.
+- Pins in `CONFIG` for the direct path (gh 2.100.0, platform-tools r37.0.1, Zulu 21.52.203 / 21.0.12.1); Homebrew installs whatever it has and is never touched again by Conductor; direct installs re-run when their pin changes → engineer approved.
+- Apple silicon only → engineer chose (2026-09-04), reversing the Intel recommendation.
+- A present tool is never reinstalled; Java below 17 counts as missing → engineer approved.
+- The Doctor sheet's `java`, `gh`, `adb` rows get Install; `github-auth` gets Sign in → engineer approved / asked for (2026-09-04).
+- The sign-in drives `gh auth login --web` — gh's own device flow; Conductor shows the code, opens the URL, and reads only `gh auth status` afterwards. This is not an OAuth app of ours: no client id, no token, no callback (§9.0 holds; §8.1's rollout note is amended to say the UI flow exists without a `RemoteGateway`) → engineer asked for a UI sign-in; the mechanism is the recommendation.
+- **(Assumed — say so if wrong)** skips are remembered per tool (criterion 8), so a person who declined `adb` is not shown the installer at every launch; the sheet keeps the Install button. The previous spec assumed the opposite for Maestro alone; with four tools the every-launch installer would be a nag.
+- **(Assumed — say so if wrong)** the setup decision at launch stays file-only (criterion 2), so the sign-in step appears only when the installer is already open for a missing tool; a fully-installed, signed-out Mac gets the amber badge and the sheet's Sign in, not the installer.
+- **(Assumed at the engineer's request — layout is delegated)** the installer grows to 520 × 480 with the row list of criteria 35–40; the kit variant `CDoctorInstallerB` is written during implementation to match, then the view adheres to it.
+- **(Assumed — verify on first implementation run)** `gh auth login --web` without a TTY prints the one-time code and the device URL to stderr and proceeds to poll (gh 2.x `authflow`: the "Press Enter" prompt is skipped when stdin is not a terminal). If it refuses, the fallback is `script -q /dev/null gh auth login …` to lend it a pty — record the outcome in this section.
+- Version/URL facts at spec time (2026-09-04): gh v2.100.0 (2026-09-03) publishes `gh_2.100.0_macOS_arm64.zip` (14,212,224 B) and `gh_2.100.0_checksums.txt` at `https://github.com/cli/cli/releases/download/v2.100.0/`; Google publishes `https://dl.google.com/android/repository/platform-tools_r37.0.1-darwin.zip`, sha256 `ee39ad5967e95c2a07f04dbcbde96b1a0c916ba376096db5d2f498b7727a5d1d` (from the Homebrew cask); Azul's metadata API (`https://api.azul.com/metadata/v1/zulu/packages/?java_version=21&os=macos&arch=arm64&archive_type=tar.gz&java_package_type=jdk&javafx_bundled=false&crac_supported=false&release_status=ga&availability_types=CA&latest=true`) returns `zulu21.52.203-ca-jdk21.0.12.1-macosx_aarch64.tar.gz`, `https://cdn.azul.com/zulu/bin/…`, 205,924,000 B, `sha256_hash` `042093e0895c940a02d68e727bc37b59f3958e58aa1463ec9080845d77af0a45` (the CDN has no `.sha256` sidecar — the digest is pinned in `CONFIG`, not fetched).
+
+## Appendix — layouts and captured outputs
+
+- **Zulu tar.gz** unpacks to `zulu21.52.203-ca-jdk21.0.12.1-macosx_aarch64/` containing `zulu-21.jdk/Contents/Home/{bin,lib,…}` and a top-level `bin` symlink into it; the launcher is `<root>/zulu-21.jdk/Contents/Home/bin/java`; the `JAVA_HOME` is `<root>/zulu-21.jdk/Contents/Home`. Verify: `java -version` → stderr first line `openjdk version "21.0.12.1" 2026-07-21 LTS`.
+- **gh zip** unpacks to `gh_2.100.0_macOS_arm64/{bin/gh, share/…}`; verify `gh --version` → `gh version 2.100.0 (2026-09-03)`.
+- **platform-tools zip** unpacks to `platform-tools/{adb, fastboot, …}` (no execute bit guaranteed — set it); verify `adb --version` → `Android Debug Bridge version 1.0.41` / `Version 37.0.1-…`.
+- **brew** success ends with `🍺  /opt/homebrew/Cellar/gh/2.100.0: 220 files, 45MB` (formula) or `🍺  android-platform-tools was successfully installed!` (cask); failure prints `Error: …` as the first stderr line.
+- **gh auth login --web** (stderr):
+  ```
+  ! First copy your one-time code: 1234-ABCD
+  Press Enter to open https://github.com/login/device in your browser...
+  ✓ Authentication complete.
+  - gh config set -h github.com git_protocol https
+  ✓ Configured git protocol
+  ✓ Logged in as <account>
+  ```
+  On the code: the regex is `one-time code:\s+([A-Z0-9]{4}-[A-Z0-9]{4})`. On expiry: exits 1 with `error validating token: …` / `The device code has expired`.
+- **gh auth status --active** (stdout): `github.com` / `  ✓ Logged in to github.com account <name> (keyring)` — as `environment-doctor`'s appendix.
+- **Homebrew env** for a non-interactive child: `HOMEBREW_NO_AUTO_UPDATE=1 HOMEBREW_NO_INSTALL_CLEANUP=1 HOMEBREW_NO_ENV_HINTS=1 NONINTERACTIVE=1`; the brew prefix is the parent of the `bin` that holds `brew`.
