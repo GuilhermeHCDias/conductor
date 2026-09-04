@@ -209,6 +209,14 @@ if (!app.requestSingleInstanceLock()) {
       window.on('focus', () => {
         doctorService.windowFocused();
       });
+      // Criterion 23 — while the installer runs, the OS close button is the
+      // only way out, and it quits: nothing else on macOS would, and a
+      // headless Conductor downloading 315 MB is not a state anyone chose.
+      window.on('closed', () => {
+        if (doctorService.state().setup.active) {
+          app.quit();
+        }
+      });
       return window;
     };
 

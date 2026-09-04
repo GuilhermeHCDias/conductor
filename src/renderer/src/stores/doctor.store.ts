@@ -155,13 +155,17 @@ export function selectIssues(state: DoctorStoreState): number | null {
   return state.report?.issues ?? null;
 }
 
-/** Criterion 28 — the rows that need the person, in the report's order. */
-export function selectNeedsYou(state: DoctorStoreState): readonly DoctorRow[] {
-  return state.report?.rows.filter((row) => row.status !== 'ok') ?? [];
-}
-
-export function selectReady(state: DoctorStoreState): readonly DoctorRow[] {
-  return state.report?.rows.filter((row) => row.status === 'ok') ?? [];
+/** Criterion 28 — Needs you above Ready, each in the report's order. Pure
+ * over the rows rather than a store selector: it returns fresh arrays, which
+ * a `useDoctorStore(selector)` would re-render forever on. */
+export function splitRows(rows: readonly DoctorRow[]): {
+  readonly needsYou: readonly DoctorRow[];
+  readonly ready: readonly DoctorRow[];
+} {
+  return {
+    needsYou: rows.filter((row) => row.status !== 'ok'),
+    ready: rows.filter((row) => row.status === 'ok'),
+  };
 }
 
 /** Criterion 31 — the one per-row action: the `maestro` row is not ok and

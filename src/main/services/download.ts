@@ -143,5 +143,9 @@ export function downloadToFile(url: string, dest: string, options: DownloadOptio
       armStall();
     });
     request.end();
+    // The clock runs from the request, not from the first byte: a server
+    // that never answers is a stall too, or the installer would sit at 0%
+    // with no way out but the close button.
+    armStall();
   });
 }

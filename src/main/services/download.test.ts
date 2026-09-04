@@ -180,6 +180,29 @@ describe('downloadToFile', () => {
     expect(existsSync(dest)).toBe(false);
   });
 
+  /** Criterion 17 again — the clock runs from the request, not from the first
+   * byte: a server that never answers is a stall too, or the installer would
+   * sit at 0% with no button (criterion 23). */
+  it('fails the transfer when no response arrives within the stall window', async () => {
+    vi.useFakeTimers();
+    const dest = join(dir, 'file');
+    const done = downloadToFile(URL, dest, {
+      signal: new AbortController().signal,
+      stallMs: 60_000,
+    });
+    await vi.advanceTimersByTimeAsync(59_000);
+    expect(lastRequest().request.aborted).toBe(false);
+
+    await vi.advanceTimersByTimeAsync(1_000);
+
+    await expect(done).rejects.toMatchObject({
+      name: 'DownloadError',
+      detail: 'no bytes for 60 s',
+    });
+    expect(lastRequest().request.aborted).toBe(true);
+    expect(existsSync(dest)).toBe(false);
+  });
+
   it('is a DownloadError instance the service can tell from a bug', () => {
     const error = new DownloadError('HTTP 404');
 

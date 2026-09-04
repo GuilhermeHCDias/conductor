@@ -4,8 +4,7 @@ import {
   resetDoctorStore,
   selectInstallable,
   selectIssues,
-  selectNeedsYou,
-  selectReady,
+  splitRows,
   useDoctorStore,
 } from './doctor.store';
 
@@ -244,9 +243,10 @@ describe('selectors', () => {
   /** Criterion 28 — non-ok rows above ok rows, each in the report's order. */
   it('splits the rows into Needs you and Ready, in order', () => {
     store().applyState(ok(STATE));
+    const { needsYou, ready } = splitRows(store().report?.rows ?? []);
 
-    expect(selectNeedsYou(store()).map((entry) => entry.id)).toEqual(['maestro', 'github-auth']);
-    expect(selectReady(store()).map((entry) => entry.id)).toEqual([
+    expect(needsYou.map((entry) => entry.id)).toEqual(['maestro', 'github-auth']);
+    expect(ready.map((entry) => entry.id)).toEqual([
       'adb',
       'java',
       'xcode-clt',

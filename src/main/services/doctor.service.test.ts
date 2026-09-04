@@ -108,6 +108,8 @@ type HarnessOptions = {
    * as a real file, so it needs no entry). */
   executables?: readonly string[];
   adb?: string | null;
+  /** Replaces the adb ladder outright — for a resolver that throws. */
+  resolveAdb?: () => string | null;
   gh?: string | null;
   claude?: string | null;
   javaHome?: string;
@@ -115,7 +117,7 @@ type HarnessOptions = {
   answers?: Partial<Record<string, Answer>>;
   /** How the archive unzips: the real nested `maestro/` dir, a flat root,
    * an archive with no launcher, or an unzip that fails outright. */
-  layout?: 'nested' | 'flat' | 'missing' | 'fails';
+  layout?: 'nested' | 'flat' | 'missing' | 'fails' | 'locked';
   /** What the downloads do. */
   archive?: 'ok' | 'http-503' | 'hang' | 'corrupt';
   checkTimeoutMs?: number;
@@ -176,6 +178,12 @@ function harness(options: HarnessOptions = {}) {
           code: 9,
         });
       }
+      if (options.layout === 'locked') {
+        // Extracted fine, but the tree cannot be moved out of its dir.
+        plantArchive(target, 'nested');
+        chmodSync(target, 0o555);
+        return Promise.resolve({ stdout: '', stderr: '', code: 0 });
+      }
       plantArchive(target, options.layout ?? 'nested');
       return Promise.resolve({ stdout: '', stderr: '', code: 0 });
     }
@@ -229,7 +237,7 @@ function harness(options: HarnessOptions = {}) {
     home: '/Users/someone',
     isExecutable: (path) => executables.has(path) || isExecutableFile(path),
     isFile: (path) => existsSync(path),
-    resolveAdb: () => (options.adb === null ? null : (options.adb ?? ADB)),
+    resolveAdb: options.resolveAdb ?? (() => (options.adb === null ? null : (options.adb ?? ADB))),
     resolveGh: () => gh,
     resolveClaude: () => (options.claude === null ? null : (options.claude ?? CLAUDE)),
     hidden: new Set(options.hidden ?? []),
@@ -738,6 +746,36 @@ describe('the report', () => {
 
 /* ── Focus rechecks ─────────────────────────────────────────────────────── */
 
+/** A check that throws — a resolver with a bug — is a logged failure that
+ * leaves the doctor able to check again, never an unhandled rejection in
+ * main. */
+describe('a check that throws', () => {
+  it('settles, logs, and lets the next check run', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const h = harness({
+        resolveAdb: () => {
+          throw new Error('the adb ladder broke');
+        },
+      });
+      h.service.start();
+      h.service.windowShown();
+      await vi.waitFor(() => {
+        expect(error).toHaveBeenCalledWith(
+          expect.stringContaining('check'),
+          'the adb ladder broke',
+        );
+      });
+
+      expect(h.service.state().checking).toBe(false);
+      expect(h.changed.at(-1)?.checking).toBe(false);
+      expect(h.service.check()).toEqual({ ok: true, data: { started: true } });
+    } finally {
+      error.mockRestore();
+    }
+  });
+});
+
 describe('on window focus', () => {
   it('re-runs only the non-ok rows and merges them, at most once per 5 s', async () => {
     const h = harness({ managed: PINNED, gh: null });
@@ -1041,6 +1079,28 @@ describe('installing', () => {
 
     expect(existsSync(join(h.managedDir, 'lib', 'old.jar'))).toBe(false);
     expect(readFileSync(join(h.managedDir, 'version'), 'utf8')).toBe(PINNED);
+  });
+
+  /** The swap moves the previous copy aside before the new one lands, so a
+   * swap that cannot happen leaves the copy that was working — never a
+   * gutted `userData/maestro` behind an `extract-failed`. */
+  it('keeps the previous managed copy when the swap fails', async () => {
+    const h = harness({ managed: '2.8.0', layout: 'locked' });
+    const extractDir = join(h.installDir, 'install-1', 'extract');
+    try {
+      h.service.start();
+      h.service.install();
+      const failed = await lastInstallEvent(h, 'failed');
+
+      expect(failed.code).toBe('doctor/extract-failed');
+      expect(readFileSync(join(h.managedDir, 'version'), 'utf8')).toBe('2.8.0\n');
+      expect(isExecutableFile(join(h.managedDir, 'bin', 'maestro'))).toBe(true);
+      expect(existsSync(`${h.managedDir}.old`)).toBe(false);
+    } finally {
+      if (existsSync(extractDir)) {
+        chmodSync(extractDir, 0o755);
+      }
+    }
   });
 
   it('refuses a second install while one runs', async () => {

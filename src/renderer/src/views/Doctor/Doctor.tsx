@@ -3,7 +3,7 @@ import type { JSX } from 'react';
 import { Dialog } from '../../components/Dialog/Dialog';
 import { Icon, type IconName } from '../../components/Icon/Icon';
 import { checkedAtLabel } from '../../lib/checked-at';
-import { selectInstallable, useDoctorStore } from '../../stores/doctor.store';
+import { selectInstallable, splitRows, useDoctorStore } from '../../stores/doctor.store';
 import styles from './Doctor.module.css';
 
 /**
@@ -48,8 +48,7 @@ export function Doctor(): JSX.Element | null {
   }
 
   const installing = install !== null && 'pct' in install ? install : null;
-  const needsYou = rows.filter((row) => row.status !== 'ok');
-  const ready = rows.filter((row) => row.status === 'ok');
+  const { needsYou, ready } = splitRows(rows);
 
   return (
     <Dialog

@@ -358,6 +358,10 @@ export class DoctorService {
         checkedAt: this.now(),
         issues: rows.filter((row) => row.status !== 'ok').length,
       };
+    } catch (error) {
+      // A check that throws is a bug in a resolver, not a row's truth: log it
+      // and let the next trigger run, rather than an unhandled rejection.
+      console.error('The doctor check failed:', detailOf(error));
     } finally {
       if (!this.disposed) {
         this.checking = false;
@@ -663,7 +667,7 @@ export class DoctorService {
     fromSetup: boolean,
     signal: AbortSignal,
   ): Promise<void> {
-    const { managedDir, pinnedVersion, releaseUrl } = this.deps;
+    const { pinnedVersion, releaseUrl } = this.deps;
     const jobDir = join(this.deps.installDir, installId);
     const base = `${releaseUrl}/cli-${pinnedVersion}`;
     try {
@@ -728,8 +732,7 @@ export class DoctorService {
       await writeFile(join(root, MANAGED_MARKER), pinnedVersion, 'utf8');
 
       this.progress(installId, 98, 'Verifying installation');
-      await rm(managedDir, { recursive: true, force: true });
-      await rename(root, managedDir);
+      await this.swapIn(root);
 
       // Only when a JDK resolves: without one the install still completes,
       // and the Java row carries that truth.
@@ -777,7 +780,11 @@ export class DoctorService {
       this.emitInstall({ kind: 'failed', installId, ...failed });
       this.emitChanged();
     } finally {
-      await rm(this.deps.installDir, { recursive: true, force: true });
+      // Cleanup is best-effort: a job dir that cannot be removed is not a
+      // second failure to report, and must never surface as a rejection.
+      await rm(this.deps.installDir, { recursive: true, force: true }).catch((error: unknown) => {
+        console.error('The Maestro install dir could not be removed:', detailOf(error));
+      });
       this.installController = null;
       if (!this.disposed) {
         // Criterion 6 — the report runs again once an install settles; a
@@ -789,6 +796,36 @@ export class DoctorService {
         }
       }
     }
+  }
+
+  /**
+   * The swap: the previous copy moves aside, the new one moves in, and only
+   * then is the old one removed — so a rename that fails (a permission, a
+   * cross-device move) leaves the copy that was working, restored, rather
+   * than a gutted `userData/maestro` behind an `extract-failed`.
+   */
+  private async swapIn(root: string): Promise<void> {
+    const { managedDir } = this.deps;
+    const aside = `${managedDir}.old`;
+    await rm(aside, { recursive: true, force: true });
+    let hadPrevious = true;
+    try {
+      await rename(managedDir, aside);
+    } catch (error) {
+      if (!isEnoent(error)) {
+        throw error;
+      }
+      hadPrevious = false;
+    }
+    try {
+      await rename(root, managedDir);
+    } catch (error) {
+      if (hadPrevious) {
+        await rename(aside, managedDir).catch(() => undefined);
+      }
+      throw error;
+    }
+    await rm(aside, { recursive: true, force: true });
   }
 
   /** The verify step: the managed launcher must print the pin. A copy that
@@ -1035,6 +1072,12 @@ async function sha256(path: string): Promise<string> {
   const hash = createHash('sha256');
   await pipeline(createReadStream(path), hash);
   return hash.digest('hex');
+}
+
+function isEnoent(error: unknown): boolean {
+  return (
+    typeof error === 'object' && error !== null && (error as { code?: unknown }).code === 'ENOENT'
+  );
 }
 
 function detailOf(error: unknown): string {
