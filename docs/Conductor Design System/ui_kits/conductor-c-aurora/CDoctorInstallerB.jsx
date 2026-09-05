@@ -25,11 +25,11 @@ const INSTALLER_MOMENTS = {
       { name: "Zulu JDK 21", glyph: "present", mono: "Installed · java 21.0.4" },
       { name: "Maestro", glyph: "install", mono: "Will download" },
       { name: "GitHub CLI", glyph: "install", mono: "Will install with Homebrew" },
-      { name: "Android platform-tools", glyph: "alert", mono: "Skipped — accept the terms to install" },
+      { name: "Android platform-tools", glyph: "alert", mono: "Accept the terms to install" },
     ],
     method: "Homebrew found at /opt/homebrew/bin/brew — GitHub CLI and platform-tools install through it. The JDK downloads from Azul.",
     terms: true,
-    footer: ["Continue without installing", "Install"],
+    footer: ["Install"],
   },
   progress: {
     rows: [
@@ -62,7 +62,7 @@ const INSTALLER_MOMENTS = {
     ],
     method: null,
     terms: false,
-    footer: ["Continue", "Try again"],
+    footer: ["Try again"],
   },
   signin: {
     rows: [
@@ -122,7 +122,7 @@ function CInstallerSignIn({ code }) {
       ) : (
         <>
           <span style={{ font: "var(--type-caption)", color: "var(--text-secondary)", textWrap: "pretty" }}>Conductor sends your tests to GitHub through the GitHub CLI. Sign in happens in your browser — Conductor never sees your password or token.</span>
-          <span style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><DocIButton variant="ghost">Skip for now</DocIButton><DocIButton variant="primary">Sign in with GitHub</DocIButton></span>
+          <span style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}><DocIButton variant="primary">Sign in with GitHub</DocIButton></span>
         </>
       )}
     </div>
@@ -171,8 +171,9 @@ function CDoctorInstallerB({ moment = "plan" }) {
         ) : null}
         {m.footer.length ? (
           <span style={{ display: "flex", justifyContent: "flex-end", gap: 8 }}>
-            <DocIButton variant="ghost">{m.footer[0]}</DocIButton>
-            <DocIButton variant="primary">{m.footer[1]}</DocIButton>
+            {/* One primary button: the four tools are mandatory, so there is nothing to
+                continue without; Install waits on the Android terms. */}
+            <DocIButton variant="primary" disabled={m.terms && !terms}>{m.footer[0]}</DocIButton>
           </span>
         ) : null}
       </div>

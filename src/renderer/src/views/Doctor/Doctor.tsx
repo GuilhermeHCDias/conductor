@@ -1,4 +1,4 @@
-import type { DoctorRow, DoctorRowStatus, ToolId } from '@shared/ipc';
+import type { DoctorRow, DoctorRowStatus } from '@shared/ipc';
 import type { JSX } from 'react';
 import { Checkbox } from '../../components/Checkbox/Checkbox';
 import { Dialog } from '../../components/Dialog/Dialog';
@@ -7,6 +7,7 @@ import { SignInCard } from '../../components/SignInCard/SignInCard';
 import { checkedAtLabel } from '../../lib/checked-at';
 import {
   installableTools,
+  isToolId,
   selectSignInPending,
   splitRows,
   useDoctorStore,
@@ -39,8 +40,6 @@ const FOOTNOTE =
 /** One stable "no rows" — a fresh array per select would re-render forever. */
 const NO_ROWS: readonly DoctorRow[] = [];
 
-const MANAGED = new Set<string>(['java', 'maestro', 'gh', 'adb']);
-
 export function Doctor(): JSX.Element | null {
   const sheetOpen = useDoctorStore((state) => state.sheetOpen);
   const checkedAt = useDoctorStore((state) => state.report?.checkedAt ?? null);
@@ -70,11 +69,7 @@ export function Doctor(): JSX.Element | null {
   const installing = install !== null && 'pct' in install ? install : null;
   const { needsYou, ready } = splitRows(rows);
   // Pure over what was selected, not a selector: it returns a fresh set.
-  const installable = installableTools({
-    report: rows.length === 0 ? null : { rows, checkedAt: 0, issues },
-    install,
-    overridden,
-  });
+  const installable = installableTools({ rows, install, overridden });
   // Criterion 43 — the card lives under the GitHub row while the sign-in
   // runs, failed, or just landed.
   const signInCard =
@@ -142,7 +137,7 @@ export function Doctor(): JSX.Element | null {
           <span className={styles.verdictBody}>
             {issues === 0
               ? 'Conductor has what it needs on this Mac.'
-              : 'Conductor runs without them, and cannot install or sign in on your behalf.'}
+              : 'Conductor runs without them, and can install or sign in for some of them below.'}
           </span>
         </span>
       </div>
@@ -152,7 +147,7 @@ export function Doctor(): JSX.Element | null {
         {needsYou.length > 0 ? (
           <Section label="Needs you">
             {needsYou.map((row) => {
-              const tool = MANAGED.has(row.id) ? (row.id as ToolId) : null;
+              const tool = isToolId(row.id) ? row.id : null;
               return (
                 <Row
                   action={

@@ -4,6 +4,7 @@ import {
   chmodSync,
   constants,
   existsSync,
+  lstatSync,
   mkdirSync,
   mkdtempSync,
   readdirSync,
@@ -11,6 +12,7 @@ import {
   readlinkSync,
   rmSync,
   statSync,
+  symlinkSync,
   writeFileSync,
 } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -130,8 +132,12 @@ type HarnessOptions = {
   brew?: string | null;
   arch?: string;
   shell?: string;
-  /** `userData/doctor-skips.json` before the service starts. */
-  skips?: Record<string, unknown>;
+  /** gh's hosts.yml at launch — the sign-in's file probe (criterion 2).
+   * `null` for no file; default names github.com. */
+  hosts?: string | null;
+  /** Extra environment for the service — `GH_TOKEN` for the sign-in probe. */
+  env?: NodeJS.ProcessEnv;
+  readyHoldMs?: number;
   /** The fake JDK under the fake `/Library/Java/JavaVirtualMachines`; false
    * plants none, so the file probe finds no Java. */
   jvm?: boolean;
@@ -206,6 +212,7 @@ type Spawned = {
   command: string;
   args: readonly string[];
   env?: NodeJS.ProcessEnv;
+  killTree?: boolean;
   child: FakeChild;
 };
 
@@ -215,18 +222,22 @@ function harness(options: HarnessOptions = {}) {
   const managedDir = join(dir, 'maestro');
   const installDir = join(dir, 'maestro-install');
   const toolsInstallDir = join(dir, 'tools-install');
-  const skipsFile = join(dir, 'doctor-skips.json');
   const home = join(dir, 'home');
   mkdirSync(home, { recursive: true });
+  if (options.hosts !== null) {
+    mkdirSync(join(home, '.config', 'gh'), { recursive: true });
+    writeFileSync(
+      join(home, '.config', 'gh', 'hosts.yml'),
+      options.hosts ??
+        'github.com:\n    users:\n        GuilhermeHCDias:\n    user: GuilhermeHCDias\n',
+    );
+  }
   const jvmRoot = join(dir, 'jvms');
   if (options.jvm !== false) {
     const bin = join(jvmRoot, 'zulu-21.jdk', 'Contents', 'Home', 'bin');
     mkdirSync(bin, { recursive: true });
     writeFileSync(join(bin, 'java'), '#!/bin/sh\n');
     chmodSync(join(bin, 'java'), 0o755);
-  }
-  if (options.skips !== undefined) {
-    writeFileSync(skipsFile, JSON.stringify(options.skips));
   }
   if (options.managed !== undefined) {
     plantManaged(managedDir, options.managed);
@@ -241,6 +252,7 @@ function harness(options: HarnessOptions = {}) {
   const installEvents: DoctorInstallEvent[] = [];
   const downloads: string[] = [];
   let setupFinished = 0;
+  let setupOpened = 0;
   let now = 1_756_800_000_000;
   let gh = options.gh === null ? null : (options.gh ?? GH);
 
@@ -332,10 +344,16 @@ function harness(options: HarnessOptions = {}) {
   const spawn = (
     command: string,
     args: readonly string[],
-    spawnOptions?: { env?: NodeJS.ProcessEnv },
+    spawnOptions?: { env?: NodeJS.ProcessEnv; killTree?: boolean },
   ) => {
     const child = new FakeChild();
-    spawned.push({ command, args, env: spawnOptions?.env, child });
+    spawned.push({
+      command,
+      args,
+      env: spawnOptions?.env,
+      killTree: spawnOptions?.killTree,
+      child,
+    });
     if (basename(command) === 'brew') {
       const outcome = options.brewOutcome ?? 'ok';
       queueMicrotask(() => {
@@ -392,7 +410,7 @@ function harness(options: HarnessOptions = {}) {
     downloadOptions.onProgress?.({ received: 100, total: 100 });
   };
 
-  const env: NodeJS.ProcessEnv = { PATH: '/usr/bin', HOME: home };
+  const env: NodeJS.ProcessEnv = { PATH: '/usr/bin', HOME: home, ...options.env };
   if (options.javaHome !== undefined) {
     env.JAVA_HOME = options.javaHome;
   }
@@ -417,7 +435,6 @@ function harness(options: HarnessOptions = {}) {
     managedDir,
     installDir,
     toolsInstallDir,
-    skipsFile,
     pinnedVersion: options.pinned ?? PINNED,
     releaseUrl: 'https://github.com/mobile-dev-inc/maestro/releases/download',
     pins: {
@@ -472,11 +489,14 @@ function harness(options: HarnessOptions = {}) {
     onSetupFinished: () => {
       setupFinished += 1;
     },
+    onSetupOpened: () => {
+      setupOpened += 1;
+    },
     now: () => now,
     timeouts: {
       check: options.checkTimeoutMs ?? 2_000,
       verify: options.verifyTimeoutMs ?? 2_000,
-      readyHold: 300,
+      readyHold: options.readyHoldMs ?? 300,
       focusThrottle: 5_000,
       brewSilence: options.brewSilenceMs ?? 60_000,
     },
@@ -491,7 +511,6 @@ function harness(options: HarnessOptions = {}) {
     managedDir,
     installDir,
     toolsInstallDir,
-    skipsFile,
     calls,
     changed,
     installEvents,
@@ -500,6 +519,7 @@ function harness(options: HarnessOptions = {}) {
     opened,
     downloads,
     setupFinished: () => setupFinished,
+    setupOpened: () => setupOpened,
     advance: (ms: number) => {
       now += ms;
     },
@@ -1339,7 +1359,6 @@ describe('installing', () => {
       checkTimeoutMs: 400,
     });
     h.service.start();
-    h.service.skipSetup();
     h.service.check();
     h.service.install({ androidTermsAccepted: true });
     await lastInstallEvent(h, 'done');
@@ -1386,7 +1405,8 @@ describe('installing', () => {
       h.service.install({ androidTermsAccepted: true });
       const failed = await lastInstallEvent(h, 'failed');
 
-      expect(failed.code).toBe('doctor/extract-failed');
+      // The archive unpacked fine; the swap is what failed (managed-tools criterion 14).
+      expect(failed.code).toBe('doctor/install-failed');
       expect(readFileSync(join(h.managedDir, 'version'), 'utf8')).toBe('2.8.0\n');
       expect(isExecutableFile(join(h.managedDir, 'bin', 'maestro'))).toBe(true);
       expect(existsSync(`${h.managedDir}.old`)).toBe(false);
@@ -1567,21 +1587,6 @@ describe('the setup flow', () => {
   });
 
   /** Criterion 18. */
-  it('skips setup only while it is active', async () => {
-    const h = harness({ archive: 'http-503', managed: '2.9.0' });
-    h.service.start();
-    h.service.windowShown();
-    await lastInstallEvent(h, 'failed');
-
-    expect(h.service.skipSetup()).toEqual({ ok: true, data: {} });
-    expect(h.setupFinished()).toBe(1);
-    expect(h.service.state().setup).toEqual({ active: false, reason: null, plan: null });
-    expect(h.service.skipSetup()).toEqual({
-      ok: false,
-      error: { code: 'doctor/setup-not-active', message: expect.any(String) },
-    });
-  });
-
   it('does not run the setup install when setup is inactive', async () => {
     const h = harness({ managed: PINNED });
     h.service.start();
@@ -1594,14 +1599,18 @@ describe('the setup flow', () => {
   /** An install from the sheet completes in place — the workspace never
    * leaves for the setup window (criterion 31's main-side half). */
   it('never presents anything for an install started outside setup', async () => {
-    const h = harness({ managed: '2.8.0', override: '' });
+    // Everything there at launch, so setup never opened; Maestro vanishes
+    // afterwards and the sheet installs it in place.
+    const h = harness({ managed: PINNED, override: '' });
     h.service.start();
-    h.service.skipSetup();
+    expect(h.service.state().setup.active).toBe(false);
+    rmSync(h.managedDir, { recursive: true, force: true });
     h.service.install({ androidTermsAccepted: true });
     await lastInstallEvent(h, 'done');
     await new Promise((resolve) => setTimeout(resolve, 20));
 
-    expect(h.setupFinished()).toBe(1);
+    expect(h.setupFinished()).toBe(0);
+    expect(h.setupOpened()).toBe(0);
   });
 });
 
@@ -1625,6 +1634,20 @@ describe('dispose', () => {
     expect(h.installEvents.some((event) => event.kind === 'done')).toBe(false);
   });
 
+  it('settles even when a job dir cannot be removed', async () => {
+    const h = harness({ managed: PINNED });
+    h.service.start();
+    mkdirSync(h.installDir, { recursive: true });
+    writeFileSync(join(h.installDir, 'stale'), '');
+    // No write bit on the dir: its file cannot be unlinked, so `rm` fails.
+    chmodSync(h.installDir, 0o555);
+    try {
+      await expect(h.service.dispose()).resolves.toBeUndefined();
+    } finally {
+      chmodSync(h.installDir, 0o755);
+    }
+  });
+
   it('aborts a check in flight and pushes nothing after', async () => {
     const h = harness({ managed: PINNED, answers: { 'gh auth status --active': 'hang' } });
     h.service.start();
@@ -1641,7 +1664,7 @@ describe('dispose', () => {
 
 /* ── Managed tools: the setup decision ─────────────────────────────────── */
 
-/** Managed-tools criteria 2, 8 — files alone, four tools, skips remembered. */
+/** Managed-tools criterion 2 — files alone, four tools, nothing remembered. */
 describe('the setup decision over four tools', () => {
   it('is a first run when gh has no executable on its ladder, whatever Maestro says', () => {
     const h = harness({ managed: PINNED, gh: null });
@@ -1691,35 +1714,6 @@ describe('the setup decision over four tools', () => {
     h.service.start();
 
     expect(h.service.state().setup.active).toBe(false);
-  });
-
-  it('stays closed for a tool skipped under the current pin, and opens again when the pin moved', () => {
-    const skipped = harness({
-      managed: PINNED,
-      adb: null,
-      skips: { adb: '2026-09-04T10:00:00.000Z', pins: { adb: PLATFORM_TOOLS_PINNED } },
-    });
-    skipped.service.start();
-    expect(skipped.service.state().setup.active).toBe(false);
-
-    const moved = harness({
-      managed: PINNED,
-      adb: null,
-      skips: { adb: '2026-09-04T10:00:00.000Z', pins: { adb: '36.0.0' } },
-    });
-    moved.service.start();
-    expect(moved.service.state().setup.active).toBe(true);
-  });
-
-  it('still opens for a Maestro pin change beside a skipped tool', () => {
-    const h = harness({
-      managed: '2.9.0',
-      adb: null,
-      skips: { adb: '2026-09-04T10:00:00.000Z', pins: { adb: PLATFORM_TOOLS_PINNED } },
-    });
-    h.service.start();
-
-    expect(h.service.state().setup).toEqual({ active: true, reason: 'update', plan: null });
   });
 });
 
@@ -1998,6 +1992,8 @@ describe('installing the four tools', () => {
 
     const brewSpawn = h.spawned.find((entry) => basename(entry.command) === 'brew');
     expect(brewSpawn?.args).toEqual(['install', 'gh']);
+    // brew's curl/ruby children die with it on abort and dispose.
+    expect(brewSpawn?.killTree).toBe(true);
     expect(brewSpawn?.env).toMatchObject({
       HOMEBREW_NO_AUTO_UPDATE: '1',
       HOMEBREW_NO_INSTALL_CLEANUP: '1',
@@ -2021,52 +2017,30 @@ describe('installing the four tools', () => {
     expect(existsSync(join(h.home, '.zprofile'))).toBe(false);
   });
 
-  it('skips adb without the terms, records the skip and installs the rest', async () => {
-    const h = harness({
-      gh: null,
-      adb: null,
-      managed: PINNED,
-      answers: {
-        'gh --version': { stdout: `gh version ${GH_PINNED} (2026-09-03)\n`, stderr: '', code: 0 },
-      },
-    });
+  it('refuses to install adb without the terms, and installs nothing else either', async () => {
+    const h = harness({ gh: null, adb: null, managed: PINNED });
     h.service.start();
     h.service.windowShown();
     await planOf(h);
-    h.service.install({ androidTermsAccepted: false });
-    await lastInstallEvent(h, 'settled');
 
-    expect(h.installEvents.map((event) => event.kind)).toEqual([
-      'skipped',
-      ...Array.from({ length: 8 }, () => 'progress'),
-      'done',
-      'settled',
-    ]);
-    expect(h.installEvents[0]).toEqual({
-      kind: 'skipped',
-      installId: 'install-1',
-      tool: 'adb',
-      detail: 'Accept the Android SDK terms to install',
+    expect(h.service.install({ androidTermsAccepted: false })).toEqual({
+      ok: false,
+      error: { code: 'doctor/terms-required', message: expect.any(String) },
     });
-    expect(h.changed.at(-1)?.setup.plan?.tools.find((tool) => tool.id === 'adb')).toEqual({
-      id: 'adb',
-      state: 'skipped',
-      method: 'direct',
-      detail: 'Accept the Android SDK terms to install',
+    expect(h.installEvents).toEqual([]);
+    expect(h.downloads).toEqual([]);
+    // Without adb in the queue the terms are not asked for.
+    expect(h.service.install({ tools: ['gh'], androidTermsAccepted: false })).toEqual({
+      ok: true,
+      data: { installId: 'install-1' },
     });
-    expect(JSON.parse(readFileSync(h.skipsFile, 'utf8'))).toEqual({
-      adb: expect.any(String),
-      pins: { adb: PLATFORM_TOOLS_PINNED },
-    });
-    expect(h.downloads.some((url) => url.includes('platform-tools'))).toBe(false);
   });
 
-  it('installs only the tools named, and forgets a skip once the tool lands', async () => {
+  it('installs only the tools named', async () => {
     const h = harness({
       gh: null,
       adb: null,
       managed: PINNED,
-      skips: { adb: '2026-09-04T10:00:00.000Z', pins: { adb: PLATFORM_TOOLS_PINNED } },
       answers: {
         'adb --version': {
           stdout: `Android Debug Bridge version 1.0.41\nVersion ${PLATFORM_TOOLS_PINNED}-13800542\n`,
@@ -2084,7 +2058,121 @@ describe('installing the four tools', () => {
     expect(
       h.installEvents.filter((event) => event.kind === 'done').map((event) => event.tool),
     ).toEqual(['adb']);
-    expect(JSON.parse(readFileSync(h.skipsFile, 'utf8'))).toEqual({ pins: {} });
+  });
+
+  it('writes the profile through a symlink, keeping the link and the target file', async () => {
+    // Dotfiles are often symlinks into a repo; a rename over the link would
+    // replace it with a plain file and orphan the repo's copy.
+    const h = harness({
+      gh: null,
+      managed: PINNED,
+      shell: '/bin/zsh',
+      answers: {
+        'gh --version': { stdout: `gh version ${GH_PINNED} (2026-09-03)\n`, stderr: '', code: 0 },
+      },
+    });
+    const dotfiles = join(h.home, 'dotfiles');
+    mkdirSync(dotfiles);
+    const target = join(dotfiles, 'zprofile');
+    writeFileSync(target, 'export FOO=bar\n');
+    chmodSync(target, 0o600);
+    symlinkSync(target, join(h.home, '.zprofile'));
+    h.service.start();
+    h.service.windowShown();
+    await planOf(h);
+    h.service.install({ tools: ['gh'], androidTermsAccepted: true });
+    await lastInstallEvent(h, 'settled');
+
+    expect(lstatSync(join(h.home, '.zprofile')).isSymbolicLink()).toBe(true);
+    expect(readFileSync(target, 'utf8')).toBe(
+      'export FOO=bar\n\n# >>> Conductor >>>\nexport PATH="$HOME/.conductor/bin:$PATH"\n# <<< Conductor <<<\n',
+    );
+    expect(statSync(target).mode & 0o777).toBe(0o600);
+    expect(readdirSync(dotfiles)).toEqual(['zprofile']);
+  });
+
+  it('installs anyway and says so when the profile cannot be read', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      const h = harness({
+        gh: null,
+        managed: PINNED,
+        shell: '/bin/zsh',
+        answers: {
+          'gh --version': { stdout: `gh version ${GH_PINNED} (2026-09-03)\n`, stderr: '', code: 0 },
+        },
+      });
+      // A directory where the profile should be: it reads as neither a file nor nothing.
+      mkdirSync(join(h.home, '.zprofile'));
+      h.service.start();
+      h.service.windowShown();
+      await planOf(h);
+      h.service.install({ tools: ['gh'], androidTermsAccepted: true });
+      const settled = await lastInstallEvent(h, 'settled');
+
+      expect(settled.failed).toEqual([]);
+      expect(error.mock.calls.map((call) => String(call[0]))).toEqual([
+        expect.stringContaining('could not be read'),
+      ]);
+      expect(statSync(join(h.home, '.zprofile')).isDirectory()).toBe(true);
+    } finally {
+      error.mockRestore();
+    }
+  });
+
+  it('installs anyway and says so when the profile cannot be written', async () => {
+    const error = vi.spyOn(console, 'error').mockImplementation(() => {});
+    const h = harness({
+      gh: null,
+      managed: PINNED,
+      shell: '/bin/zsh',
+      answers: {
+        'gh --version': { stdout: `gh version ${GH_PINNED} (2026-09-03)\n`, stderr: '', code: 0 },
+      },
+    });
+    // The tools land under ~/.conductor, which exists; the profile would be a new file in a home that refuses it.
+    mkdirSync(join(h.home, '.conductor'), { recursive: true });
+    chmodSync(h.home, 0o555);
+    try {
+      h.service.start();
+      h.service.windowShown();
+      await planOf(h);
+      h.service.install({ tools: ['gh'], androidTermsAccepted: true });
+      const settled = await lastInstallEvent(h, 'settled');
+
+      expect(settled.failed).toEqual([]);
+      expect(error.mock.calls.map((call) => String(call[0]))).toEqual([
+        expect.stringContaining('could not be written'),
+      ]);
+      expect(existsSync(join(h.home, '.zprofile'))).toBe(false);
+    } finally {
+      chmodSync(h.home, 0o755);
+      error.mockRestore();
+    }
+  });
+
+  it('reports a failure after extraction that is not the archive as install-failed, not as unpacking', async () => {
+    const h = harness({
+      gh: null,
+      managed: PINNED,
+      answers: {
+        'gh --version': { stdout: `gh version ${GH_PINNED} (2026-09-03)\n`, stderr: '', code: 0 },
+      },
+    });
+    // A file where ~/.conductor/tools must be a directory: mkdir fails after a good extract.
+    mkdirSync(join(h.home, '.conductor'), { recursive: true });
+    writeFileSync(join(h.home, '.conductor', 'tools'), '');
+    h.service.start();
+    h.service.windowShown();
+    await planOf(h);
+    h.service.install({ tools: ['gh'], androidTermsAccepted: true });
+    await lastInstallEvent(h, 'settled');
+
+    const state = h.service.state().install;
+    const failed = state !== null && 'failed' in state ? state.failed : {};
+    expect(failed.gh?.code).toBe('doctor/install-failed');
+    expect(failed.gh?.message).toBe("The GitHub CLI couldn't be installed on this Mac.");
+    expect(failed.gh?.detail).toMatch(/EEXIST|ENOTDIR/);
   });
 
   it('carries on past a failed tool, names it in settled, and keeps setup open with the failures by tool', async () => {
@@ -2237,7 +2325,6 @@ describe('installing the four tools', () => {
 
   it('downloads on the next attempt after a Homebrew failure, from the sheet as well', async () => {
     const h = harness({
-      gh: null,
       brew: '/opt/homebrew/bin/brew',
       brewOutcome: 'fails',
       managed: PINNED,
@@ -2246,7 +2333,9 @@ describe('installing the four tools', () => {
       },
     });
     h.service.start();
-    h.service.skipSetup();
+    expect(h.service.state().setup.active).toBe(false);
+    // gh vanishes after launch: the sheet is where it comes back from.
+    h.setGh(null);
     h.service.windowShown();
     await report(h);
     h.service.install({ tools: ['gh'], androidTermsAccepted: true });
@@ -2262,52 +2351,6 @@ describe('installing the four tools', () => {
     expect(
       h.installEvents.filter((event) => event.kind === 'done').map((event) => event.tool),
     ).toEqual(['gh']);
-  });
-
-  it('rechecks the adb row after skipping it for the terms (criterion 16)', async () => {
-    const h = harness({ adb: null, managed: PINNED });
-    h.service.start();
-    h.service.windowShown();
-    await planOf(h);
-    h.calls.length = 0;
-    h.service.install({ androidTermsAccepted: false });
-    await lastInstallEvent(h, 'settled');
-
-    expect(h.changed.filter((state) => state.report !== null).length).toBeGreaterThan(0);
-    expect(h.changed.at(-1)?.report?.rows.find((row) => row.id === 'adb')?.detail).toBe(
-      'adb --version → command not found',
-    );
-  });
-
-  it('refuses Continue while an install runs, and cancels a sign-in it leaves behind', async () => {
-    const h = harness({
-      gh: null,
-      brew: '/opt/homebrew/bin/brew',
-      brewOutcome: 'silent',
-      managed: PINNED,
-    });
-    h.service.start();
-    h.service.windowShown();
-    await planOf(h);
-    h.service.install({ androidTermsAccepted: true });
-    await vi.waitFor(() => {
-      expect(h.spawned).toHaveLength(1);
-    });
-    expect(h.service.skipSetup()).toEqual({
-      ok: false,
-      error: { code: 'doctor/install-active', message: expect.any(String) },
-    });
-    expect(h.setupFinished()).toBe(0);
-
-    const signing = harness({ managed: PINNED, gh: null });
-    signing.service.start();
-    signing.service.windowShown();
-    await planOf(signing);
-    signing.setGh(GH);
-    signing.service.login();
-    expect(signing.service.skipSetup()).toEqual({ ok: true, data: {} });
-    expect(signing.spawned[0]?.child.killed).toBe(1);
-    expect(signing.setupFinished()).toBe(1);
   });
 
   it('kills a Homebrew that prints nothing for too long', async () => {
@@ -2363,17 +2406,122 @@ describe('installing the four tools', () => {
     expect(h.downloads).toEqual([]);
   });
 
-  it('records the skips of the tools still missing on Continue', async () => {
-    const h = harness({ gh: null, adb: null, managed: PINNED });
-    h.service.start();
-    h.service.windowShown();
-    await planOf(h);
+  /** Criterion 32 — the sign-in is mandatory: it decides the installer at
+   * launch from files alone, and again on the first report. */
+  describe('the mandatory sign-in', () => {
+    it('opens the installer at launch for a gh with no github.com in its hosts file', () => {
+      const out = harness({ managed: PINNED, hosts: null });
+      out.service.start();
+      expect(out.service.state().setup).toEqual({ active: true, reason: 'sign-in', plan: null });
 
-    expect(h.service.skipSetup()).toEqual({ ok: true, data: {} });
-    expect(JSON.parse(readFileSync(h.skipsFile, 'utf8'))).toEqual({
-      gh: expect.any(String),
-      adb: expect.any(String),
-      pins: { gh: GH_PINNED, adb: PLATFORM_TOOLS_PINNED },
+      const other = harness({ managed: PINNED, hosts: 'ghe.example.com:\n    user: me\n' });
+      other.service.start();
+      expect(other.service.state().setup.reason).toBe('sign-in');
+
+      const signedIn = harness({ managed: PINNED });
+      signedIn.service.start();
+      expect(signedIn.service.state().setup.active).toBe(false);
+    });
+
+    it('trusts a token in the environment, and lets a missing tool keep first-run as the reason', () => {
+      const token = harness({ managed: PINNED, hosts: null, env: { GH_TOKEN: 'x' } });
+      token.service.start();
+      expect(token.service.state().setup.active).toBe(false);
+
+      const missing = harness({ managed: PINNED, adb: null, hosts: null });
+      missing.service.start();
+      expect(missing.service.state().setup.reason).toBe('first-run');
+    });
+
+    it('waits on the card, then presents the app once the sign-in lands', async () => {
+      const h = harness({
+        managed: PINNED,
+        hosts: null,
+        answers: {
+          'gh auth status --active': { stdout: '', stderr: 'You are not logged in\n', code: 1 },
+        },
+        readyHoldMs: 10,
+      });
+      h.service.start();
+      h.service.windowShown();
+      const plan = await planOf(h);
+      expect(plan.tools.every((tool) => tool.state === 'present')).toBe(true);
+      await new Promise((resolve) => setTimeout(resolve, 40));
+      expect(h.setupFinished()).toBe(0);
+
+      h.service.login();
+      await vi.waitFor(() => {
+        expect(h.spawned).toHaveLength(1);
+      });
+      h.setAnswer('gh auth status --active', {
+        stdout: 'github.com\n  ✓ Logged in to github.com account octocat (keyring)\n',
+        stderr: '',
+        code: 0,
+      });
+      h.spawned[0]?.child.stderr('✓ Logged in as octocat\n');
+      h.spawned[0]?.child.exit({ code: 0, error: null });
+      await vi.waitFor(() => {
+        expect(h.setupFinished()).toBe(1);
+      });
+    });
+
+    it('presents the app at once when the report says the file probe was wrong', async () => {
+      const h = harness({ managed: PINNED, hosts: null, readyHoldMs: 10 });
+      h.service.start();
+      expect(h.service.state().setup.reason).toBe('sign-in');
+      h.service.windowShown();
+
+      // The plan lands, then the ready hold, then the app — the plan is
+      // gone with the setup by the time this resolves.
+      await vi.waitFor(() => {
+        expect(h.setupFinished()).toBe(1);
+      });
+      expect(h.installEvents).toEqual([]);
+      expect(h.service.state().setup.active).toBe(false);
+    });
+
+    it('reopens the installer on the first report when gh turns out signed out', async () => {
+      const h = harness({
+        managed: PINNED,
+        answers: {
+          'gh auth status --active': { stdout: '', stderr: 'You are not logged in\n', code: 1 },
+        },
+      });
+      h.service.start();
+      expect(h.service.state().setup.active).toBe(false);
+      h.service.windowShown();
+      await report(h);
+
+      expect(h.setupOpened()).toBe(1);
+      expect(h.service.state().setup.active).toBe(true);
+      expect(h.service.state().setup.reason).toBe('sign-in');
+      expect(h.service.state().setup.plan?.tools.every((tool) => tool.state === 'present')).toBe(
+        true,
+      );
+    });
+
+    it('never pulls the workspace back for a sign-in lost after the first report', async () => {
+      const h = harness({ managed: PINNED });
+      h.service.start();
+      h.service.windowShown();
+      await report(h);
+      expect(h.service.state().setup.active).toBe(false);
+
+      h.setAnswer('gh auth status --active', {
+        stdout: '',
+        stderr: 'You are not logged in\n',
+        code: 1,
+      });
+      h.service.check();
+      await vi.waitFor(() => {
+        expect(h.changed.at(-1)?.report?.rows.find((row) => row.id === 'github-auth')?.status).toBe(
+          'warn',
+        );
+        expect(h.changed.at(-1)?.checking).toBe(false);
+      });
+
+      expect(h.setupOpened()).toBe(0);
+      expect(h.service.state().setup.active).toBe(false);
     });
   });
 
@@ -2441,6 +2589,7 @@ describe('the GitHub sign-in', () => {
     expect(child?.args).toEqual(LOGIN_ARGV);
     expect(child?.child.written).toEqual(['\n']);
     expect(child?.child.ended).toBe(1);
+    expect(child?.killTree).toBe(true);
     expect(h.service.state().login).toEqual({ loginId: 'login-1', code: null });
 
     child?.child.stderr('\n! First copy your one-time');
@@ -2522,6 +2671,24 @@ describe('the GitHub sign-in', () => {
     });
     expect(h.service.state().login).toBeNull();
     expect(h.service.loginCancel()).toEqual({ ok: true, data: {} });
+  });
+
+  it('reports a gh that failed to start with the spawn error as the detail', async () => {
+    const h = harness({ managed: PINNED, answers: { 'gh auth status --active': SIGNED_OUT } });
+    h.service.start();
+    h.service.login();
+    h.spawned[0]?.child.exit({ code: null, error: new Error('spawn gh EACCES') });
+    await vi.waitFor(() => {
+      expect(h.loginEvents.at(-1)?.kind).toBe('failed');
+    });
+
+    expect(h.loginEvents.at(-1)).toEqual({
+      kind: 'failed',
+      loginId: 'login-1',
+      code: 'doctor/login-failed',
+      message: "GitHub sign-in didn't finish. Try again when you're ready.",
+      detail: 'spawn gh EACCES',
+    });
   });
 
   it('opens only the two URLs main knows', async () => {

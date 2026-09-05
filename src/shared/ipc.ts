@@ -50,7 +50,6 @@ export const CHANNELS = {
   doctorStatus: 'doctor:status',
   doctorCheck: 'doctor:check',
   doctorInstall: 'doctor:install',
-  doctorSkipSetup: 'doctor:skip-setup',
   doctorLogin: 'doctor:login',
   doctorLoginCancel: 'doctor:login-cancel',
   doctorOpenLoginUrl: 'doctor:open-login-url',
@@ -650,13 +649,13 @@ const toolId = z.enum(['java', 'maestro', 'gh', 'adb']);
 /**
  * One line of the plan (managed-tools criterion 3): what the setup window
  * will do about a tool. `present` carries the doctor row's detail; `install`
- * the method; `unavailable` is an Intel Mac (criterion 6); `skipped` a tool
- * the person continued without (criteria 8, 10).
+ * the method; `unavailable` is an Intel Mac (criterion 6). The four tools
+ * are mandatory — nothing is ever skipped.
  */
 const doctorPlanEntry = z
   .object({
     id: toolId,
-    state: z.enum(['present', 'install', 'unavailable', 'skipped']),
+    state: z.enum(['present', 'install', 'unavailable']),
     method: z.enum(['homebrew', 'direct']).nullable(),
     detail: z.string(),
   })
@@ -707,7 +706,8 @@ const doctorState = z
     setup: z
       .object({
         active: z.boolean(),
-        reason: z.enum(['first-run', 'update']).nullable(),
+        // `sign-in`: every tool is there and gh is signed out (managed-tools criterion 32).
+        reason: z.enum(['first-run', 'update', 'sign-in']).nullable(),
         plan: doctorPlan.nullable(),
       })
       .strict(),
@@ -745,9 +745,6 @@ const doctorInstallEvent = z.discriminatedUnion('kind', [
     .strict(),
   doctorInstallFailure
     .extend({ kind: z.literal('failed'), installId: z.string(), tool: toolId })
-    .strict(),
-  z
-    .object({ kind: z.literal('skipped'), installId: z.string(), tool: toolId, detail: z.string() })
     .strict(),
   z
     .object({
@@ -947,7 +944,6 @@ export const IPC = {
     ]),
     response: z.object({ installId: z.string() }).strict(),
   },
-  [CHANNELS.doctorSkipSetup]: { request: noArguments, response: z.object({}).strict() },
   // The id immediately; the code and the outcome stream as `doctor:login-event`.
   [CHANNELS.doctorLogin]: {
     request: noArguments,
@@ -1022,7 +1018,6 @@ export type DoctorLoginEvent = z.infer<typeof doctorLoginEvent>;
 export type ToolId = z.infer<typeof toolId>;
 export type DoctorPlan = z.infer<typeof doctorPlan>;
 export type DoctorPlanEntry = z.infer<typeof doctorPlanEntry>;
-export type DoctorPlanState = DoctorPlanEntry['state'];
 export type DoctorInstallMethod = NonNullable<DoctorPlanEntry['method']>;
 
 /**
@@ -1243,14 +1238,16 @@ export const ERROR_CODES = {
   /** `CONFIG.MAESTRO_PATH` is set: an explicit path is the person's decision,
    * and the installer never runs over it (doctor criterion 10). */
   doctorMaestroOverridden: 'doctor/maestro-overridden',
-  /** `doctor:skip-setup` outside the setup window (criterion 18). */
-  doctorSetupNotActive: 'doctor/setup-not-active',
   /** The four ways the install pipeline fails (criterion 17), each with its
    * own product-language sentence; the raw cause rides in `detail`. */
   doctorDownloadFailed: 'doctor/download-failed',
   doctorChecksumMismatch: 'doctor/checksum-mismatch',
   doctorExtractFailed: 'doctor/extract-failed',
   doctorVerifyFailed: 'doctor/verify-failed',
+  /** A step after the archive — the tree, the links — failed for a reason
+   * that is neither the download nor the unpacking (a permission, a file
+   * in the way). Managed-tools criterion 14's fifth sentence. */
+  doctorInstallFailed: 'doctor/install-failed',
   /** Homebrew exited non-zero (managed-tools criterion 15); the next attempt
    * downloads directly. */
   doctorBrewFailed: 'doctor/brew-failed',
@@ -1262,6 +1259,10 @@ export const ERROR_CODES = {
   doctorLoginFailed: 'doctor/login-failed',
   /** A direct install asked for on an Intel Mac (criterion 6). */
   doctorUnsupportedArch: 'doctor/unsupported-arch',
+  /** `doctor:install` with `adb` in the queue and the Android SDK terms not
+   * accepted (criterion 10) — the tools are mandatory, so nothing is skipped;
+   * the install waits for the checkbox. */
+  doctorTermsRequired: 'doctor/terms-required',
 } as const;
 
 export type ErrorCode = (typeof ERROR_CODES)[keyof typeof ERROR_CODES];
@@ -1395,11 +1396,6 @@ export interface ConductorApi {
   doctorInstall: (
     ...args: Request<'doctor:install'>
   ) => Promise<Result<Response<'doctor:install'>>>;
-  /** "Continue without installing" (criterion 18) — main records the skips,
-   * presents the app in the same window; refused outside the setup window. */
-  doctorSkipSetup: (
-    ...args: Request<'doctor:skip-setup'>
-  ) => Promise<Result<Response<'doctor:skip-setup'>>>;
   /** Starts gh's own device flow and answers with the id at once; the code
    * and the outcome arrive on `onDoctorLoginEvent` (criterion 28). */
   doctorLogin: (...args: Request<'doctor:login'>) => Promise<Result<Response<'doctor:login'>>>;

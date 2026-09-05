@@ -145,9 +145,7 @@ describe('Setup', () => {
       name: 'I accept the Android SDK Platform-Tools terms',
     });
     expect(box).not.toBeChecked();
-    expect(toolRow('Android platform-tools')).toHaveTextContent(
-      'Skipped — accept the terms to install',
-    );
+    expect(toolRow('Android platform-tools')).toHaveTextContent('Accept the terms to install');
     await userEvent.click(box);
     expect(toolRow('Android platform-tools')).toHaveTextContent('Will install with Homebrew');
     await userEvent.click(screen.getByRole('button', { name: 'Read the terms' }));
@@ -174,22 +172,55 @@ describe('Setup', () => {
     expect(screen.queryByRole('checkbox')).not.toBeInTheDocument();
   });
 
-  /** Criterion 38 — the two buttons of the plan screen. */
-  it('Install sends the terms decision; Continue without installing skips', async () => {
+  /** Criterion 38 — Install is the plan screen's one button: the four tools
+   * are mandatory, so there is nothing to continue without. */
+  it('offers Install alone, held until the Android terms are accepted', async () => {
     const install = vi.fn(() =>
       Promise.resolve({ ok: true as const, data: { installId: 'install-1' } }),
     );
-    const skip = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
     window.conductor.doctorInstall = install;
-    window.conductor.doctorSkipSetup = skip;
     render(<Setup />);
 
+    expect(
+      screen.queryByRole('button', { name: 'Continue without installing' }),
+    ).not.toBeInTheDocument();
+    const button = screen.getByRole('button', { name: 'Install' });
+    expect(button).toBeDisabled();
+    await userEvent.click(button);
+    expect(install).not.toHaveBeenCalled();
+
     await userEvent.click(screen.getByRole('checkbox'));
-    await userEvent.click(screen.getByRole('button', { name: 'Install' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Continue without installing' }));
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
 
     expect(install).toHaveBeenCalledExactlyOnceWith({ androidTermsAccepted: true });
-    expect(skip).toHaveBeenCalledOnce();
+  });
+
+  it('offers Install at once when adb is already there', async () => {
+    const install = vi.fn(() =>
+      Promise.resolve({ ok: true as const, data: { installId: 'install-1' } }),
+    );
+    window.conductor.doctorInstall = install;
+    useDoctorStore.setState({
+      setup: {
+        active: true,
+        reason: 'first-run',
+        plan: {
+          ...PLAN,
+          tools: PLAN.tools.map((tool) =>
+            tool.id === 'adb' ? { ...tool, state: 'present', method: null, detail: 'adb' } : tool,
+          ),
+          androidTermsRequired: false,
+        },
+      },
+    });
+    render(<Setup />);
+
+    const button = screen.getByRole('button', { name: 'Install' });
+    expect(button).toBeEnabled();
+    await userEvent.click(button);
+
+    expect(install).toHaveBeenCalledExactlyOnceWith({ androidTermsAccepted: false });
   });
 
   /** Criterion 39 — the progress screen. */
@@ -269,19 +300,16 @@ describe('Setup', () => {
       expect(screen.queryByText(/No available formula/)).not.toBeInTheDocument();
     });
 
-    it('Try again reinstalls the failed tools; Continue skips', async () => {
+    it('offers Try again alone — a failed tool is retried, never continued past', async () => {
       const install = vi.fn(() =>
         Promise.resolve({ ok: true as const, data: { installId: 'install-2' } }),
       );
-      const skip = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
       window.conductor.doctorInstall = install;
-      window.conductor.doctorSkipSetup = skip;
       render(<Setup />);
 
-      await userEvent.click(screen.getByRole('button', { name: 'Continue' }));
+      expect(screen.queryByRole('button', { name: 'Continue' })).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'Try again' }));
 
-      expect(skip).toHaveBeenCalledOnce();
       expect(install).toHaveBeenCalledExactlyOnceWith({
         tools: ['gh'],
         androidTermsAccepted: false,
@@ -302,13 +330,11 @@ describe('Setup', () => {
       });
     });
 
-    it('offers Sign in with GitHub and Skip for now', async () => {
+    it('offers Sign in with GitHub, and no way to skip it', async () => {
       const login = vi.fn(() =>
         Promise.resolve({ ok: true as const, data: { loginId: 'login-1' } }),
       );
-      const skip = vi.fn(() => Promise.resolve({ ok: true as const, data: {} }));
       window.conductor.doctorLogin = login;
-      window.conductor.doctorSkipSetup = skip;
       render(<Setup />);
 
       expect(screen.getByRole('heading', { name: 'Sign in to GitHub' })).toBeInTheDocument();
@@ -317,11 +343,40 @@ describe('Setup', () => {
           'Conductor sends your tests to GitHub through the GitHub CLI. Sign in happens in your browser — Conductor never sees your password or token.',
         ),
       ).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Skip for now' })).not.toBeInTheDocument();
       await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
-      await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
 
       expect(login).toHaveBeenCalledOnce();
-      expect(skip).toHaveBeenCalledOnce();
+    });
+
+    /** Criterion 32 — the sign-in alone opened the installer: every tool is
+     * there, nothing to install, the card at once and no Install button. */
+    it('shows the card straight away when the sign-in is the reason', () => {
+      useDoctorStore.setState({
+        install: null,
+        outcomes: { installId: null, byTool: {} },
+        setup: {
+          active: true,
+          reason: 'sign-in',
+          plan: {
+            ...PLAN,
+            tools: PLAN.tools.map((tool) => ({
+              ...tool,
+              state: 'present',
+              method: null,
+              detail: 'x',
+            })),
+            androidTermsRequired: false,
+          },
+        },
+      });
+      render(<Setup />);
+
+      expect(screen.getByRole('heading', { name: 'Sign in to GitHub' })).toBeInTheDocument();
+      expect(screen.queryByRole('button', { name: 'Install' })).not.toBeInTheDocument();
+      expect(
+        screen.getByText('Everything is installed. One last step: sign in to GitHub.'),
+      ).toBeInTheDocument();
     });
 
     it('does not appear while signed in already', () => {
@@ -366,7 +421,7 @@ describe('Setup', () => {
       render(<Setup />);
 
       expect(screen.getByText('Signed in as octocat')).toBeInTheDocument();
-      expect(screen.getByTestId('setup-check')).toBeInTheDocument();
+      expect(screen.getByTestId('signin-check')).toBeInTheDocument();
     });
 
     it('shows the failure sentence and Try again', async () => {

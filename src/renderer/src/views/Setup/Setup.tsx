@@ -21,6 +21,8 @@ import styles from './Setup.module.css';
 
 const COPY =
   "Conductor needs a few tools to run tests on this Mac. It installs what's missing — no password needed.";
+/** Criterion 32 — every tool is there; the sign-in alone opened the window. */
+const SIGN_IN_COPY = 'Everything is installed. One last step: sign in to GitHub.';
 
 const GLYPHS: Record<SetupGlyph, IconName> = {
   present: 'circle-check',
@@ -44,7 +46,6 @@ export function Setup(): JSX.Element {
   const setAndroidTerms = useDoctorStore((state) => state.setAndroidTerms);
   const openAndroidTerms = useDoctorStore((state) => state.openAndroidTerms);
   const installTools = useDoctorStore((state) => state.installTools);
-  const skipSetup = useDoctorStore((state) => state.skipSetup);
   const signIn = useDoctorStore((state) => state.signIn);
   const signInCancel = useDoctorStore((state) => state.signInCancel);
   const openLoginUrl = useDoctorStore((state) => state.openLoginUrl);
@@ -55,10 +56,15 @@ export function Setup(): JSX.Element {
   const failed: ToolId[] = settled
     ? rows.filter((row) => install.failed[row.id] !== undefined).map((row) => row.id)
     : [];
-  // Criterion 32 — after the tools land with nothing failed, gh is there
-  // and the sign-in is not: the card, before the app.
+  // Criterion 32 — nothing left to install (the tools landed with nothing
+  // failed, or every one was there and the sign-in alone opened the window),
+  // gh is there and the sign-in is not: the card, before the app. The
+  // sign-in is mandatory; the card has no way past it.
+  const nothingLeft = settled
+    ? failed.length === 0
+    : (plan?.tools.every((tool) => tool.state === 'present') ?? false);
   const signInStep =
-    (settled && failed.length === 0 && (signInPending || signedInAs !== null)) || login !== null;
+    (!running && nothingLeft && (signInPending || signedInAs !== null)) || login !== null;
   const planScreen = !running && !settled && !signInStep && plan !== null;
   const termsLine = planScreen && plan.androidTermsRequired;
 
@@ -76,7 +82,9 @@ export function Setup(): JSX.Element {
             <p className={styles.copy}>
               {reason === 'update'
                 ? `Conductor's test runner is moving to ${version}. This happens once.`
-                : COPY}
+                : reason === 'sign-in'
+                  ? SIGN_IN_COPY
+                  : COPY}
             </p>
           </div>
         </header>
@@ -98,9 +106,6 @@ export function Setup(): JSX.Element {
             }}
             onSignIn={() => {
               void signIn();
-            }}
-            onSkip={() => {
-              void skipSetup();
             }}
             running={login !== null && 'code' in login ? { code: login.code } : null}
             signedInAs={signedInAs}
@@ -133,17 +138,11 @@ export function Setup(): JSX.Element {
 
         {planScreen ? (
           <div className={styles.actions}>
-            <button
-              className={styles.ghost}
-              onClick={() => {
-                void skipSetup();
-              }}
-              type="button"
-            >
-              Continue without installing
-            </button>
+            {/* Criterion 38 — the one button: the four tools are mandatory,
+                and adb waits on its terms. */}
             <button
               className={styles.primary}
+              disabled={termsLine && !termsAccepted}
               onClick={() => {
                 void installTools();
               }}
@@ -155,15 +154,6 @@ export function Setup(): JSX.Element {
         ) : null}
         {settled && failed.length > 0 && login === null ? (
           <div className={styles.actions}>
-            <button
-              className={styles.ghost}
-              onClick={() => {
-                void skipSetup();
-              }}
-              type="button"
-            >
-              Continue
-            </button>
             <button
               className={styles.primary}
               onClick={() => {

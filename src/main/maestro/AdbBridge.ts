@@ -102,9 +102,10 @@ export class AdbBridge {
   /**
    * Criterion 1's order, first hit wins: the configured path, the copy
    * Conductor downloaded (`~/.conductor/bin/adb`, managed-tools criterion
-   * 25), `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the macOS SDK default, then
-   * `PATH`. `PATH` is walked rather than shelled out to, so the same probe
-   * answers every candidate.
+   * 25), `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the macOS SDK default, `PATH`,
+   * then Homebrew's prefixes — the cask links adb only there, and a GUI
+   * launch's `PATH` lacks them (as `resolve-gh` says). `PATH` is walked
+   * rather than shelled out to, so the same probe answers every candidate.
    */
   resolve(): string | null {
     if (this.resolved !== null) {
@@ -119,6 +120,8 @@ export class AdbBridge {
       ...sdkCandidate(env.ANDROID_SDK_ROOT),
       join(home, 'Library', 'Android', 'sdk', 'platform-tools', 'adb'),
       ...(env.PATH ?? '').split(delimiter).flatMap((dir) => (dir === '' ? [] : [join(dir, 'adb')])),
+      '/opt/homebrew/bin/adb',
+      '/usr/local/bin/adb',
     ];
 
     this.resolved = candidates.find((candidate) => isExecutable(candidate)) ?? null;

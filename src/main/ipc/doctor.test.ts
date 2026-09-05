@@ -48,7 +48,6 @@ function fakeDoctor(): Record<string, ReturnType<typeof vi.fn>> {
     status: vi.fn(() => ({ ok: true, data: STATE })),
     check: vi.fn(() => ({ ok: true, data: { started: true } })),
     install: vi.fn(() => ({ ok: true, data: { installId: 'install-1' } })),
-    skipSetup: vi.fn(() => ({ ok: true, data: {} })),
     login: vi.fn(() => ({ ok: true, data: { loginId: 'login-1' } })),
     loginCancel: vi.fn(() => ({ ok: true, data: {} })),
     openLoginUrl: vi.fn(() => Promise.resolve({ ok: true, data: {} })),
@@ -73,7 +72,7 @@ async function invoke(channel: string, ...args: unknown[]): Promise<Result<unkno
 }
 
 describe('registerDoctorIpc', () => {
-  it('registers exactly the eight doctor channels', () => {
+  it('registers exactly the seven doctor channels', () => {
     expect([...listeners.keys()].sort()).toEqual([
       'doctor:check',
       'doctor:install',
@@ -81,7 +80,6 @@ describe('registerDoctorIpc', () => {
       'doctor:login-cancel',
       'doctor:open-login-url',
       'doctor:open-url',
-      'doctor:skip-setup',
       'doctor:status',
     ]);
   });
@@ -89,7 +87,6 @@ describe('registerDoctorIpc', () => {
   it.each([
     ['doctor:status', 'status'],
     ['doctor:check', 'check'],
-    ['doctor:skip-setup', 'skipSetup'],
     ['doctor:login', 'login'],
     ['doctor:login-cancel', 'loginCancel'],
     ['doctor:open-login-url', 'openLoginUrl'],

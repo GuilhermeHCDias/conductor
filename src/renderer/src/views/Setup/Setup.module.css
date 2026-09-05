@@ -229,7 +229,6 @@
   justify-content: flex-end;
 }
 
-.ghost,
 .primary {
   align-items: center;
   border-radius: var(--a-radius-field);
@@ -239,17 +238,6 @@
   height: 28px;
   padding: 0 var(--space-6);
   transition: var(--t-hover);
-}
-
-.ghost {
-  background: transparent;
-  border: 1px solid var(--a-hair);
-  color: var(--text-secondary);
-}
-
-.ghost:hover {
-  background: var(--glass-hover);
-  color: var(--text-primary);
 }
 
 .primary {
@@ -262,7 +250,13 @@
   background: var(--accent-strong);
 }
 
-.ghost:focus-visible,
+/* Held until the Android terms are accepted (criterion 38). */
+.primary:disabled {
+  background: var(--glass-hover);
+  color: var(--text-disabled);
+  cursor: default;
+}
+
 .primary:focus-visible {
   box-shadow: var(--glow-accent);
   outline: none;

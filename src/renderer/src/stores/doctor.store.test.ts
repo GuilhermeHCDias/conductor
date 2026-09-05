@@ -1,7 +1,8 @@
-import type { DoctorPlan, DoctorReport, DoctorRow, DoctorState, Result } from '@shared/ipc';
+import type { DoctorPlan, DoctorReport, DoctorRow, DoctorState, Result, ToolId } from '@shared/ipc';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import {
   installableTools,
+  isToolId,
   resetDoctorStore,
   selectIssues,
   selectSignInPending,
@@ -148,9 +149,6 @@ describe('applyInstallEvent', () => {
    * next tool runs and until the plan catches up. */
   it('collects each tool’s outcome for the install on screen', () => {
     store().applyInstallEvent(
-      ok({ kind: 'skipped', installId: 'install-1', tool: 'adb', detail: 'terms' }),
-    );
-    store().applyInstallEvent(
       ok({
         kind: 'progress',
         installId: 'install-1',
@@ -169,7 +167,6 @@ describe('applyInstallEvent', () => {
     expect(store().outcomes).toEqual({
       installId: 'install-1',
       byTool: {
-        adb: { kind: 'skipped', detail: 'terms' },
         java: { kind: 'done', version: '21.52.203' },
         gh: { kind: 'failed', ...FAILURE },
       },
@@ -286,15 +283,6 @@ describe('actions', () => {
     error.mockRestore();
   });
 
-  it('skipSetup asks main', async () => {
-    const skip = vi.fn(() => Promise.resolve(ok({})));
-    window.conductor.doctorSkipSetup = skip;
-
-    await store().skipSetup();
-
-    expect(skip).toHaveBeenCalledOnce();
-  });
-
   /** Criteria 28, 30, 31, 37 — the sign-in and the two pages, by intent alone. */
   it('signIn, signInCancel, openLoginUrl and openAndroidTerms ask main and send nothing else', async () => {
     const login = vi.fn(() => Promise.resolve(ok({ loginId: 'login-1' })));
@@ -361,7 +349,17 @@ describe('selectors', () => {
   /** Criterion 42 — Install on the four managed rows while not ok; never on
    * a configured Maestro, never while an install runs. */
   it('offers Install on the managed rows that are not ok', () => {
-    expect([...installableTools(store())]).toEqual([]);
+    const installable = (): ToolId[] => {
+      const state = store();
+      return [
+        ...installableTools({
+          rows: state.report?.rows ?? [],
+          install: state.install,
+          overridden: state.overridden,
+        }),
+      ];
+    };
+    expect(installable()).toEqual([]);
     store().applyState(
       ok({
         ...STATE,
@@ -375,7 +373,7 @@ describe('selectors', () => {
         },
       }),
     );
-    expect([...installableTools(store())]).toEqual(['java', 'maestro', 'adb']);
+    expect(installable()).toEqual(['java', 'maestro', 'adb']);
 
     store().applyState(
       ok({
@@ -391,13 +389,13 @@ describe('selectors', () => {
         },
       }),
     );
-    expect([...installableTools(store())]).toEqual(['java']);
+    expect(installable()).toEqual(['java']);
 
     store().applyState(ok(STATE));
     store().applyInstallEvent(
       ok({ kind: 'progress', installId: 'install-1', tool: 'maestro', pct: 1, step: 'x' }),
     );
-    expect([...installableTools(store())]).toEqual([]);
+    expect(installable()).toEqual([]);
   });
 
   /** Criteria 32, 43 — gh is there, the sign-in is not. */
@@ -417,5 +415,14 @@ describe('selectors', () => {
       }),
     );
     expect(selectSignInPending(store())).toBe(false);
+  });
+});
+
+describe('isToolId', () => {
+  it('narrows a row id to one of the four managed tools', () => {
+    expect(isToolId('java')).toBe(true);
+    expect(isToolId('adb')).toBe(true);
+    expect(isToolId('xcode-clt')).toBe(false);
+    expect(isToolId('github-auth')).toBe(false);
   });
 });

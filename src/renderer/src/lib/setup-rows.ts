@@ -17,8 +17,7 @@ import type {
 /** What one tool came to in the install on screen (criterion 39). */
 export type ToolOutcome =
   | { readonly kind: 'done'; readonly version: string }
-  | ({ readonly kind: 'failed' } & DoctorInstallFailure)
-  | { readonly kind: 'skipped'; readonly detail: string };
+  | ({ readonly kind: 'failed' } & DoctorInstallFailure);
 
 /** Criterion 1's order, criterion 35's names. */
 export const TOOL_DISPLAY_NAMES: Record<ToolId, string> = {
@@ -84,8 +83,6 @@ function rowOf(
         return { glyph: 'present', mono: `Installed · ${short ?? outcome.version}`, bar: null };
       case 'failed':
         return { glyph: 'fail', mono: outcome.message, bar: null };
-      case 'skipped':
-        return { glyph: 'alert', mono: 'Skipped', bar: null };
     }
   }
   switch (entry.state) {
@@ -93,14 +90,12 @@ function rowOf(
       return { glyph: 'present', mono: `Installed · ${short ?? entry.detail}`, bar: null };
     case 'unavailable':
       return { glyph: 'alert', mono: entry.detail, bar: null };
-    case 'skipped':
-      return { glyph: 'alert', mono: 'Skipped', bar: null };
     case 'install':
       if (running) {
         return { glyph: 'install', mono: 'Waiting', bar: null };
       }
       if (id === 'adb' && !termsAccepted) {
-        return { glyph: 'alert', mono: 'Skipped — accept the terms to install', bar: null };
+        return { glyph: 'alert', mono: 'Accept the terms to install', bar: null };
       }
       return {
         glyph: 'install',

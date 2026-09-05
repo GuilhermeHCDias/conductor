@@ -20,8 +20,6 @@ export type SignInCardProps = {
   readonly signedInAs: string | null;
   readonly failedMessage: string | null;
   readonly onSignIn: () => void;
-  /** "Skip for now" — absent where there is nothing to skip (the sheet). */
-  readonly onSkip?: () => void;
   readonly onOpen: () => void;
   readonly onCancel: () => void;
 };
@@ -31,7 +29,6 @@ export function SignInCard({
   signedInAs,
   failedMessage,
   onSignIn,
-  onSkip,
   onOpen,
   onCancel,
 }: SignInCardProps): JSX.Element {
@@ -39,12 +36,13 @@ export function SignInCard({
     return (
       <div className={styles.card}>
         <p className={styles.signedIn}>
-          <Icon className={styles.check} data-testid="setup-check" name="check" size={13} />
+          <Icon className={styles.check} data-testid="signin-check" name="check" size={13} />
           Signed in as {signedInAs}
         </p>
       </div>
     );
   }
+  const code = running === null ? null : running.code;
   return (
     <div className={styles.card}>
       <h2 className={styles.cardTitle}>Sign in to GitHub</h2>
@@ -58,11 +56,6 @@ export function SignInCard({
             </p>
           )}
           <div className={styles.actions}>
-            {onSkip !== undefined ? (
-              <button className={styles.ghost} onClick={onSkip} type="button">
-                Skip for now
-              </button>
-            ) : null}
             <button className={styles.primary} onClick={onSignIn} type="button">
               {failedMessage === null ? 'Sign in with GitHub' : 'Try again'}
             </button>
@@ -70,18 +63,18 @@ export function SignInCard({
         </>
       ) : (
         <>
-          {running.code === null ? (
+          {code === null ? (
             <p className={styles.cardCopy}>Asking GitHub for your one-time code…</p>
           ) : (
             <>
               <div className={styles.codeLine}>
                 <span className={styles.code} data-testid="login-code">
-                  {running.code}
+                  {code}
                 </span>
                 <button
                   className={styles.ghost}
                   onClick={() => {
-                    void navigator.clipboard.writeText(running.code ?? '');
+                    void navigator.clipboard.writeText(code);
                   }}
                   type="button"
                 >

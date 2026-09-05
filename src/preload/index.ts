@@ -50,7 +50,6 @@ const api: ConductorApi = {
   doctorStatus: () => ipcRenderer.invoke(CHANNELS.doctorStatus),
   doctorCheck: () => ipcRenderer.invoke(CHANNELS.doctorCheck),
   doctorInstall: (request) => ipcRenderer.invoke(CHANNELS.doctorInstall, request),
-  doctorSkipSetup: () => ipcRenderer.invoke(CHANNELS.doctorSkipSetup),
   doctorLogin: () => ipcRenderer.invoke(CHANNELS.doctorLogin),
   doctorLoginCancel: () => ipcRenderer.invoke(CHANNELS.doctorLoginCancel),
   doctorOpenLoginUrl: () => ipcRenderer.invoke(CHANNELS.doctorOpenLoginUrl),

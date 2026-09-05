@@ -97,27 +97,22 @@ describe('setupRows', () => {
   });
 
   /** Criterion 37 — unchecked terms show on the adb row. */
-  it('reads the adb row as skipped while the terms are unchecked', () => {
+  it('reads the adb row as waiting on the terms while they are unchecked', () => {
     expect(rows(PLAN, null, NONE, false).at(-1)).toEqual([
       'adb',
       'alert',
-      'Skipped — accept the terms to install',
+      'Accept the terms to install',
     ]);
   });
 
-  it('reads Not available on Intel Macs and Skipped from the plan', () => {
+  it('reads Not available on Intel Macs from the plan', () => {
     const plan: DoctorPlan = {
       ...PLAN,
       tools: [
         { id: 'java', state: 'unavailable', method: null, detail: 'Not available on Intel Macs' },
         { id: 'maestro', state: 'install', method: 'direct', detail: 'Will download' },
         { id: 'gh', state: 'unavailable', method: null, detail: 'Not available on Intel Macs' },
-        {
-          id: 'adb',
-          state: 'skipped',
-          method: 'direct',
-          detail: 'Accept the Android SDK terms to install',
-        },
+        { id: 'adb', state: 'unavailable', method: null, detail: 'Not available on Intel Macs' },
       ],
       androidTermsRequired: false,
     };
@@ -125,7 +120,7 @@ describe('setupRows', () => {
       ['java', 'alert', 'Not available on Intel Macs'],
       ['maestro', 'install', 'Will download'],
       ['gh', 'alert', 'Not available on Intel Macs'],
-      ['adb', 'alert', 'Skipped'],
+      ['adb', 'alert', 'Not available on Intel Macs'],
     ]);
   });
 
@@ -186,24 +181,24 @@ describe('setupRows', () => {
     expect(result[3]?.bar).toEqual({ pct: 43 });
   });
 
-  it('prefers the doctor short once the row rechecked, and reads skipped and settled outcomes', () => {
+  it('prefers the doctor short once the row rechecked, and reads settled outcomes', () => {
     const result = setupRows({
       plan: PLAN,
       install: { installId: 'install-1', failed: {} },
       outcomes: {
         maestro: { kind: 'done', version: '2.10.0' },
         gh: { kind: 'done', version: 'brew' },
-        adb: { kind: 'skipped', detail: 'Accept the Android SDK terms to install' },
+        adb: { kind: 'done', version: '37.0.1' },
       },
       report: REPORT,
-      termsAccepted: false,
+      termsAccepted: true,
     });
 
     expect(result.map((row) => [row.id, row.glyph, row.mono])).toEqual([
       ['java', 'present', 'Installed · java 21.0.4'],
       ['maestro', 'present', 'Installed · 2.10.0'],
       ['gh', 'present', 'Installed · gh 2.100.0'],
-      ['adb', 'alert', 'Skipped'],
+      ['adb', 'present', 'Installed · 37.0.1'],
     ]);
   });
 });

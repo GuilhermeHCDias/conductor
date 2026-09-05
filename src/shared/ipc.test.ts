@@ -56,7 +56,6 @@ describe('the channels', () => {
       'doctor:status',
       'doctor:check',
       'doctor:install',
-      'doctor:skip-setup',
       'doctor:login',
       'doctor:login-cancel',
       'doctor:open-login-url',
@@ -1726,12 +1725,7 @@ describe('doctor:*', () => {
           'maestro 2.10.0 · /Users/x/Library/Application Support/conductor/maestro/bin/maestro',
       },
       { id: 'gh', state: 'install', method: 'homebrew', detail: 'Will install with Homebrew' },
-      {
-        id: 'adb',
-        state: 'skipped',
-        method: 'homebrew',
-        detail: 'Accept the Android SDK terms to install',
-      },
+      { id: 'adb', state: 'install', method: 'homebrew', detail: 'Will install with Homebrew' },
     ],
     homebrew: '/opt/homebrew/bin/brew',
     androidTermsRequired: true,
@@ -1742,7 +1736,6 @@ describe('doctor:*', () => {
     for (const channel of [
       CHANNELS.doctorStatus,
       CHANNELS.doctorCheck,
-      CHANNELS.doctorSkipSetup,
       CHANNELS.doctorLogin,
       CHANNELS.doctorLoginCancel,
       CHANNELS.doctorOpenLoginUrl,
@@ -1787,6 +1780,15 @@ describe('doctor:*', () => {
       schema.safeParse({ ...STATE, setup: { active: true, reason: 'first-run', plan: PLAN } })
         .success,
     ).toBe(true);
+    // Managed-tools criterion 32 — the sign-in alone opens the installer.
+    expect(
+      schema.safeParse({ ...STATE, setup: { active: true, reason: 'sign-in', plan: PLAN } })
+        .success,
+    ).toBe(true);
+    expect(
+      schema.safeParse({ ...STATE, setup: { active: true, reason: 'skipped', plan: PLAN } })
+        .success,
+    ).toBe(false);
     expect(
       schema.safeParse({
         ...STATE,
@@ -1989,14 +1991,13 @@ describe('doctor:*', () => {
       true,
     );
     expect(IPC[CHANNELS.doctorInstall].response.safeParse({}).success).toBe(false);
-    expect(IPC[CHANNELS.doctorSkipSetup].response.safeParse({}).success).toBe(true);
   });
 
   it('pushes the same state on doctor:changed', () => {
     expect(PUSH[PUSH_CHANNELS.doctorChanged].safeParse(STATE).success).toBe(true);
   });
 
-  it('pushes progress, done, failed, skipped and settled install events, each naming its install and tool', () => {
+  it('pushes progress, done, failed and settled install events, each naming its install and tool — never a skipped one', () => {
     const schema = PUSH[PUSH_CHANNELS.doctorInstallEvent];
 
     expect(
@@ -2031,6 +2032,7 @@ describe('doctor:*', () => {
         detail: 'sha256 mismatch',
       }).success,
     ).toBe(true);
+    // The four tools are mandatory: nothing is ever skipped, so the event does not exist.
     expect(
       schema.safeParse({
         installId: 'install-1',
@@ -2038,7 +2040,7 @@ describe('doctor:*', () => {
         tool: 'adb',
         detail: 'Accept the Android SDK terms to install',
       }).success,
-    ).toBe(true);
+    ).toBe(false);
     expect(schema.safeParse({ installId: 'install-1', kind: 'settled', failed: [] }).success).toBe(
       true,
     );
@@ -2067,33 +2069,35 @@ describe('doctor:*', () => {
     ).toBe(false);
   });
 
-  it('declares the twelve doctor codes', () => {
+  it('declares the thirteen doctor codes', () => {
     expect([
       ERROR_CODES.doctorInstallActive,
       ERROR_CODES.doctorMaestroOverridden,
-      ERROR_CODES.doctorSetupNotActive,
       ERROR_CODES.doctorDownloadFailed,
       ERROR_CODES.doctorChecksumMismatch,
       ERROR_CODES.doctorExtractFailed,
       ERROR_CODES.doctorVerifyFailed,
+      ERROR_CODES.doctorInstallFailed,
       ERROR_CODES.doctorBrewFailed,
       ERROR_CODES.doctorGhMissing,
       ERROR_CODES.doctorLoginActive,
       ERROR_CODES.doctorLoginFailed,
       ERROR_CODES.doctorUnsupportedArch,
+      ERROR_CODES.doctorTermsRequired,
     ]).toEqual([
       'doctor/install-active',
       'doctor/maestro-overridden',
-      'doctor/setup-not-active',
       'doctor/download-failed',
       'doctor/checksum-mismatch',
       'doctor/extract-failed',
       'doctor/verify-failed',
+      'doctor/install-failed',
       'doctor/brew-failed',
       'doctor/gh-missing',
       'doctor/login-active',
       'doctor/login-failed',
       'doctor/unsupported-arch',
+      'doctor/terms-required',
     ]);
   });
 });

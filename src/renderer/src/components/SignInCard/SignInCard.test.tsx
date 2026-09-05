@@ -10,27 +10,19 @@ import { SignInCard } from './SignInCard';
  */
 
 function handlers() {
-  return { onSignIn: vi.fn(), onSkip: vi.fn(), onOpen: vi.fn(), onCancel: vi.fn() };
+  return { onSignIn: vi.fn(), onOpen: vi.fn(), onCancel: vi.fn() };
 }
 
 describe('SignInCard', () => {
-  it('offers Sign in with GitHub and, when given one, Skip for now', async () => {
+  it('offers Sign in with GitHub, and never a way to skip it', async () => {
     const h = handlers();
     render(<SignInCard failedMessage={null} running={null} signedInAs={null} {...h} />);
 
     expect(screen.getByRole('heading', { name: 'Sign in to GitHub' })).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Skip for now' })).not.toBeInTheDocument();
     await userEvent.click(screen.getByRole('button', { name: 'Sign in with GitHub' }));
-    await userEvent.click(screen.getByRole('button', { name: 'Skip for now' }));
 
     expect(h.onSignIn).toHaveBeenCalledOnce();
-    expect(h.onSkip).toHaveBeenCalledOnce();
-  });
-
-  it('shows no Skip for now where there is nothing to skip', () => {
-    const { onSkip: _skip, ...rest } = handlers();
-    render(<SignInCard failedMessage={null} running={null} signedInAs={null} {...rest} />);
-
-    expect(screen.queryByRole('button', { name: 'Skip for now' })).not.toBeInTheDocument();
   });
 
   it('shows the code with Copy, the URL line, Open GitHub and Cancel', async () => {

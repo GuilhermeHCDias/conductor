@@ -3,7 +3,7 @@ import type { DoctorService } from '../services/doctor.service';
 import { handleResult } from './handle';
 
 /**
- * Eight invokes and nothing else: validate, call one `DoctorService` method,
+ * Seven invokes and nothing else: validate, call one `DoctorService` method,
  * hand the `Result` back. The push halves — `doctor:changed`,
  * `doctor:install-event`, `doctor:login-event` — are wired in the
  * composition root. The renderer sends intent (criterion 37): which tools,
@@ -19,10 +19,6 @@ export function registerDoctorIpc(deps: { readonly doctor: DoctorService }): voi
 
   handleResult(CHANNELS.doctorInstall, IPC[CHANNELS.doctorInstall].request, (request) =>
     deps.doctor.install(request),
-  );
-
-  handleResult(CHANNELS.doctorSkipSetup, IPC[CHANNELS.doctorSkipSetup].request, () =>
-    deps.doctor.skipSetup(),
   );
 
   handleResult(CHANNELS.doctorLogin, IPC[CHANNELS.doctorLogin].request, () => deps.doctor.login());

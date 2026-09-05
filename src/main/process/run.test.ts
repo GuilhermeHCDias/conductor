@@ -311,6 +311,28 @@ describe('spawnStreaming', () => {
     expect(stdout()).toContain('echo:ping');
   });
 
+  it('closes the child’s stdin on endStdin, so a child reading to EOF can finish', async () => {
+    const child = spawnStreaming(process.execPath, [
+      '-e',
+      'process.stdin.resume(); process.stdin.on("end", () => process.exit(7))',
+    ]);
+    const { exit } = collect(child);
+
+    child.endStdin?.();
+
+    await expect(exit).resolves.toMatchObject({ code: 7, error: null });
+  });
+
+  it('survives endStdin on a child that already exited', async () => {
+    const child = spawnStreaming(process.execPath, ['-e', '']);
+    const { exit } = collect(child);
+    await exit;
+
+    expect(() => {
+      child.endStdin?.();
+    }).not.toThrow();
+  });
+
   it('captures stderr separately', async () => {
     const child = spawnStreaming(process.execPath, ['-e', 'process.stderr.write("warned")']);
     let stderr = '';

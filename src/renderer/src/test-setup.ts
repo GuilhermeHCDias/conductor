@@ -107,8 +107,6 @@ function idleConductor(): ConductorApi {
     doctorCheck: () => Promise.resolve({ ok: true, data: { started: false } }),
     doctorInstall: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
-    doctorSkipSetup: () =>
-      Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     doctorLogin: () =>
       Promise.resolve({ ok: false, error: { code: 'test/stub', message: 'stub' } }),
     doctorLoginCancel: () => Promise.resolve({ ok: true, data: {} }),

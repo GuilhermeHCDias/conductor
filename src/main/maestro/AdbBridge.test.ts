@@ -166,6 +166,19 @@ describe('resolving the adb binary', () => {
     expect(calls[0]?.command).toBe('/usr/bin/adb');
   });
 
+  /** Managed-tools criterion 25 — the Homebrew cask links adb only into its
+   * prefix, which a GUI launch's PATH lacks (as `resolve-gh` says). */
+  it('falls back to the Homebrew prefixes when PATH lacks adb', async () => {
+    const { bridge, calls } = makeBridge(() => ok(DEVICES), {
+      env: { PATH: '/usr/bin' },
+      executable: ['/usr/local/bin/adb', '/opt/homebrew/bin/adb'],
+    });
+
+    await bridge.listDevices();
+
+    expect(calls[0]?.command).toBe('/opt/homebrew/bin/adb');
+  });
+
   /** Criterion 2 — a stable code, not an empty list. */
   it('reports adb-not-found when nothing resolves', async () => {
     const { bridge, calls } = makeBridge(() => ok(DEVICES), { env: {}, executable: [] });

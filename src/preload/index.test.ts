@@ -70,7 +70,6 @@ describe('the bridge', () => {
       'doctorLoginCancel',
       'doctorOpenLoginUrl',
       'doctorOpenUrl',
-      'doctorSkipSetup',
       'doctorStatus',
       'flowCreate',
       'flowCreateFolder',

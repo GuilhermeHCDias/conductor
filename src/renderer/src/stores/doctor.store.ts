@@ -23,6 +23,14 @@ import type { ToolOutcome } from '../lib/setup-rows';
 /** The four managed tools, in the order the plan lists them. */
 export const TOOL_ORDER: readonly ToolId[] = ['java', 'maestro', 'gh', 'adb'];
 
+const TOOL_IDS: ReadonlySet<string> = new Set<string>(TOOL_ORDER);
+
+/** Narrows a doctor row id to a managed tool — the sheet's Install button
+ * exists only for those (criterion 42). */
+export function isToolId(id: string): id is ToolId {
+  return TOOL_IDS.has(id);
+}
+
 export type { ToolOutcome };
 
 export type DoctorData = {
@@ -59,7 +67,6 @@ export type DoctorActions = {
   /** The tools named, or every tool the plan says to install. Named apart
    * from the `install` state it starts, which a push replaces. */
   installTools: (tools?: readonly ToolId[]) => Promise<void>;
-  skipSetup: () => Promise<void>;
   /** Named apart from the `login` state, as above. */
   signIn: () => Promise<void>;
   signInCancel: () => Promise<void>;
@@ -162,14 +169,6 @@ export const useDoctorStore = create<DoctorStoreState>((set, get) => ({
         });
         return;
       }
-      case 'skipped':
-        set({
-          outcomes: {
-            ...outcomes,
-            byTool: { ...outcomes.byTool, [event.tool]: { kind: 'skipped', detail: event.detail } },
-          },
-        });
-        return;
       case 'settled': {
         const failed: Partial<Record<ToolId, DoctorInstallFailure>> = {};
         for (const tool of event.failed) {
@@ -221,11 +220,6 @@ export const useDoctorStore = create<DoctorStoreState>((set, get) => ({
         ? { androidTermsAccepted: get().androidTermsAccepted }
         : { tools, androidTermsAccepted: get().androidTermsAccepted };
     await ask('The install could not be started', () => window.conductor.doctorInstall(request));
-  },
-
-  /** "Continue without installing" (criterion 38), "Skip for now" (criterion 40). */
-  skipSetup: async () => {
-    await ask('Setup could not be skipped', () => window.conductor.doctorSkipSetup());
   },
 
   signIn: async () => {
@@ -301,9 +295,9 @@ const NO_TOOLS: ReadonlySet<ToolId> = new Set();
  * returns a fresh set).
  */
 export function installableTools(
-  state: Pick<DoctorData, 'report' | 'install' | 'overridden'>,
+  state: Pick<DoctorData, 'install' | 'overridden'> & { readonly rows: readonly DoctorRow[] },
 ): ReadonlySet<ToolId> {
-  if (state.report === null || (state.install !== null && 'pct' in state.install)) {
+  if (state.rows.length === 0 || (state.install !== null && 'pct' in state.install)) {
     return NO_TOOLS;
   }
   const tools = new Set<ToolId>();
@@ -311,7 +305,7 @@ export function installableTools(
     if (state.overridden.includes(tool)) {
       continue;
     }
-    const row = state.report.rows.find((entry) => entry.id === tool);
+    const row = state.rows.find((entry) => entry.id === tool);
     if (row !== undefined && row.status !== 'ok') {
       tools.add(tool);
     }

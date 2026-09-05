@@ -30,7 +30,8 @@ export function profileFileFor(shell: string | undefined): ProfileFile | null {
 /**
  * The idempotent insert: `existing` is the file's text, or `null` when there
  * is no file. A block already there means nothing to write; one whose inner
- * line differs is replaced where it stands; otherwise the block is appended
+ * line differs is replaced where it stands; an opener with no closer is
+ * replaced through the end of the file; otherwise the block is appended
  * after a leading blank line.
  */
 export function upsertProfileBlock(existing: string | null): {
@@ -39,6 +40,12 @@ export function upsertProfileBlock(existing: string | null): {
 } {
   const text = existing ?? '';
   const start = text.indexOf(`${OPEN}\n`);
+  if (start !== -1 && !text.includes(CLOSE, start)) {
+    // An opener with no closer — an interrupted write or a hand edit. The
+    // block owns the rest of the file; a second block would keep the stray
+    // opener forever.
+    return { content: `${text.slice(0, start)}${PROFILE_BLOCK}`, changed: true };
+  }
   const end = start === -1 ? -1 : text.indexOf(CLOSE, start);
   if (start !== -1 && end !== -1) {
     // The closing line may end the file without its newline.

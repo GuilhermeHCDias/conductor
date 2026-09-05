@@ -112,7 +112,7 @@ describe('Doctor', () => {
     expect(screen.getByText('1 thing needs you')).toBeInTheDocument();
     expect(
       screen.getByText(
-        'Conductor runs without them, and cannot install or sign in on your behalf.',
+        'Conductor runs without them, and can install or sign in for some of them below.',
       ),
     ).toBeInTheDocument();
     unmount();

@@ -73,6 +73,17 @@ describe('upsertProfileBlock', () => {
     expect(upsertProfileBlock(existing)).toEqual({ content: existing, changed: false });
   });
 
+  it('replaces to the end of the file when the opening marker has no closing one', () => {
+    // A crash between the two writes, or a hand edit, leaves the opener alone;
+    // appending a second block would keep the stray line forever.
+    const broken =
+      'export FOO=bar\n\n# >>> Conductor >>>\nexport PATH="$HOME/.conductor/bin:$PATH"\n';
+    expect(upsertProfileBlock(broken)).toEqual({
+      content: `export FOO=bar\n\n${BLOCK}`,
+      changed: true,
+    });
+  });
+
   it('treats an empty file as a file, not as absent', () => {
     expect(upsertProfileBlock('')).toEqual({ content: `\n${BLOCK}`, changed: true });
   });

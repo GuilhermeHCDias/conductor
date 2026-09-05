@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { brewEnv, brewFailureDetail, brewInstallArgs, brewStep, findHomebrew } from './homebrew';
+import {
+  brewEnv,
+  brewFailureDetail,
+  brewInstallArgs,
+  brewStep,
+  findHomebrew,
+  isBrewTool,
+} from './homebrew';
 
 /**
  * Homebrew, decided without running it (criteria 4, 12, 15): where `brew`
@@ -96,5 +103,14 @@ describe('brewFailureDetail', () => {
   it('falls back to the exit code when stderr says nothing', () => {
     expect(brewFailureDetail('', 1)).toBe('brew exited 1');
     expect(brewFailureDetail('  \n', null)).toBe('brew was killed');
+  });
+});
+
+describe('isBrewTool', () => {
+  it('is true for the two tools Homebrew installs and false for the rest', () => {
+    expect(isBrewTool('gh')).toBe(true);
+    expect(isBrewTool('adb')).toBe(true);
+    expect(isBrewTool('java')).toBe(false);
+    expect(isBrewTool('maestro')).toBe(false);
   });
 });

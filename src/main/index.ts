@@ -36,7 +36,7 @@ import { resolveClaude } from './services/resolve-claude';
 import { resolveGh } from './services/resolve-gh';
 import { RunService } from './services/run.service';
 import { SnapshotService } from './services/snapshot.service';
-import { createWindow, ICON_PATH, presentConnect, presentWorkspace } from './window';
+import { createWindow, ICON_PATH, presentConnect, presentSetup, presentWorkspace } from './window';
 
 /**
  * The composition root: it owns the service registry, registers the IPC
@@ -222,8 +222,16 @@ if (!app.requestSingleInstanceLock()) {
       return window;
     };
 
-    /** Doctor criterion 16 — setup finished, installed or skipped: the same
-     * window becomes the connect card or the workspace. */
+    /** Managed-tools criterion 32 — the first report found gh signed out:
+     * the same window goes back to the installer geometry. */
+    const presentSetupAgain = (): void => {
+      for (const window of BrowserWindow.getAllWindows()) {
+        presentSetup(window);
+      }
+    };
+
+    /** Doctor criterion 16 — setup finished, installed and signed in: the
+     * same window becomes the connect card or the workspace. */
     const presentAfterSetup = (): void => {
       connectWindow = repoService.activeWorkspace() === null;
       for (const window of BrowserWindow.getAllWindows()) {
@@ -426,7 +434,6 @@ if (!app.requestSingleInstanceLock()) {
       managedDir: managedMaestroDir,
       installDir: join(userData, 'maestro-install'),
       toolsInstallDir: join(userData, 'tools-install'),
-      skipsFile: join(userData, 'doctor-skips.json'),
       pinnedVersion: CONFIG.MAESTRO_VERSION,
       releaseUrl: CONFIG.MAESTRO_RELEASE_URL,
       // Managed-tools criterion 13 — the three direct-download pins.
@@ -474,7 +481,15 @@ if (!app.requestSingleInstanceLock()) {
       download: downloadToFile,
       // Criteria 30, 37 — the service picks one of its two literal URLs by
       // id; nothing the renderer sent ever reaches this call.
-      openExternal: (url) => shell.openExternal(url),
+      openExternal: (url) => {
+        // Belt and braces for the Security table's rule: the service picks
+        // by id, and the adapter still checks the host it was handed.
+        const { host } = new URL(url);
+        if (host !== 'github.com' && host !== 'developer.android.com') {
+          return Promise.reject(new Error(`Refusing to open ${host}`));
+        }
+        return shell.openExternal(url);
+      },
       emitChanged: (payload) => {
         broadcast(PUSH_CHANNELS.doctorChanged, payload);
       },
@@ -485,6 +500,7 @@ if (!app.requestSingleInstanceLock()) {
         broadcast(PUSH_CHANNELS.doctorLoginEvent, payload);
       },
       onSetupFinished: presentAfterSetup,
+      onSetupOpened: presentSetupAgain,
     });
     // Criterion 13 — a file read, before the window exists: its geometry
     // follows this decision.

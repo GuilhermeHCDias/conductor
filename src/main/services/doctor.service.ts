@@ -1,11 +1,12 @@
 import { createHash } from 'node:crypto';
-import { createReadStream, readdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { createReadStream, readdirSync, readFileSync } from 'node:fs';
 import {
   chmod,
   lstat,
   mkdir,
   readdir,
   readFile,
+  realpath,
   rename,
   rm,
   stat,
@@ -36,7 +37,13 @@ import {
   managedMaestroMarker,
   resolveMaestro,
 } from '../maestro/resolve-maestro';
-import type { RunOptions, RunResult, SpawnOptions, StreamingProcess } from '../process/run';
+import type {
+  ExitReason,
+  RunOptions,
+  RunResult,
+  SpawnOptions,
+  StreamingProcess,
+} from '../process/run';
 import {
   firstLine,
   parseAdbVersion,
@@ -49,8 +56,16 @@ import {
   parseJavaVersion,
 } from './doctor-parse';
 import type { DownloadFn } from './download';
+import { ghHostsFile, signedInByFiles } from './gh-hosts';
 import { GH_DEVICE_URL, parseLoginAccount, parseLoginCode } from './gh-login-parse';
-import { type BrewToolId, brewEnv, brewFailureDetail, brewInstallArgs, brewStep } from './homebrew';
+import {
+  type BrewToolId,
+  brewEnv,
+  brewFailureDetail,
+  brewInstallArgs,
+  brewStep,
+  isBrewTool,
+} from './homebrew';
 import { profileFileFor, upsertProfileBlock } from './shell-profile';
 import {
   type DirectToolId,
@@ -81,10 +96,12 @@ import {
  * each on its own clock, pushed whole when all have settled; the install
  * pipeline, one tool at a time in criterion 1's order, streamed as
  * `doctor:install-event` pushes and rechecked between tools; and the sign-in
- * child, streamed as `doctor:login-event`. All abort on `dispose`, and an
- * interrupted direct install can never leave a copy that resolves as
- * installed: the marker lands before the rename, and the rename is the only
- * step that makes a tree visible (criterion 18).
+ * child, streamed as `doctor:login-event`. All abort on `dispose`, and a
+ * direct install interrupted before its rename can never leave a copy that
+ * resolves as installed: the marker lands before the rename, and the rename
+ * is the only step that makes a tree visible (criterion 18). An abort during
+ * the final version probe leaves the renamed tree — checksummed, unpacked
+ * and linked — in place, to be probed again by the next check.
  */
 
 export type DoctorTimeouts = {
@@ -129,8 +146,6 @@ export type DoctorServiceDeps = {
   readonly installDir: string;
   /** `userData/tools-install` — one job dir per install per tool, gone on settle. */
   readonly toolsInstallDir: string;
-  /** `userData/doctor-skips.json` — the tools the person continued without (criterion 8). */
-  readonly skipsFile: string;
   /** `CONFIG.MAESTRO_VERSION`. */
   readonly pinnedVersion: string;
   /** `CONFIG.MAESTRO_RELEASE_URL`. */
@@ -183,9 +198,13 @@ export type DoctorServiceDeps = {
   readonly emitChanged: (payload: Result<DoctorState>) => void;
   readonly emitInstallEvent: (payload: Result<DoctorInstallEvent>) => void;
   readonly emitLoginEvent: (payload: Result<DoctorLoginEvent>) => void;
-  /** The setup window is done — installed, signed in or skipped — and the
+  /** The setup window is done — installed and signed in — and the
    * composition root presents connect or the workspace in the same window. */
   readonly onSetupFinished: () => void;
+  /** The first report after paint found gh signed out while setup was not
+   * active (managed-tools criterion 32): the composition root takes the
+   * window back to the installer geometry. */
+  readonly onSetupOpened: () => void;
   /** The clock, injectable so `checkedAt` and the focus floor are assertable. */
   readonly now?: () => number;
   readonly timeouts?: DoctorTimeouts;
@@ -217,6 +236,7 @@ type InstallFailureCode =
   | typeof ERROR_CODES.doctorChecksumMismatch
   | typeof ERROR_CODES.doctorExtractFailed
   | typeof ERROR_CODES.doctorVerifyFailed
+  | typeof ERROR_CODES.doctorInstallFailed
   | typeof ERROR_CODES.doctorBrewFailed;
 
 /** Criteria 14–15 — one product-language sentence per code and tool, chosen
@@ -235,6 +255,8 @@ function failureMessage(code: InstallFailureCode, tool: ToolId): string {
       return `${capital} couldn't be unpacked on this Mac.`;
     case 'doctor/verify-failed':
       return `${capital} was installed but didn't answer as expected.`;
+    case 'doctor/install-failed':
+      return `${capital} couldn't be installed on this Mac.`;
     case 'doctor/brew-failed':
       return `Homebrew couldn't install ${sentence}. You can try again, or Conductor can download it instead.`;
   }
@@ -271,18 +293,11 @@ type JavaResolution =
   | { readonly path: string; readonly managed: boolean }
   | { readonly path: null; readonly detail: string };
 
-/** `userData/doctor-skips.json` (criterion 8): the tool → when, plus the pin
- * each skip was taken under, so a moved pin forgets it. */
-type Skips = {
-  readonly at: Partial<Record<ToolId, string>>;
-  readonly pins: Partial<Record<ToolId, string>>;
-};
-
 type Login = {
   readonly loginId: string;
   readonly child: StreamingProcess;
-  /** gh's stderr so far — parsed for the code and the account, never logged. */
-  stderr: string;
+  /** gh's output so far, both streams — parsed for the code and the account, never logged. */
+  output: string;
   code: string | null;
   cancelled: boolean;
 };
@@ -299,7 +314,6 @@ export class DoctorService {
   /** The last install failure per tool — what the row shows while nothing
    * resolves (criterion 14's `detail`). */
   private readonly lastInstallFailure = new Map<ToolId, string>();
-  private skips: Skips = { at: {}, pins: {} };
   /** Criterion 15 — a tool whose Homebrew install failed downloads next time,
    * from the installer or the sheet alike. */
   private readonly directNext = new Set<ToolId>();
@@ -314,6 +328,9 @@ export class DoctorService {
   private lastFocusCheck = Number.NEGATIVE_INFINITY;
   /** The setup window showed and the plan waits on the first report. */
   private planPending = false;
+  /** The first report after a paint that skipped the installer — the one
+   * chance to reopen it for a sign-in the file probe got wrong. */
+  private firstReportPending = false;
   private disposed = false;
 
   constructor(deps: DoctorServiceDeps) {
@@ -323,11 +340,12 @@ export class DoctorService {
   /**
    * Criterion 2 — decided from files alone, before the window exists, so its
    * geometry can follow: no process runs here. A tool with no executable on
-   * its ladder and no remembered skip opens the installer; the managed
-   * Maestro behind its pin opens it whatever else; the sign-in never does.
+   * its ladder opens the installer — the four are mandatory, nothing is
+   * remembered as skipped; the managed Maestro behind its pin opens it
+   * whatever else; and with every tool there, a gh whose hosts file names
+   * no github.com opens it for the sign-in, which is mandatory too.
    */
   start(): void {
-    this.skips = this.readSkips();
     const maestro = this.maestroByFiles();
     const missing = TOOL_ORDER.filter((tool) => {
       if (tool === 'maestro') {
@@ -346,11 +364,11 @@ export class DoctorService {
         return false;
       }
     });
-    const opens = missing.filter(
-      (tool) => !this.skipped(tool) || (tool === 'maestro' && maestro === 'update'),
-    );
+    const opens = missing;
     if (opens.length === 0) {
-      this.setup = { active: false, reason: null, plan: null };
+      this.setup = this.signedInByFiles()
+        ? { active: false, reason: null, plan: null }
+        : { active: true, reason: 'sign-in', plan: null };
       return;
     }
     const reason =
@@ -363,6 +381,8 @@ export class DoctorService {
   windowShown(): void {
     if (this.setup.active) {
       this.planPending = true;
+    } else {
+      this.firstReportPending = true;
     }
     void this.runCheck('all');
   }
@@ -447,43 +467,18 @@ export class DoctorService {
     if (entries.length > 0 && entries.every((entry) => entry?.state === 'unavailable')) {
       return refuse(ERROR_CODES.doctorUnsupportedArch, INTEL_DETAIL);
     }
-    const queue = plan.tools.filter(
-      (entry) => wanted.has(entry.id) && (entry.state === 'install' || entry.state === 'skipped'),
-    );
+    const queue = plan.tools.filter((entry) => wanted.has(entry.id) && entry.state === 'install');
+    if (!request.androidTermsAccepted && queue.some((entry) => entry.id === 'adb')) {
+      // Criterion 10 — adb is mandatory and waits on its terms; nothing is skipped.
+      return refuse(ERROR_CODES.doctorTermsRequired, TERMS_DETAIL);
+    }
     const installId = `install-${this.nextInstall}`;
     this.nextInstall += 1;
     const fromSetup = this.setup.active;
     const controller = new AbortController();
     this.installController = controller;
-    this.installRunning = this.runInstalls(
-      installId,
-      queue,
-      request.androidTermsAccepted,
-      fromSetup,
-      controller.signal,
-    );
+    this.installRunning = this.runInstalls(installId, queue, fromSetup, controller.signal);
     return { ok: true, data: { installId } };
-  }
-
-  /** Criterion 17's "Continue" — the app presents itself; the tools still
-   * missing are remembered as skipped under their pins (criterion 8). */
-  skipSetup(): Result<Record<never, never>> {
-    if (!this.setup.active) {
-      return refuse(ERROR_CODES.doctorSetupNotActive, 'There is no setup to skip.');
-    }
-    if (this.installController !== null) {
-      return refuse(ERROR_CODES.doctorInstallActive, 'Conductor is still installing.');
-    }
-    // A sign-in left behind would land its outcome on a window nobody watches.
-    this.loginCancel();
-    const plan = this.setup.plan ?? this.currentPlan();
-    for (const entry of plan.tools) {
-      if (entry.state === 'install' || entry.state === 'skipped') {
-        this.recordSkip(entry.id);
-      }
-    }
-    this.finishSetup();
-    return { ok: true, data: {} };
   }
 
   /* ── The sign-in ───────────────────────────────────────────────────── */
@@ -518,9 +513,10 @@ export class DoctorService {
         '--web',
         '--skip-ssh-key',
       ],
-      { env: this.deps.env },
+      // gh's browser helper must not outlive a cancel or dispose.
+      { env: this.deps.env, killTree: true },
     );
-    const login: Login = { loginId, child, stderr: '', code: null, cancelled: false };
+    const login: Login = { loginId, child, output: '', code: null, cancelled: false };
     this.activeLogin = login;
     this.login_ = { loginId, code: null };
     child.onStderr((chunk) => {
@@ -530,7 +526,7 @@ export class DoctorService {
       this.consumeLogin(login, chunk);
     });
     child.onExit((reason) => {
-      void this.settleLogin(login, reason.code);
+      void this.settleLogin(login, reason);
     });
     // Without a TTY gh prints the code and polls; the newline covers the
     // "Press Enter" of an older gh, and a closed stdin leaves nothing to wait on.
@@ -562,11 +558,11 @@ export class DoctorService {
   }
 
   private consumeLogin(login: Login, chunk: string): void {
-    login.stderr = tail(login.stderr + chunk);
+    login.output = tail(login.output + chunk);
     if (login.code !== null) {
       return;
     }
-    const code = parseLoginCode(login.stderr);
+    const code = parseLoginCode(login.output);
     if (code === null) {
       return;
     }
@@ -576,7 +572,8 @@ export class DoctorService {
     this.emitChanged();
   }
 
-  private async settleLogin(login: Login, code: number | null): Promise<void> {
+  private async settleLogin(login: Login, reason: ExitReason): Promise<void> {
+    const { code } = reason;
     if (this.activeLogin === login) {
       this.activeLogin = null;
     }
@@ -591,14 +588,21 @@ export class DoctorService {
     }
     if (code !== 0) {
       // Criterion 29 — the code line is never a detail, wherever it sat.
-      const said = login.stderr
+      const said = login.output
         .split(/\r?\n/)
         .filter((line) => !/one-time code/i.test(line))
         .join('\n');
+      // A gh that never started has no last line; the spawn error is the cause.
+      const cause =
+        reason.error !== null
+          ? reason.error.message
+          : code === null
+            ? 'gh was killed'
+            : `gh exited ${code}`;
       const failed = {
         code: ERROR_CODES.doctorLoginFailed,
         message: LOGIN_FAILED_MESSAGE,
-        detail: lastLine(said) || (code === null ? 'gh was killed' : `gh exited ${code}`),
+        detail: lastLine(said) || cause,
       };
       this.login_ = { loginId: login.loginId, failed };
       this.emitLogin({ kind: 'failed', loginId: login.loginId, ...failed });
@@ -612,7 +616,7 @@ export class DoctorService {
     }
     const row = this.report?.rows.find((entry) => entry.id === 'github-auth');
     const account =
-      parseLoginAccount(login.stderr) ?? (row?.status === 'ok' ? row.short : null) ?? 'GitHub';
+      parseLoginAccount(login.output) ?? (row?.status === 'ok' ? row.short : null) ?? 'GitHub';
     this.login_ = null;
     this.emitLogin({ kind: 'done', loginId: login.loginId, account });
     this.emitChanged();
@@ -632,8 +636,10 @@ export class DoctorService {
     this.installController?.abort();
     this.activeLogin?.child.kill();
     await this.installRunning;
-    await rm(this.deps.installDir, { recursive: true, force: true });
-    await rm(this.deps.toolsInstallDir, { recursive: true, force: true });
+    // Best-effort, as in the pipeline's `finally`: a job dir that cannot be
+    // removed must not reject `before-quit`.
+    await rm(this.deps.installDir, { recursive: true, force: true }).catch(() => undefined);
+    await rm(this.deps.toolsInstallDir, { recursive: true, force: true }).catch(() => undefined);
   }
 
   /* ── The plan ──────────────────────────────────────────────────────── */
@@ -645,12 +651,44 @@ export class DoctorService {
     const plan = this.currentPlan();
     this.setup = { ...this.setup, plan };
     this.emitChanged();
+    if (plan.tools.every((entry) => entry.state === 'present')) {
+      // Nothing to install — the sign-in alone opened the window (criterion
+      // 32), or the tools arrived by hand since launch. The card waits when
+      // gh is signed out; otherwise the app presents itself.
+      if (!this.needsSignIn()) {
+        this.holdThenFinish();
+      }
+      return;
+    }
     const onlyMaestro = plan.tools.every(
       (entry) => entry.state === 'present' || (entry.id === 'maestro' && entry.state === 'install'),
     );
     if (this.setup.reason === 'update' && onlyMaestro) {
       this.install({ androidTermsAccepted: false });
     }
+  }
+
+  /** Criterion 2's file probe for the sign-in — gh's hosts file, never the
+   * token (§9.0). A file that cannot be read counts as signed out: the
+   * report decides for real after paint. */
+  private signedInByFiles(): boolean {
+    const file = ghHostsFile(this.deps.env, this.deps.home);
+    let text: string | null = null;
+    try {
+      text = this.deps.isFile(file) ? readFileSync(file, 'utf8') : null;
+    } catch {
+      text = null;
+    }
+    return signedInByFiles(this.deps.env, text);
+  }
+
+  /** Criterion 32 — the first report after a paint that skipped the
+   * installer says gh is signed out: the window goes back to the installer,
+   * once. Later checks never pull the workspace away from under the person. */
+  private reopenForSignIn(): void {
+    this.setup = { active: true, reason: 'sign-in', plan: this.currentPlan() };
+    this.emitChanged();
+    this.deps.onSetupOpened();
   }
 
   /**
@@ -681,9 +719,6 @@ export class DoctorService {
             : 'homebrew';
       if (method === 'direct' && !arm && id !== 'maestro') {
         return { id, state: 'unavailable', method: null, detail: INTEL_DETAIL };
-      }
-      if (previous?.state === 'skipped') {
-        return previous;
       }
       return {
         id,
@@ -777,7 +812,7 @@ export class DoctorService {
     }
   }
 
-  /* ── Skips ─────────────────────────────────────────────────────────── */
+  /* ── Pins ──────────────────────────────────────────────────────────── */
 
   private pinOf(tool: ToolId): string {
     const { pins, pinnedVersion } = this.deps;
@@ -790,73 +825,6 @@ export class DoctorService {
         return pins.ghVersion;
       case 'adb':
         return pins.platformToolsVersion;
-    }
-  }
-
-  private skipped(tool: ToolId): boolean {
-    return this.skips.at[tool] !== undefined && this.skips.pins[tool] === this.pinOf(tool);
-  }
-
-  private recordSkip(tool: ToolId): void {
-    this.skips = {
-      at: { ...this.skips.at, [tool]: new Date(this.now()).toISOString() },
-      pins: { ...this.skips.pins, [tool]: this.pinOf(tool) },
-    };
-    this.writeSkips();
-  }
-
-  private clearSkip(tool: ToolId): void {
-    if (this.skips.at[tool] === undefined) {
-      return;
-    }
-    const at = { ...this.skips.at };
-    const pins = { ...this.skips.pins };
-    delete at[tool];
-    delete pins[tool];
-    this.skips = { at, pins };
-    this.writeSkips();
-  }
-
-  private readSkips(): Skips {
-    if (!this.deps.isFile(this.deps.skipsFile)) {
-      return { at: {}, pins: {} };
-    }
-    try {
-      const parsed: unknown = JSON.parse(readFileSync(this.deps.skipsFile, 'utf8'));
-      if (typeof parsed !== 'object' || parsed === null) {
-        return { at: {}, pins: {} };
-      }
-      const at: Partial<Record<ToolId, string>> = {};
-      const pins: Partial<Record<ToolId, string>> = {};
-      const rawPins = (parsed as { pins?: unknown }).pins;
-      for (const tool of TOOL_ORDER) {
-        const when = (parsed as Record<string, unknown>)[tool];
-        if (typeof when === 'string') {
-          at[tool] = when;
-        }
-        const pin =
-          typeof rawPins === 'object' && rawPins !== null
-            ? (rawPins as Record<string, unknown>)[tool]
-            : undefined;
-        if (typeof pin === 'string') {
-          pins[tool] = pin;
-        }
-      }
-      return { at, pins };
-    } catch {
-      return { at: {}, pins: {} };
-    }
-  }
-
-  private writeSkips(): void {
-    const file = { ...this.skips.at, pins: this.skips.pins };
-    // Best-effort and synchronous — a few bytes, and the next launch reads
-    // them; a skip that could not be remembered is one more installer, not
-    // a failure to report.
-    try {
-      writeFileSync(this.deps.skipsFile, `${JSON.stringify(file, null, 2)}\n`, 'utf8');
-    } catch (error) {
-      console.error('The doctor skips could not be written:', detailOf(error));
     }
   }
 
@@ -902,8 +870,12 @@ export class DoctorService {
       if (!this.disposed) {
         this.checking = false;
         this.checkController = null;
+        const firstReport = this.firstReportPending && this.report !== null;
+        this.firstReportPending = this.firstReportPending && this.report === null;
         if (this.planPending && this.report !== null) {
           this.buildPlan();
+        } else if (firstReport && !this.setup.active && this.needsSignIn()) {
+          this.reopenForSignIn();
         } else {
           this.emitChanged();
         }
@@ -1227,40 +1199,23 @@ export class DoctorService {
   /* ── The installs ──────────────────────────────────────────────────── */
 
   /**
-   * Criteria 9–10, 16–17: the queue in order, one tool at a time, a
-   * failure recorded and passed, the rows rechecked after each, `settled`
-   * at the end. Never rejects — `dispose` awaits it.
+   * Criteria 9, 16–17: the queue in order, one tool at a time, a failure
+   * recorded and passed, the rows rechecked after each, `settled` at the
+   * end. Never rejects — `dispose` awaits it.
    */
   private async runInstalls(
     installId: string,
     queue: readonly DoctorPlanEntry[],
-    androidTermsAccepted: boolean,
     fromSetup: boolean,
     signal: AbortSignal,
   ): Promise<void> {
     const failed: Partial<Record<ToolId, DoctorInstallFailure>> = {};
     let landedDirect = false;
     try {
-      const todo: DoctorPlanEntry[] = [];
-      for (const entry of queue) {
-        if (entry.id === 'adb' && !androidTermsAccepted) {
-          // Criterion 10 — declined terms skip adb and install the rest.
-          this.recordSkip('adb');
-          this.updatePlanEntry('adb', { state: 'skipped', detail: TERMS_DETAIL });
-          this.emitInstall({ kind: 'skipped', installId, tool: 'adb', detail: TERMS_DETAIL });
-          // Criterion 16 — a skip settles the row too.
-          await this.recheck(['adb']);
-          if (this.disposed) {
-            return;
-          }
-          continue;
-        }
-        todo.push(entry);
-      }
-      if (todo.length === 0) {
+      if (queue.length === 0) {
         this.emitChanged();
       }
-      for (const entry of todo) {
+      for (const entry of queue) {
         if (signal.aborted) {
           return;
         }
@@ -1268,8 +1223,8 @@ export class DoctorService {
         try {
           if (entry.id === 'maestro') {
             await this.installMaestro(installId, signal);
-          } else if (method === 'homebrew') {
-            await this.installWithBrew(entry.id as BrewToolId, installId, signal);
+          } else if (method === 'homebrew' && isBrewTool(entry.id)) {
+            await this.installWithBrew(entry.id, installId, signal);
           } else {
             await this.installDirect(entry.id, installId, signal);
             landedDirect = true;
@@ -1278,7 +1233,6 @@ export class DoctorService {
             return;
           }
           this.lastInstallFailure.delete(entry.id);
-          this.clearSkip(entry.id);
           this.emitInstall({
             kind: 'done',
             installId,
@@ -1292,7 +1246,7 @@ export class DoctorService {
           const failure =
             error instanceof InstallFailure
               ? error
-              : new InstallFailure(ERROR_CODES.doctorExtractFailed, detailOf(error));
+              : new InstallFailure(ERROR_CODES.doctorInstallFailed, detailOf(error));
           console.error(`${entry.id} install ${installId} failed:`, failure.detail);
           const record = {
             code: failure.code,
@@ -1554,8 +1508,11 @@ export class DoctorService {
     }
     this.progress(installId, tool, null, brewStep(tool));
     return new Promise<void>((resolve, reject) => {
+      // brew runs curl and ruby beneath it; a kill on silence, abort or
+      // dispose must take them too.
       const child = this.deps.spawn(brew, brewInstallArgs(tool), {
         env: brewEnv(brew, this.deps.env),
+        killTree: true,
       });
       let stderr = '';
       let silent = false;
@@ -1649,7 +1606,7 @@ export class DoctorService {
       return;
     }
     try {
-      await writeFile(path, content, 'utf8');
+      await writeProfile(path, content);
     } catch (error) {
       console.error(`The shell profile ${path} could not be written:`, detailOf(error));
     }
@@ -1993,6 +1950,31 @@ async function locateRoot(extractDir: string, launcher: string): Promise<string 
     }
   }
   return null;
+}
+
+/** The shell profile, written whole: temp name, then rename, so a crash
+ * mid-write can never leave a truncated login shell. The rename lands on the
+ * file the profile resolves to — a dotfile is often a symlink into a repo,
+ * and renaming over the link would replace it with a plain file — and keeps
+ * the mode the person gave it. */
+async function writeProfile(path: string, content: string): Promise<void> {
+  let target = path;
+  let mode: number | null = null;
+  try {
+    target = await realpath(path);
+    mode = (await stat(target)).mode & 0o777;
+  } catch (error) {
+    if (!isEnoent(error)) {
+      throw error;
+    }
+  }
+  const partial = `${target}.conductor-partial`;
+  await writeFile(partial, content, 'utf8');
+  if (mode !== null) {
+    // After the write, so the umask has no say.
+    await chmod(partial, mode);
+  }
+  await rename(partial, target);
 }
 
 /** The symlink, replaced whole — never edited in place. */

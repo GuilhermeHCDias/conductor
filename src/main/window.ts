@@ -143,6 +143,23 @@ export function presentWorkspace(window: BrowserWindow): void {
 }
 
 /**
+ * The first report after paint found gh signed out (managed-tools criterion
+ * 32): the connect or workspace window becomes the installer again — the
+ * same fixed 520 × 480, minimise dead, as at first launch.
+ */
+export function presentSetup(window: BrowserWindow): void {
+  if (window.isDestroyed()) {
+    return;
+  }
+  window.setResizable(false);
+  window.setMaximizable(false);
+  window.setFullScreenable(false);
+  window.setMinimizable(false);
+  window.setSize(SETUP.width, SETUP.height);
+  window.center();
+}
+
+/**
  * Setup finished with no repo persisted: the same window becomes the connect
  * card (doctor criterion 16) — resized, never a second BrowserWindow. The
  * connect card is as fixed as the installer was; only minimise comes back.

@@ -10,8 +10,16 @@ import { delimiter, dirname } from 'node:path';
 /** The two tools Homebrew installs for Conductor (criterion 5). */
 export type BrewToolId = 'gh' | 'adb';
 
+const BREW_TOOLS: ReadonlySet<string> = new Set<BrewToolId>(['gh', 'adb']);
+
+/** Narrows a tool id to one Homebrew installs — the plan never hands
+ * `homebrew` to another, and this is what proves it to the type checker. */
+export function isBrewTool(id: string): id is BrewToolId {
+  return BREW_TOOLS.has(id);
+}
+
 /** Apple silicon's prefix first, then Intel's. */
-export const HOMEBREW_CANDIDATES = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'] as const;
+const HOMEBREW_CANDIDATES = ['/opt/homebrew/bin/brew', '/usr/local/bin/brew'] as const;
 
 export type FindHomebrewDeps = {
   readonly env: NodeJS.ProcessEnv;
@@ -30,11 +38,6 @@ export function findHomebrew(deps: FindHomebrewDeps): string | null {
 /** A formula for `gh`, the binaries-only cask for platform-tools. */
 export function brewInstallArgs(tool: BrewToolId): readonly string[] {
   return tool === 'gh' ? ['install', 'gh'] : ['install', '--cask', 'android-platform-tools'];
-}
-
-/** The prefix is the parent of the `bin` that holds `brew`. */
-export function brewPrefix(brew: string): string {
-  return dirname(dirname(brew));
 }
 
 /** The four non-interactive flags of criterion 12, and the prefix's `bin`
