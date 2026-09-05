@@ -1,5 +1,7 @@
 {
   "name": "conductor",
+  "productName": "Conductor",
+  "packageManager": "pnpm@10.32.1",
   "version": "0.1.0",
   "description": "Electron desktop app that orchestrates the Maestro CLI so non-developers can author e2e tests.",
   "main": "./out/main/index.js",
@@ -10,19 +12,20 @@
   "scripts": {
     "dev": "electron-vite dev",
     "dev:fresh": "rm -rf \"${TMPDIR:-/tmp}/conductor-fresh\" && electron-vite dev -- --user-data-dir=\"${TMPDIR:-/tmp}/conductor-fresh\"",
-    "build": "npm run typecheck && electron-vite build",
-    "typecheck": "npm run typecheck:node && npm run typecheck:web",
+    "build": "pnpm typecheck && electron-vite build",
+    "typecheck": "pnpm typecheck:node && pnpm typecheck:web",
     "typecheck:node": "tsc --noEmit -p tsconfig.node.json",
     "typecheck:web": "tsc --noEmit -p tsconfig.web.json",
     "lint": "biome check .",
     "format": "biome check --write .",
     "test": "vitest run",
     "test:watch": "vitest",
-    "build:mac": "npm run build && electron-builder --mac",
-    "build:win": "npm run build && electron-builder --win",
-    "build:linux": "npm run build && electron-builder --linux",
+    "build:mac": "pnpm build && electron-builder --mac",
+    "build:win": "pnpm build && electron-builder --win",
+    "build:linux": "pnpm build && electron-builder --linux",
     "prepare": "husky",
-    "postinstall": "install-electron"
+    "postinstall": "install-electron && pnpm --silent run postinstall:app-name",
+    "postinstall:app-name": "test \"$(uname)\" = Darwin || exit 0; for P in $(find node_modules -maxdepth 8 -type d -path '*/electron/dist/Electron.app' 2>/dev/null); do plutil -replace CFBundleName -string Conductor \"$P/Contents/Info.plist\"; plutil -replace CFBundleDisplayName -string Conductor \"$P/Contents/Info.plist\"; touch \"$P\"; /System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f \"$P\"; done; true"
   },
   "dependencies": {
     "@electron-toolkit/utils": "^4.0.0",
