@@ -36,9 +36,10 @@ function trustedEvent(): unknown {
 const STATE = {
   report: null,
   checking: false,
-  setup: { active: false, reason: null },
+  setup: { active: false, reason: null, plan: null },
   install: null,
-  maestroOverridden: false,
+  login: null,
+  overridden: [],
   version: '2.10.0',
 };
 
@@ -47,7 +48,10 @@ function fakeDoctor(): Record<string, ReturnType<typeof vi.fn>> {
     status: vi.fn(() => ({ ok: true, data: STATE })),
     check: vi.fn(() => ({ ok: true, data: { started: true } })),
     install: vi.fn(() => ({ ok: true, data: { installId: 'install-1' } })),
-    skipSetup: vi.fn(() => ({ ok: true, data: {} })),
+    login: vi.fn(() => ({ ok: true, data: { loginId: 'login-1' } })),
+    loginCancel: vi.fn(() => ({ ok: true, data: {} })),
+    openLoginUrl: vi.fn(() => Promise.resolve({ ok: true, data: {} })),
+    openUrl: vi.fn(() => Promise.resolve({ ok: true, data: {} })),
   };
 }
 
@@ -68,11 +72,14 @@ async function invoke(channel: string, ...args: unknown[]): Promise<Result<unkno
 }
 
 describe('registerDoctorIpc', () => {
-  it('registers exactly the four doctor channels', () => {
+  it('registers exactly the seven doctor channels', () => {
     expect([...listeners.keys()].sort()).toEqual([
       'doctor:check',
       'doctor:install',
-      'doctor:skip-setup',
+      'doctor:login',
+      'doctor:login-cancel',
+      'doctor:open-login-url',
+      'doctor:open-url',
       'doctor:status',
     ]);
   });
@@ -80,8 +87,9 @@ describe('registerDoctorIpc', () => {
   it.each([
     ['doctor:status', 'status'],
     ['doctor:check', 'check'],
-    ['doctor:install', 'install'],
-    ['doctor:skip-setup', 'skipSetup'],
+    ['doctor:login', 'login'],
+    ['doctor:login-cancel', 'loginCancel'],
+    ['doctor:open-login-url', 'openLoginUrl'],
   ] as const)(
     '%s calls %s with no arguments and hands the result back',
     async (channel, method) => {
@@ -92,24 +100,50 @@ describe('registerDoctorIpc', () => {
     },
   );
 
+  it('install passes the parsed request through, and nothing else', async () => {
+    const result = await invoke('doctor:install', { tools: ['gh'], androidTermsAccepted: true });
+
+    expect(result).toEqual({ ok: true, data: { installId: 'install-1' } });
+    expect(doctor.install).toHaveBeenCalledExactlyOnceWith({
+      tools: ['gh'],
+      androidTermsAccepted: true,
+    });
+  });
+
+  it('open-url passes the id through — main resolves it to a URL', async () => {
+    await invoke('doctor:open-url', { id: 'android-terms' });
+
+    expect(doctor.openUrl).toHaveBeenCalledExactlyOnceWith('android-terms');
+  });
+
   it('hands a service refusal back untouched', async () => {
     doctor.install?.mockReturnValueOnce({
       ok: false,
       error: { code: 'doctor/install-active', message: 'Maestro is already being installed.' },
     });
 
-    expect(await invoke('doctor:install')).toEqual({
+    expect(await invoke('doctor:install', { androidTermsAccepted: false })).toEqual({
       ok: false,
       error: { code: 'doctor/install-active', message: 'Maestro is already being installed.' },
     });
   });
 
-  /** Criterion 37 — the renderer decides nothing about where Maestro lives. */
-  it('refuses any argument before the service runs', async () => {
+  /** Criterion 37 — the renderer decides nothing about where a tool lives
+   * or which URL a page has. */
+  it('refuses a path, a URL or a missing decision before the service runs', async () => {
+    expect((await invoke('doctor:install', '/tmp/maestro')).ok).toBe(false);
+    expect((await invoke('doctor:install', { tools: ['gh'] })).ok).toBe(false);
+    expect(
+      (await invoke('doctor:install', { androidTermsAccepted: true, url: 'https://x' })).ok,
+    ).toBe(false);
+    expect((await invoke('doctor:open-url', { id: 'https://example.com' })).ok).toBe(false);
+    expect((await invoke('doctor:login', 'gh')).ok).toBe(false);
     const result = await invoke('doctor:install', '/tmp/maestro');
 
     expect(result.ok ? '' : result.error.code).toBe('ipc/invalid-args');
     expect(doctor.install).not.toHaveBeenCalled();
+    expect(doctor.openUrl).not.toHaveBeenCalled();
+    expect(doctor.login).not.toHaveBeenCalled();
   });
 
   it('refuses an untrusted sender before the service runs', async () => {

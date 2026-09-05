@@ -125,7 +125,10 @@ describe('App', () => {
     });
 
     it('shows only the installer while setup is active, whatever the repo state', () => {
-      useDoctorStore.setState({ loaded: true, setup: { active: true, reason: 'first-run' } });
+      useDoctorStore.setState({
+        loaded: true,
+        setup: { active: true, reason: 'first-run', plan: null },
+      });
       render(<App />);
 
       expect(screen.getByRole('heading', { name: 'Setting up Conductor' })).toBeInTheDocument();
@@ -139,11 +142,14 @@ describe('App', () => {
       useRepoStore.setState({ repos: [], active: null, loaded: true });
       window.conductor.repoList = () =>
         Promise.resolve({ ok: true as const, data: { repos: [], active: null } });
-      useDoctorStore.setState({ loaded: true, setup: { active: true, reason: 'first-run' } });
+      useDoctorStore.setState({
+        loaded: true,
+        setup: { active: true, reason: 'first-run', plan: null },
+      });
       render(<App />);
 
       act(() => {
-        useDoctorStore.setState({ setup: { active: false, reason: null } });
+        useDoctorStore.setState({ setup: { active: false, reason: null, plan: null } });
       });
 
       expect(

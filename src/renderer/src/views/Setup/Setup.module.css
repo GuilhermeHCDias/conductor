@@ -1,6 +1,7 @@
-/* The kit's CDoctorInstaller: drag strip over a centred column — mark,
-   heading, body, one bar, one line. 520 × 360 is the window's own size
-   (window.ts), so nothing here scrolls or grows. */
+/* The kit's CDoctorInstallerB: drag strip over a column — mark and heading
+   side by side, one row per tool, the method line or the sign-in card, the
+   footer. 520 × 480 is the window's own size (window.ts), so nothing here
+   scrolls or grows. */
 
 .setup {
   display: grid;
@@ -17,40 +18,146 @@
 }
 
 .body {
-  align-content: center;
+  align-content: start;
   display: grid;
-  justify-items: center;
+  gap: 12px;
   min-height: 0;
-  padding: 0 44px;
-  text-align: center;
+  padding: 18px 28px 16px;
+}
+
+.header {
+  align-items: center;
+  display: flex;
+  gap: 14px;
 }
 
 /* The real Conductor icon, not the kit's gradient "C" (spec decision). */
 .mark {
-  border-radius: 14px;
+  border-radius: 11px;
   box-shadow: var(--shadow-2), var(--a-refract);
-  height: 54px;
-  width: 54px;
+  flex: none;
+  height: 44px;
+  width: 44px;
+}
+
+.heading {
+  display: grid;
+  gap: 3px;
+  min-width: 0;
 }
 
 .title {
   color: var(--text-primary);
-  font: var(--type-title-2);
-  margin: 18px 0 0;
+  font: var(--type-title-3);
+  margin: 0;
 }
 
 .copy {
   color: var(--text-secondary);
   font: var(--type-body);
-  margin: 6px 0 0;
+  margin: 0;
   text-wrap: pretty;
 }
 
+/* One table, the sheet's row shape: glyph, name, mono state. */
+.rows {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  list-style: none;
+  margin: 0;
+  overflow: hidden;
+  padding: 0;
+}
+
+.row {
+  align-items: center;
+  border-bottom: 1px solid var(--a-hair);
+  column-gap: 10px;
+  display: grid;
+  grid-template-columns: 15px minmax(0, 1fr);
+  padding: 7px 12px;
+}
+
+.row:last-child {
+  border-bottom: none;
+}
+
+.glyph {
+  color: var(--text-tertiary);
+}
+
+.row[data-glyph="present"] .glyph {
+  color: var(--state-pass);
+}
+
+.row[data-glyph="alert"] .glyph {
+  color: var(--state-running);
+}
+
+.row[data-glyph="fail"] .glyph {
+  color: var(--state-fail);
+}
+
+/* The DS's own `cd-spin`, on the token clock — reduced motion zeroes it.
+   A CSS-module `animation` needs its keyframes declared in the module. */
+.row[data-glyph="active"] .glyph {
+  animation: cd-spin var(--dur-lazy) linear infinite;
+  color: var(--accent);
+}
+
+@keyframes cd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.rowBody {
+  display: grid;
+  gap: 4px;
+  min-width: 0;
+}
+
+.rowLine {
+  align-items: baseline;
+  display: flex;
+  gap: 10px;
+  justify-content: space-between;
+  min-width: 0;
+}
+
+.name {
+  color: var(--text-primary);
+  font: var(--type-body-strong);
+}
+
+.mono {
+  color: var(--text-tertiary);
+  font: var(--type-mono-label);
+  overflow: hidden;
+  text-align: right;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.row[data-glyph="present"] .mono {
+  color: var(--text-disabled);
+}
+
+.row[data-glyph="alert"] .mono {
+  color: var(--state-running);
+}
+
+.row[data-glyph="fail"] .mono {
+  color: var(--state-fail);
+  white-space: normal;
+}
+
+/* The active row: the kit's 4 px bar and the mono step line under the name. */
 .track {
   background: var(--a-hair-strong);
   border-radius: var(--radius-pill);
   height: 4px;
-  margin-top: 26px;
   overflow: hidden;
   width: 100%;
 }
@@ -59,63 +166,69 @@
   background: var(--accent);
   border-radius: var(--radius-pill);
   height: 100%;
-  transition:
-    width var(--dur-base) linear,
-    background var(--dur-base) var(--ease-out);
+  transition: width var(--dur-base) linear;
 }
 
-/* Criterion 21 — the bar turns pass on done. */
-.track[data-done="true"] .fill {
-  background: var(--state-pass);
+/* Homebrew prints no progress: the DS's `cd-shimmer` says "working", not
+   "how far" — a multiple of the token clock, so reduced motion zeroes it. */
+.track[data-indeterminate="true"] .fill {
+  animation: cd-shimmer calc(var(--dur-lazy) * 2) var(--ease-in-out) infinite;
+  width: 40%;
 }
 
-.line {
-  align-items: center;
-  display: flex;
-  gap: 6px;
-  margin-top: 10px;
-  width: 100%;
-}
-
-.check {
-  color: var(--state-pass);
+@keyframes cd-shimmer {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(250%);
+  }
 }
 
 .step {
   color: var(--text-tertiary);
-  flex: 1;
   font: var(--type-mono-label);
   overflow: hidden;
-  text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
-.step[data-done="true"] {
-  color: var(--state-pass);
-}
-
-.pct {
-  color: var(--text-disabled);
-  font: var(--type-mono-label);
-}
-
-/* Criterion 23 — the failure sentence takes the step line's place. */
-.failure {
-  color: var(--state-fail);
+.method {
+  color: var(--text-tertiary);
   font: var(--type-caption);
-  margin: 10px 0 0;
+  margin: 0;
   text-wrap: pretty;
+}
+
+.terms {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-4) 10px;
+}
+
+.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: var(--type-caption);
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
 }
 
 .actions {
   display: flex;
   gap: var(--space-4);
-  justify-content: center;
-  margin-top: 14px;
+  justify-content: flex-end;
 }
 
-.ghost,
 .primary {
   align-items: center;
   border-radius: var(--a-radius-field);
@@ -125,17 +238,6 @@
   height: 28px;
   padding: 0 var(--space-6);
   transition: var(--t-hover);
-}
-
-.ghost {
-  background: transparent;
-  border: 1px solid var(--a-hair);
-  color: var(--text-secondary);
-}
-
-.ghost:hover {
-  background: var(--glass-hover);
-  color: var(--text-primary);
 }
 
 .primary {
@@ -148,7 +250,13 @@
   background: var(--accent-strong);
 }
 
-.ghost:focus-visible,
+/* Held until the Android terms are accepted (criterion 38). */
+.primary:disabled {
+  background: var(--glass-hover);
+  color: var(--text-disabled);
+  cursor: default;
+}
+
 .primary:focus-visible {
   box-shadow: var(--glow-accent);
   outline: none;

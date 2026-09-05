@@ -63,8 +63,14 @@ vi.mock('@electron-toolkit/utils', () => ({
 
 process.env.ELECTRON_RENDERER_URL = 'http://localhost:5173';
 
-const { createWindow, isRendererUrl, presentConnect, presentWorkspace, RENDERER_URL } =
-  await import('./window');
+const {
+  createWindow,
+  isRendererUrl,
+  presentConnect,
+  presentSetup,
+  presentWorkspace,
+  RENDERER_URL,
+} = await import('./window');
 
 /**
  * `isRendererUrl` is the allowlist the IPC sender guard checks against, so a
@@ -214,14 +220,14 @@ describe('createWindow', () => {
     ]);
   });
 
-  /** Doctor criterion 14 — the first-run installer: 520 × 360, fixed; close
+  /** Doctor criterion 14 — the first-run installer: 520 × 480, fixed; close
    * live, minimise and zoom dead, the way a macOS installer window renders. */
   it('opens at the installer geometry for the setup view', () => {
     createWindow('setup');
 
     expect(mock.constructed[0]).toMatchObject({
       width: 520,
-      height: 360,
+      height: 480,
       resizable: false,
       minimizable: false,
       maximizable: false,
@@ -242,6 +248,24 @@ describe('createWindow', () => {
 
   /** Doctor criterion 16 — after setup the same window becomes the connect
    * card: resized, never a second BrowserWindow, and minimisable again. */
+  /** Managed-tools criterion 32 — the first report finds gh signed out: the
+   * connect or workspace window becomes the installer again, as fixed as it
+   * was at first launch. */
+  it('presentSetup takes the window back to the installer geometry', () => {
+    const window = createWindow('connect');
+
+    presentSetup(window);
+
+    expect(mock.applied).toEqual([
+      'resizable:false',
+      'maximizable:false',
+      'fullscreenable:false',
+      'minimizable:false',
+      'size:520x480',
+      'center',
+    ]);
+  });
+
   it('presentConnect resizes the setup window to the connect bounds', () => {
     const window = createWindow('setup');
 

@@ -1,0 +1,56 @@
+/* The design system's Checkbox: a hidden native input, a drawn box, the
+   label beside it. */
+
+.checkbox {
+  align-items: center;
+  cursor: pointer;
+  display: inline-flex;
+  gap: var(--space-4);
+  user-select: none;
+}
+
+.checkbox[data-disabled="true"] {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.input {
+  height: 1px;
+  margin: -1px;
+  opacity: 0;
+  position: absolute;
+  width: 1px;
+}
+
+.box {
+  background: var(--glass-sunken);
+  border: var(--border-hair) solid var(--edge-sunken);
+  border-radius: var(--radius-xs);
+  box-shadow: var(--shadow-inset-sunken);
+  color: var(--accent-on);
+  display: grid;
+  flex: none;
+  height: 16px;
+  place-items: center;
+  transition: var(--t-hover);
+  width: 16px;
+}
+
+.checkbox:hover .box {
+  border-color: var(--edge-strong);
+}
+
+.box[data-checked="true"] {
+  background: var(--accent);
+  border-color: transparent;
+  box-shadow: var(--shadow-1);
+}
+
+.input:focus-visible + .box {
+  box-shadow: var(--glow-accent);
+}
+
+.label {
+  color: var(--text-primary);
+  font: var(--type-body);
+}

@@ -74,6 +74,21 @@ describe('CliRunner.test', () => {
     });
   });
 
+  /** Managed-tools criterion 22 — the JDK Conductor downloaded reaches its
+   * own maestro children as JAVA_HOME; the person's own is left as it was. */
+  it('points JAVA_HOME at the managed JDK when that is what resolves', () => {
+    const { cli, spawned } = runner({
+      executables: ['/opt/maestro/bin/maestro', '/Users/someone/.conductor/tools/java/bin/java'],
+      env: { PATH: '/opt/maestro/bin', JAVA_HOME: '/jdk' },
+    });
+
+    cli.test('R9QYC01EMXL', '/tmp/runs/run-1.yaml');
+    cli.checkSyntax('/tmp/flow.yaml');
+
+    expect(spawned[0]?.options.env?.JAVA_HOME).toBe('/Users/someone/.conductor/tools/java');
+    expect(spawned[1]?.options.env?.JAVA_HOME).toBe('/Users/someone/.conductor/tools/java');
+  });
+
   /** Criterion 9's "process tree": the launcher `exec`s into a JVM, and what
    * the JVM spawns must die with it. */
   it('asks for the whole process tree to die on kill', () => {

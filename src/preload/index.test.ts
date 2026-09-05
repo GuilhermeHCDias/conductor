@@ -66,7 +66,10 @@ describe('the bridge', () => {
       'deviceList',
       'doctorCheck',
       'doctorInstall',
-      'doctorSkipSetup',
+      'doctorLogin',
+      'doctorLoginCancel',
+      'doctorOpenLoginUrl',
+      'doctorOpenUrl',
       'doctorStatus',
       'flowCreate',
       'flowCreateFolder',
@@ -87,6 +90,7 @@ describe('the bridge', () => {
       'onDeviceChanged',
       'onDoctorChanged',
       'onDoctorInstallEvent',
+      'onDoctorLoginEvent',
       'onFlowChanged',
       'onMirrorEvent',
       'onPublishChanged',
@@ -160,6 +164,11 @@ describe('the bridge', () => {
     await api.aiCancel();
     await api.aiReset();
     await api.aiStatus();
+    await api.doctorInstall({ tools: ['gh'], androidTermsAccepted: true });
+    await api.doctorLogin();
+    await api.doctorLoginCancel();
+    await api.doctorOpenLoginUrl();
+    await api.doctorOpenUrl({ id: 'android-terms' });
 
     expect(invoked).toEqual([
       { channel: CHANNELS.mirrorStart, args: ['R9QYC01EMXL'] },
@@ -199,6 +208,11 @@ describe('the bridge', () => {
       { channel: CHANNELS.aiCancel, args: [] },
       { channel: CHANNELS.aiReset, args: [] },
       { channel: CHANNELS.aiStatus, args: [] },
+      { channel: CHANNELS.doctorInstall, args: [{ tools: ['gh'], androidTermsAccepted: true }] },
+      { channel: CHANNELS.doctorLogin, args: [] },
+      { channel: CHANNELS.doctorLoginCancel, args: [] },
+      { channel: CHANNELS.doctorOpenLoginUrl, args: [] },
+      { channel: CHANNELS.doctorOpenUrl, args: [{ id: 'android-terms' }] },
     ]);
   });
 
@@ -230,6 +244,7 @@ describe('a subscription', () => {
     ['onAiEvent', PUSH_CHANNELS.aiEvent],
     ['onDoctorChanged', PUSH_CHANNELS.doctorChanged],
     ['onDoctorInstallEvent', PUSH_CHANNELS.doctorInstallEvent],
+    ['onDoctorLoginEvent', PUSH_CHANNELS.doctorLoginEvent],
   ] as const)('%s listens on its own channel', (name, channel) => {
     api[name](() => {});
 
@@ -248,6 +263,7 @@ describe('a subscription', () => {
     'onAiEvent',
     'onDoctorChanged',
     'onDoctorInstallEvent',
+    'onDoctorLoginEvent',
   ] as const)('%s returns the unsubscribe that removes exactly its own listener', (name) => {
     const unsubscribe = api[name](() => {});
 

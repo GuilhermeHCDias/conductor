@@ -35,10 +35,11 @@ const WORKSPACE = { width: 1280, height: 820, minWidth: 960, minHeight: 640 } as
  * connect card is the whole window and has nothing to grow into. */
 const CONNECT = { width: 560, height: 520 } as const;
 
-/** Before that (doctor criterion 14): the Maestro installer, 520 × 360 per
- * the kit's `CDoctorInstaller`, fixed — close live, minimise and zoom dead,
- * the way a macOS installer window renders. */
-const SETUP = { width: 520, height: 360 } as const;
+/** Before that (doctor criterion 14, managed-tools criterion 34): the
+ * installer, 520 × 480 per the kit's `CDoctorInstallerB` — four tool rows,
+ * a method line, the terms — fixed: close live, minimise and zoom dead, the
+ * way a macOS installer window renders. */
+const SETUP = { width: 520, height: 480 } as const;
 
 export type WindowView = 'setup' | 'connect' | 'workspace';
 
@@ -138,6 +139,23 @@ export function presentWorkspace(window: BrowserWindow): void {
   // Dead in the setup window (doctor criterion 14), live everywhere after.
   window.setMinimizable(true);
   window.setSize(WORKSPACE.width, WORKSPACE.height);
+  window.center();
+}
+
+/**
+ * The first report after paint found gh signed out (managed-tools criterion
+ * 32): the connect or workspace window becomes the installer again — the
+ * same fixed 520 × 480, minimise dead, as at first launch.
+ */
+export function presentSetup(window: BrowserWindow): void {
+  if (window.isDestroyed()) {
+    return;
+  }
+  window.setResizable(false);
+  window.setMaximizable(false);
+  window.setFullScreenable(false);
+  window.setMinimizable(false);
+  window.setSize(SETUP.width, SETUP.height);
   window.center();
 }
 

@@ -1,4 +1,10 @@
-import type { ConductorApi, DoctorInstallEvent, DoctorState, Result } from '@shared/ipc';
+import type {
+  ConductorApi,
+  DoctorInstallEvent,
+  DoctorLoginEvent,
+  DoctorState,
+  Result,
+} from '@shared/ipc';
 import { render } from '@testing-library/react';
 import { act } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
@@ -12,18 +18,21 @@ import { useDoctorEvents } from './useDoctorEvents';
 
 type StateListener = (payload: Result<DoctorState>) => void;
 type EventListener = (payload: Result<DoctorInstallEvent>) => void;
+type LoginListener = (payload: Result<DoctorLoginEvent>) => void;
 
 let stateListeners: StateListener[];
 let eventListeners: EventListener[];
+let loginListeners: LoginListener[];
 let unsubscribed: number;
 let status: ReturnType<typeof vi.fn>;
 
 const STATE: DoctorState = {
   report: null,
   checking: false,
-  setup: { active: true, reason: 'first-run' },
+  setup: { active: true, reason: 'first-run', plan: null },
   install: null,
-  maestroOverridden: false,
+  login: null,
+  overridden: [],
   version: '2.10.0',
 };
 
@@ -36,6 +45,7 @@ beforeEach(() => {
   resetDoctorStore();
   stateListeners = [];
   eventListeners = [];
+  loginListeners = [];
   unsubscribed = 0;
   status = vi.fn(() => Promise.resolve({ ok: true, data: STATE }));
   window.conductor = {
@@ -53,15 +63,22 @@ beforeEach(() => {
         unsubscribed += 1;
       };
     },
+    onDoctorLoginEvent: (listener: LoginListener) => {
+      loginListeners.push(listener);
+      return () => {
+        unsubscribed += 1;
+      };
+    },
   } as ConductorApi;
 });
 
 describe('useDoctorEvents', () => {
-  it('subscribes to both channels and asks for the boot state', () => {
+  it('subscribes to the three channels and asks for the boot state', () => {
     render(<Host />);
 
     expect(stateListeners).toHaveLength(1);
     expect(eventListeners).toHaveLength(1);
+    expect(loginListeners).toHaveLength(1);
     expect(status).toHaveBeenCalledOnce();
   });
 
@@ -73,7 +90,11 @@ describe('useDoctorEvents', () => {
     });
 
     expect(useDoctorStore.getState().checking).toBe(true);
-    expect(useDoctorStore.getState().setup).toEqual({ active: true, reason: 'first-run' });
+    expect(useDoctorStore.getState().setup).toEqual({
+      active: true,
+      reason: 'first-run',
+      plan: null,
+    });
   });
 
   it('routes a doctor:install-event push into the store', () => {
@@ -85,6 +106,7 @@ describe('useDoctorEvents', () => {
         data: {
           kind: 'progress',
           installId: 'install-1',
+          tool: 'maestro',
           pct: 12,
           step: 'Downloading maestro 2.10.0',
         },
@@ -93,16 +115,35 @@ describe('useDoctorEvents', () => {
 
     expect(useDoctorStore.getState().install).toEqual({
       installId: 'install-1',
+      tool: 'maestro',
       pct: 12,
       step: 'Downloading maestro 2.10.0',
     });
   });
 
-  it('unsubscribes both on unmount', () => {
+  it('routes a doctor:login-event push into the store', () => {
+    render(<Host />);
+
+    act(() => {
+      loginListeners[0]?.({
+        ok: true,
+        data: {
+          kind: 'code',
+          loginId: 'login-1',
+          code: '1234-ABCD',
+          url: 'https://github.com/login/device',
+        },
+      });
+    });
+
+    expect(useDoctorStore.getState().login).toEqual({ loginId: 'login-1', code: '1234-ABCD' });
+  });
+
+  it('unsubscribes all three on unmount', () => {
     const { unmount } = render(<Host />);
 
     unmount();
 
-    expect(unsubscribed).toBe(2);
+    expect(unsubscribed).toBe(3);
   });
 });

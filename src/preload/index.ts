@@ -49,8 +49,11 @@ const api: ConductorApi = {
   aiStatus: () => ipcRenderer.invoke(CHANNELS.aiStatus),
   doctorStatus: () => ipcRenderer.invoke(CHANNELS.doctorStatus),
   doctorCheck: () => ipcRenderer.invoke(CHANNELS.doctorCheck),
-  doctorInstall: () => ipcRenderer.invoke(CHANNELS.doctorInstall),
-  doctorSkipSetup: () => ipcRenderer.invoke(CHANNELS.doctorSkipSetup),
+  doctorInstall: (request) => ipcRenderer.invoke(CHANNELS.doctorInstall, request),
+  doctorLogin: () => ipcRenderer.invoke(CHANNELS.doctorLogin),
+  doctorLoginCancel: () => ipcRenderer.invoke(CHANNELS.doctorLoginCancel),
+  doctorOpenLoginUrl: () => ipcRenderer.invoke(CHANNELS.doctorOpenLoginUrl),
+  doctorOpenUrl: (page) => ipcRenderer.invoke(CHANNELS.doctorOpenUrl, page),
 
   // The event object never crosses: it carries `sender`, and handing the
   // renderer a live `WebContents` handle would undo the bridge.
@@ -179,6 +182,18 @@ const api: ConductorApi = {
     ipcRenderer.on(PUSH_CHANNELS.doctorInstallEvent, forward);
     return () => {
       ipcRenderer.removeListener(PUSH_CHANNELS.doctorInstallEvent, forward);
+    };
+  },
+  onDoctorLoginEvent: (listener) => {
+    const forward = (
+      _event: IpcRendererEvent,
+      payload: PushPayload<'doctor:login-event'>,
+    ): void => {
+      listener(payload);
+    };
+    ipcRenderer.on(PUSH_CHANNELS.doctorLoginEvent, forward);
+    return () => {
+      ipcRenderer.removeListener(PUSH_CHANNELS.doctorLoginEvent, forward);
     };
   },
 };

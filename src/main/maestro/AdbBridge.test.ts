@@ -107,6 +107,20 @@ describe('resolving the adb binary', () => {
     expect(calls[0]?.command).toBe('/custom/adb');
   });
 
+  /** Managed-tools criterion 25 — the copy Conductor downloaded, by absolute
+   * path, after the configured one and before the SDK roots. */
+  it('falls back to the managed launcher under ~/.conductor/bin', async () => {
+    const { bridge, calls } = makeBridge(() => ok(DEVICES), {
+      env: { ANDROID_HOME: '/opt/sdk' },
+      home: '/Users/someone',
+      executable: ['/Users/someone/.conductor/bin/adb', '/opt/sdk/platform-tools/adb'],
+    });
+
+    await bridge.listDevices();
+
+    expect(calls[0]?.command).toBe('/Users/someone/.conductor/bin/adb');
+  });
+
   it('falls back to ANDROID_HOME', async () => {
     const { bridge, calls } = makeBridge(() => ok(DEVICES), {
       env: { ANDROID_HOME: '/opt/sdk', ANDROID_SDK_ROOT: '/other/sdk' },
@@ -150,6 +164,19 @@ describe('resolving the adb binary', () => {
     await bridge.listDevices();
 
     expect(calls[0]?.command).toBe('/usr/bin/adb');
+  });
+
+  /** Managed-tools criterion 25 — the Homebrew cask links adb only into its
+   * prefix, which a GUI launch's PATH lacks (as `resolve-gh` says). */
+  it('falls back to the Homebrew prefixes when PATH lacks adb', async () => {
+    const { bridge, calls } = makeBridge(() => ok(DEVICES), {
+      env: { PATH: '/usr/bin' },
+      executable: ['/usr/local/bin/adb', '/opt/homebrew/bin/adb'],
+    });
+
+    await bridge.listDevices();
+
+    expect(calls[0]?.command).toBe('/opt/homebrew/bin/adb');
   });
 
   /** Criterion 2 — a stable code, not an empty list. */

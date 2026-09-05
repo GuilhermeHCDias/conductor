@@ -84,6 +84,17 @@ step label (`Downloading maestro 1.39.9` → `Extracting to ~/.maestro` → `Add
 → `Verifying installation`), a percentage, and no log: the user did not ask for this and cannot
 help with it. The bar turns teal on `maestro 1.39.9 is ready`, then the window is gone.
 
+**First run, variation B — `doctor-first-run-b.html` (`CDoctorInstallerB`).** The installer grew
+from one tool to four (spec managed-tools): a 520×480 window with the mark and title side by side,
+one row per tool in the sheet's row shape — the Zulu JDK, Maestro, the GitHub CLI, Android
+platform-tools, in install order — and one method line saying whether Homebrew or a direct
+download does the work. Three moments, one layout: the plan and its single click (with the
+Android terms checkbox when platform-tools installs); the rows moving one at a time, the active
+row carrying the 4 px bar under its name (determinate for a download, a shimmer for Homebrew,
+which prints no progress); the GitHub sign-in card in the method line's place — the one-time
+code, Copy, Open GitHub — before the app presents itself. A failed row reads its product
+sentence; the raw cause lives on the sheet.
+
 **Continuous — `doctor.html`.** Everything else is a person's job. adb, the JDK, Xcode CLT and
 `gh` are installed by hand; a GitHub login is *always* a user action, never something a tool
 performs silently. So Conductor reports and steps back: a centred glass panel over a

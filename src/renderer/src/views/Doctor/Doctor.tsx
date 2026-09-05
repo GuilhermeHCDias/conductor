@@ -1,19 +1,29 @@
 import type { DoctorRow, DoctorRowStatus } from '@shared/ipc';
 import type { JSX } from 'react';
+import { Checkbox } from '../../components/Checkbox/Checkbox';
 import { Dialog } from '../../components/Dialog/Dialog';
 import { Icon, type IconName } from '../../components/Icon/Icon';
+import { SignInCard } from '../../components/SignInCard/SignInCard';
 import { checkedAtLabel } from '../../lib/checked-at';
-import { selectInstallable, splitRows, useDoctorStore } from '../../stores/doctor.store';
+import {
+  installableTools,
+  isToolId,
+  selectSignInPending,
+  splitRows,
+  useDoctorStore,
+} from '../../stores/doctor.store';
 import styles from './Doctor.module.css';
 
 /**
- * The diagnostic sheet (doctor criteria 25–32), the kit's `CDoctorSheetB`
- * over the app's `Dialog` so the scrim covers the toolbar: the verdict
- * first, then one table ordered by who has to act — Needs you above Ready —
- * and one line of ownership under it. It reports and steps back: the one
- * per-row action is Install on the maestro row, because that is the one
- * thing Conductor does itself. Detail lines are machine register on purpose
- * — the exact string the CLI printed — and nothing here says Git (§12.24).
+ * The diagnostic sheet (doctor criteria 25–32, managed-tools 42–45), the
+ * kit's `CDoctorSheetB` over the app's `Dialog` so the scrim covers the
+ * toolbar: the verdict first, then one table ordered by who has to act —
+ * Needs you above Ready — and one line of ownership under it. It reports
+ * and steps back, with two kinds of action: Install on the four rows
+ * Conductor can install itself, and Sign in on the GitHub row, which runs
+ * gh's own device flow in a card under the row. Detail lines are machine
+ * register on purpose — the exact string the CLI printed — and nothing here
+ * says Git (§12.24).
  */
 
 /** The kit's glyph per state. */
@@ -23,8 +33,9 @@ const STATES: Record<DoctorRowStatus, IconName> = {
   fail: 'circle-x',
 };
 
+/** Criterion 44. */
 const FOOTNOTE =
-  'Maestro is the only one Conductor installs and updates by itself. The rest live on your machine, and signing in is always yours to do.';
+  'Conductor installs Maestro, the JDK, the GitHub CLI and platform-tools by itself. Signing in to GitHub happens in your browser and stays yours.';
 
 /** One stable "no rows" — a fresh array per select would re-render forever. */
 const NO_ROWS: readonly DoctorRow[] = [];
@@ -37,11 +48,19 @@ export function Doctor(): JSX.Element | null {
   // The rows reference is main's — stable between reports — and the split
   // is eight rows, cheaper than a memo (criterion 28).
   const rows = useDoctorStore((state) => state.report?.rows ?? NO_ROWS);
-  const installable = useDoctorStore(selectInstallable);
   const install = useDoctorStore((state) => state.install);
+  const login = useDoctorStore((state) => state.login);
+  const signedInAs = useDoctorStore((state) => state.signedInAs);
+  const termsAccepted = useDoctorStore((state) => state.androidTermsAccepted);
+  const signInPending = useDoctorStore(selectSignInPending);
   const closeSheet = useDoctorStore((state) => state.closeSheet);
   const check = useDoctorStore((state) => state.check);
-  const installMaestro = useDoctorStore((state) => state.installMaestro);
+  const installTools = useDoctorStore((state) => state.installTools);
+  const setAndroidTerms = useDoctorStore((state) => state.setAndroidTerms);
+  const signIn = useDoctorStore((state) => state.signIn);
+  const signInCancel = useDoctorStore((state) => state.signInCancel);
+  const openLoginUrl = useDoctorStore((state) => state.openLoginUrl);
+  const overridden = useDoctorStore((state) => state.overridden);
 
   if (!sheetOpen) {
     return null;
@@ -49,6 +68,27 @@ export function Doctor(): JSX.Element | null {
 
   const installing = install !== null && 'pct' in install ? install : null;
   const { needsYou, ready } = splitRows(rows);
+  // Pure over what was selected, not a selector: it returns a fresh set.
+  const installable = installableTools({ rows, install, overridden });
+  // Criterion 43 — the card lives under the GitHub row while the sign-in
+  // runs, failed, or just landed.
+  const signInCard =
+    login !== null || (signedInAs !== null && !signInPending) ? (
+      <SignInCard
+        failedMessage={login !== null && 'failed' in login ? login.failed.message : null}
+        onCancel={() => {
+          void signInCancel();
+        }}
+        onOpen={() => {
+          void openLoginUrl();
+        }}
+        onSignIn={() => {
+          void signIn();
+        }}
+        running={login !== null && 'code' in login ? { code: login.code } : null}
+        signedInAs={signedInAs}
+      />
+    ) : null;
 
   return (
     <Dialog
@@ -97,7 +137,7 @@ export function Doctor(): JSX.Element | null {
           <span className={styles.verdictBody}>
             {issues === 0
               ? 'Conductor has what it needs on this Mac.'
-              : 'Conductor runs without them, and cannot install or sign in on your behalf.'}
+              : 'Conductor runs without them, and can install or sign in for some of them below.'}
           </span>
         </span>
       </div>
@@ -106,27 +146,51 @@ export function Doctor(): JSX.Element | null {
       <div className={styles.table}>
         {needsYou.length > 0 ? (
           <Section label="Needs you">
-            {needsYou.map((row) => (
-              <Row
-                full
-                installable={installable && row.id === 'maestro'}
-                installing={row.id === 'maestro' ? installing : null}
-                key={row.id}
-                onInstall={() => {
-                  void installMaestro();
-                }}
-                row={row}
-              />
-            ))}
+            {needsYou.map((row) => {
+              const tool = isToolId(row.id) ? row.id : null;
+              return (
+                <Row
+                  action={
+                    tool !== null && installable.has(tool)
+                      ? {
+                          kind: 'install',
+                          terms: tool === 'adb' ? termsAccepted : null,
+                          onTerms: setAndroidTerms,
+                          onInstall: () => {
+                            void installTools([tool]);
+                          },
+                        }
+                      : row.id === 'github-auth' && signInPending && login === null
+                        ? {
+                            kind: 'sign-in',
+                            onSignIn: () => {
+                              void signIn();
+                            },
+                          }
+                        : null
+                  }
+                  card={row.id === 'github-auth' ? signInCard : null}
+                  full
+                  installing={tool !== null && installing?.tool === tool ? installing : null}
+                  key={row.id}
+                  row={row}
+                />
+              );
+            })}
           </Section>
         ) : null}
         <Section label="Ready">
           {ready.map((row) => (
-            <Row installable={false} installing={null} key={row.id} row={row} />
+            <Row
+              action={null}
+              card={row.id === 'github-auth' ? signInCard : null}
+              installing={null}
+              key={row.id}
+              row={row}
+            />
           ))}
         </Section>
       </div>
-      {/* Criterion 29. */}
       <p className={styles.footnote}>{FOOTNOTE}</p>
     </Dialog>
   );
@@ -151,24 +215,35 @@ function Section({
   );
 }
 
+type RowAction =
+  | {
+      readonly kind: 'install';
+      /** The adb row asks for the terms first (criterion 42); null elsewhere. */
+      readonly terms: boolean | null;
+      readonly onTerms: (accepted: boolean) => void;
+      readonly onInstall: () => void;
+    }
+  | { readonly kind: 'sign-in'; readonly onSignIn: () => void };
+
 /**
  * One row: glyph, name, the mono line — the full `detail` where a person
- * has to read it, the `short` where nothing is wrong — and one word of state.
- * The maestro row alone may carry Install (criterion 31), and reads
- * Installing with the step and percentage while the pipeline runs.
+ * has to read it, the `short` where nothing is wrong — and one word of
+ * state. A managed row may carry Install (criterion 42) and reads
+ * Installing with the step (and the percentage, when there is one) while
+ * the pipeline runs; the GitHub row may carry Sign in (criterion 43).
  */
 function Row({
   row,
   full = false,
-  installable,
+  action,
   installing,
-  onInstall,
+  card,
 }: {
   readonly row: DoctorRow;
   readonly full?: boolean;
-  readonly installable: boolean;
-  readonly installing: { readonly pct: number; readonly step: string } | null;
-  readonly onInstall?: () => void;
+  readonly action: RowAction | null;
+  readonly installing: { readonly pct: number | null; readonly step: string } | null;
+  readonly card: React.ReactNode;
 }): JSX.Element {
   const label = installing === null ? row.label : 'Installing';
   const mono =
@@ -176,7 +251,9 @@ function Row({
       ? full
         ? row.detail
         : row.short
-      : `${installing.step} · ${Math.round(installing.pct)}%`;
+      : installing.pct === null
+        ? installing.step
+        : `${installing.step} · ${Math.round(installing.pct)}%`;
   return (
     <li aria-label={row.name} className={styles.row} data-row={row.id} data-status={row.status}>
       <Icon className={styles.glyph} name={STATES[row.status]} size={15} />
@@ -185,11 +262,32 @@ function Row({
         <span className={styles.mono}>{mono}</span>
       </span>
       <span className={styles.label}>{label}</span>
-      {installable && installing === null ? (
-        <button className={styles.install} onClick={onInstall} type="button">
-          Install
-        </button>
+      {action !== null && installing === null ? (
+        action.kind === 'install' ? (
+          <button
+            className={styles.install}
+            disabled={action.terms === false}
+            onClick={action.onInstall}
+            type="button"
+          >
+            Install
+          </button>
+        ) : (
+          <button className={styles.install} onClick={action.onSignIn} type="button">
+            Sign in
+          </button>
+        )
       ) : null}
+      {action?.kind === 'install' && action.terms !== null && installing === null ? (
+        <div className={styles.terms}>
+          <Checkbox
+            checked={action.terms}
+            label="I accept the Android SDK Platform-Tools terms"
+            onChange={action.onTerms}
+          />
+        </div>
+      ) : null}
+      {card !== null ? <div className={styles.card}>{card}</div> : null}
     </li>
   );
 }

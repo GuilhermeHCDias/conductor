@@ -1,0 +1,120 @@
+/* The sign-in card: a well with a title, copy or the code, and its buttons —
+   the installer's and the sheet's button styles, so it reads the same in both. */
+
+.card {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-surface);
+  display: grid;
+  gap: 8px;
+  padding: 12px 14px;
+}
+
+.cardTitle {
+  color: var(--text-primary);
+  font: var(--type-body-strong);
+  margin: 0;
+}
+
+.cardCopy {
+  color: var(--text-secondary);
+  font: var(--type-caption);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.codeLine {
+  align-items: center;
+  display: flex;
+  gap: 12px;
+}
+
+/* Criterion 40 — the code in --type-title-2 mono. */
+.code {
+  color: var(--text-primary);
+  font: var(--type-title-2);
+  font-family: var(--font-mono);
+  letter-spacing: 0.06em;
+}
+
+.signedIn {
+  align-items: center;
+  color: var(--state-pass);
+  display: flex;
+  font: var(--type-body-strong);
+  gap: 6px;
+  margin: 0;
+}
+
+.check {
+  color: var(--state-pass);
+}
+
+/* The failure sentence, never the raw cause (that lives on the sheet's row). */
+.failure {
+  color: var(--state-fail);
+  font: var(--type-caption);
+  margin: 0;
+  text-wrap: pretty;
+}
+
+.link {
+  background: none;
+  border: none;
+  color: var(--accent);
+  cursor: pointer;
+  font: var(--type-caption);
+  padding: 0;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
+.actions {
+  display: flex;
+  gap: var(--space-4);
+  justify-content: flex-end;
+}
+
+.ghost,
+.primary {
+  align-items: center;
+  border-radius: var(--a-radius-field);
+  cursor: pointer;
+  display: flex;
+  font: var(--type-caption);
+  height: 28px;
+  padding: 0 var(--space-6);
+  transition: var(--t-hover);
+}
+
+.ghost {
+  background: transparent;
+  border: 1px solid var(--a-hair);
+  color: var(--text-secondary);
+}
+
+.ghost:hover {
+  background: var(--glass-hover);
+  color: var(--text-primary);
+}
+
+.primary {
+  background: var(--accent);
+  border: none;
+  color: var(--accent-on);
+}
+
+.primary:hover {
+  background: var(--accent-strong);
+}
+
+.ghost:focus-visible,
+.primary:focus-visible {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

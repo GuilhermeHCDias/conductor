@@ -7,6 +7,7 @@ import {
   ERROR_CODES,
 } from '@shared/ipc';
 import type { RunOptions, RunResult, SpawnOptions, StreamingProcess } from '../process/run';
+import { managedLauncher } from '../services/tool-layout';
 
 /**
  * Every `adb` invocation the app makes, and the only module that knows the
@@ -99,8 +100,11 @@ export class AdbBridge {
   }
 
   /**
-   * Criterion 1's order, first hit wins: the configured path, `ANDROID_HOME`,
-   * `ANDROID_SDK_ROOT`, the macOS SDK default, then `PATH`. `PATH` is walked
+   * Criterion 1's order, first hit wins: the configured path, the copy
+   * Conductor downloaded (`~/.conductor/bin/adb`, managed-tools criterion
+   * 25), `ANDROID_HOME`, `ANDROID_SDK_ROOT`, the macOS SDK default, `PATH`,
+   * then Homebrew's prefixes — the cask links adb only there, and a GUI
+   * launch's `PATH` lacks them (as `resolve-gh` says). `PATH` is walked
    * rather than shelled out to, so the same probe answers every candidate.
    */
   resolve(): string | null {
@@ -111,10 +115,13 @@ export class AdbBridge {
     const { configuredPath, env, home, isExecutable } = this.deps;
     const candidates = [
       ...(configuredPath === '' ? [] : [configuredPath]),
+      managedLauncher(home, 'adb'),
       ...sdkCandidate(env.ANDROID_HOME),
       ...sdkCandidate(env.ANDROID_SDK_ROOT),
       join(home, 'Library', 'Android', 'sdk', 'platform-tools', 'adb'),
       ...(env.PATH ?? '').split(delimiter).flatMap((dir) => (dir === '' ? [] : [join(dir, 'adb')])),
+      '/opt/homebrew/bin/adb',
+      '/usr/local/bin/adb',
     ];
 
     this.resolved = candidates.find((candidate) => isExecutable(candidate)) ?? null;
