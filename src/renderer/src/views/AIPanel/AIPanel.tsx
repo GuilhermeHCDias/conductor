@@ -22,14 +22,25 @@ const SUGGESTIONS: readonly string[] = [
   'Add a check to the open test',
 ];
 
-/** The assistant's byline — the window's own quiet voice. */
-function Byline(): JSX.Element {
+/**
+ * The assistant's byline — the window's own quiet voice, and, while the turn
+ * is in flight, the wait itself: the name shines until the turn settles. A
+ * send used to leave the byline sitting there mute, with nothing to say the
+ * assistant had heard.
+ */
+function Byline({ thinking = false }: { readonly thinking?: boolean }): JSX.Element {
   return (
     <div className={styles.byline}>
       <span className={styles.bylineMark}>
         <Icon name="sparkles" size={11} />
       </span>
-      <span className={styles.bylineName}>Conductor</span>
+      <span
+        aria-busy={thinking || undefined}
+        className={styles.bylineName}
+        data-thinking={thinking ? 'true' : undefined}
+      >
+        Conductor
+      </span>
     </div>
   );
 }
@@ -56,7 +67,7 @@ function Turn({ entry }: { readonly entry: AiThreadEntry }): JSX.Element {
       data-role={entry.role === 'person' ? 'user' : 'assistant'}
       data-testid="chat-turn"
     >
-      {entry.role === 'assistant' ? <Byline /> : null}
+      {entry.role === 'assistant' ? <Byline thinking={entry.status === 'streaming'} /> : null}
       <div className={styles.body}>{entry.text}</div>
       {entry.role === 'assistant' && entry.status === 'stopped' ? (
         <div className={styles.stopped}>Stopped</div>

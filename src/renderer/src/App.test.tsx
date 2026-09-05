@@ -303,11 +303,11 @@ describe('App', () => {
     // Toolbar left to right, then the sidebar: the repo switcher at its top
     // (repo-connect spec), its header, its search, and the empty workspace's
     // own New flow action (criterion 35).
-    expect(reached.slice(0, 3)).toEqual(['Toggle sidebar', 'staging', 'Dark appearance']);
-    expect(reached[3]).toContain('pnp-fast-mode');
-    expect(reached[4]).toBe('New flow or folder');
-    expect(reached[5]).toBe('Search flows');
-    expect(reached[6]).toContain('New flow');
+    expect(reached.slice(0, 2)).toEqual(['Toggle sidebar', 'Dark appearance']);
+    expect(reached[2]).toContain('pnp-fast-mode');
+    expect(reached[3]).toBe('New flow or folder');
+    expect(reached[4]).toBe('Search flows');
+    expect(reached[5]).toContain('New flow');
   });
 
   /** Criterion 12 of the shell spec, fed by the real run now (run criterion

@@ -4,7 +4,6 @@ import type { RepoErrorSurface } from '../../lib/repo-errors';
 import { flowCountLabel, platformLabel, primaryBundleId } from '../../lib/repo-labels';
 import { Icon } from '../Icon/Icon';
 import { IconButton } from '../IconButton/IconButton';
-import { Tooltip } from '../Tooltip/Tooltip';
 import styles from './RepoResolver.module.css';
 
 /**
@@ -220,16 +219,14 @@ function ErrorCard({ error, onCopyCommand, onRetry }: ErrorCardProps): JSX.Eleme
         <span className={styles.commandWell}>
           <span className={styles.prompt}>$</span>
           <span className={styles.command}>{command}</span>
-          <Tooltip content="Copy">
-            <IconButton
-              icon="copy"
-              label="Copy command"
-              onClick={() => {
-                onCopyCommand(command);
-              }}
-              size="sm"
-            />
-          </Tooltip>
+          <IconButton
+            icon="copy"
+            label="Copy command"
+            onClick={() => {
+              onCopyCommand(command);
+            }}
+            size="sm"
+          />
         </span>
       ) : null}
       {command !== null ? (

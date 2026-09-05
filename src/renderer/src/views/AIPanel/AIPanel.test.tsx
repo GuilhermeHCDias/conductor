@@ -118,6 +118,42 @@ describe('the conversation', () => {
     expect(screen.getByTestId('chat-activity')).toHaveTextContent('Looking at the screen…');
   });
 
+  /**
+   * The wait itself. A send opens the assistant's turn with no text in it, so
+   * for as long as the child is thinking the byline is the only thing on
+   * screen — it shines until the turn settles, rather than sitting there mute.
+   */
+  it('shines the byline while the turn is in flight, and stops when it settles', () => {
+    useAiStore.setState({
+      activeTurnId: 'turn-1',
+      thread: [
+        { id: 'person-turn-1', role: 'person', text: 'Quero um teste do login' },
+        { id: 'turn-1', role: 'assistant', text: '', status: 'streaming' },
+      ],
+    });
+    const view = render(<AIPanel />);
+
+    expect(screen.getByText('Conductor')).toHaveAttribute('data-thinking', 'true');
+
+    useAiStore.setState({
+      activeTurnId: null,
+      thread: [
+        { id: 'person-turn-1', role: 'person', text: 'Quero um teste do login' },
+        { id: 'turn-1', role: 'assistant', text: 'Pronto.', status: 'done' },
+      ],
+    });
+    view.rerender(<AIPanel />);
+
+    expect(screen.getByText('Conductor')).not.toHaveAttribute('data-thinking');
+  });
+
+  /** The greeting is not a turn: nothing is in flight, so nothing shines. */
+  it('leaves the greeting byline still', () => {
+    render(<AIPanel />);
+
+    expect(screen.getByText('Conductor')).not.toHaveAttribute('data-thinking');
+  });
+
   /** Criterion 11 — the partial text stays, marked stopped. */
   it('marks a stopped turn', () => {
     useAiStore.setState({

@@ -1,4 +1,4 @@
-/* @ds-bundle: {"format":4,"namespace":"ConductorDesignSystem_527814","components":[{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Checkbox","sourcePath":"components/core/Checkbox.jsx"},{"name":"ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"ICON_NAMES","sourcePath":"components/core/Icon.jsx"},{"name":"ACTION_ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"Input","sourcePath":"components/core/Input.jsx"},{"name":"Kbd","sourcePath":"components/core/Kbd.jsx"},{"name":"SegmentedControl","sourcePath":"components/core/SegmentedControl.jsx"},{"name":"Select","sourcePath":"components/core/Select.jsx"},{"name":"StatusDot","sourcePath":"components/core/StatusDot.jsx"},{"name":"Switch","sourcePath":"components/core/Switch.jsx"},{"name":"Tooltip","sourcePath":"components/core/Tooltip.jsx"},{"name":"ChatComposer","sourcePath":"components/studio/ChatComposer.jsx"},{"name":"ChatMessage","sourcePath":"components/studio/ChatMessage.jsx"},{"name":"DeviceMirror","sourcePath":"components/studio/DeviceMirror.jsx"},{"name":"DeviceSelector","sourcePath":"components/studio/DeviceSelector.jsx"},{"name":"FileTree","sourcePath":"components/studio/FileTree.jsx"},{"name":"LogStream","sourcePath":"components/studio/LogStream.jsx"},{"name":"RunBar","sourcePath":"components/studio/RunBar.jsx"},{"name":"TestList","sourcePath":"components/studio/TestList.jsx"},{"name":"TitleBar","sourcePath":"components/studio/TitleBar.jsx"},{"name":"YamlEditor","sourcePath":"components/studio/YamlEditor.jsx"},{"name":"ContextMenu","sourcePath":"components/surface/ContextMenu.jsx"},{"name":"Dialog","sourcePath":"components/surface/Dialog.jsx"},{"name":"Divider","sourcePath":"components/surface/Divider.jsx"},{"name":"EmptyState","sourcePath":"components/surface/EmptyState.jsx"},{"name":"GlassPanel","sourcePath":"components/surface/GlassPanel.jsx"},{"name":"PanelHeader","sourcePath":"components/surface/PanelHeader.jsx"},{"name":"TabStrip","sourcePath":"components/surface/TabStrip.jsx"},{"name":"Toolbar","sourcePath":"components/surface/Toolbar.jsx"}],"sourceHashes":{"components/core/Badge.jsx":"a5930bf169a3","components/core/Button.jsx":"cdf2b4b14000","components/core/Checkbox.jsx":"001bc191d563","components/core/Icon.jsx":"a449f77c7faf","components/core/IconButton.jsx":"dfe290a3ea47","components/core/Input.jsx":"362d6ff20788","components/core/Kbd.jsx":"fe13f03fb620","components/core/SegmentedControl.jsx":"227a9979e57c","components/core/Select.jsx":"66feb21b7caa","components/core/StatusDot.jsx":"16f6665004ee","components/core/Switch.jsx":"b7ad10c7a1f5","components/core/Tooltip.jsx":"76adcc4e387f","components/studio/ChatComposer.jsx":"19cebb31f254","components/studio/ChatMessage.jsx":"84df920d7dd4","components/studio/DeviceMirror.jsx":"5bed2b342dd5","components/studio/DeviceSelector.jsx":"451ef165c1f8","components/studio/FileTree.jsx":"930b2bbebf31","components/studio/LogStream.jsx":"9bf781b3d5c8","components/studio/RunBar.jsx":"9f9c52f9fb0f","components/studio/TestList.jsx":"954555828845","components/studio/TitleBar.jsx":"d15171c8ed3b","components/studio/YamlEditor.jsx":"5cda21f876bb","components/surface/ContextMenu.jsx":"6000eb4caffe","components/surface/Dialog.jsx":"aff822164d2f","components/surface/Divider.jsx":"5b4485a0dd2f","components/surface/EmptyState.jsx":"5155589764d8","components/surface/GlassPanel.jsx":"9362b153ec84","components/surface/PanelHeader.jsx":"a70d030b441c","components/surface/TabStrip.jsx":"dda2dd4d62c1","components/surface/Toolbar.jsx":"dcab2b0b1dad","ui_kits/conductor-c-aurora/AppUnderTest.jsx":"baf680a07a68","ui_kits/conductor-c-aurora/CDoctor.jsx":"cc5216aaaae5","ui_kits/conductor-c-aurora/CDoctorB.jsx":"9a97f0172d4d","ui_kits/conductor-c-aurora/CRegions.jsx":"b8b854e465e8","ui_kits/conductor-c-aurora/CRepo.jsx":"a23f65247a68","ui_kits/conductor-c-aurora/CReview.jsx":"a74c0e8200a8","ui_kits/conductor-c-aurora/CShell.jsx":"86a2079820b8","ui_kits/conductor-c-aurora/data.jsx":"2dfafcd35260","ui_kits/conductor-c-aurora/useInspector.jsx":"8273301df2b8"},"inlinedExternals":[],"unexposedExports":[]} */
+/* @ds-bundle: {"format":4,"namespace":"ConductorDesignSystem_527814","components":[{"name":"Badge","sourcePath":"components/core/Badge.jsx"},{"name":"Button","sourcePath":"components/core/Button.jsx"},{"name":"Checkbox","sourcePath":"components/core/Checkbox.jsx"},{"name":"ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"ICON_NAMES","sourcePath":"components/core/Icon.jsx"},{"name":"ACTION_ICONS","sourcePath":"components/core/Icon.jsx"},{"name":"Icon","sourcePath":"components/core/Icon.jsx"},{"name":"IconButton","sourcePath":"components/core/IconButton.jsx"},{"name":"Input","sourcePath":"components/core/Input.jsx"},{"name":"Kbd","sourcePath":"components/core/Kbd.jsx"},{"name":"SegmentedControl","sourcePath":"components/core/SegmentedControl.jsx"},{"name":"Select","sourcePath":"components/core/Select.jsx"},{"name":"StatusDot","sourcePath":"components/core/StatusDot.jsx"},{"name":"Switch","sourcePath":"components/core/Switch.jsx"},{"name":"Tooltip","sourcePath":"components/core/Tooltip.jsx"},{"name":"ChatComposer","sourcePath":"components/studio/ChatComposer.jsx"},{"name":"ChatMessage","sourcePath":"components/studio/ChatMessage.jsx"},{"name":"DeviceMirror","sourcePath":"components/studio/DeviceMirror.jsx"},{"name":"DeviceSelector","sourcePath":"components/studio/DeviceSelector.jsx"},{"name":"FileTree","sourcePath":"components/studio/FileTree.jsx"},{"name":"LogStream","sourcePath":"components/studio/LogStream.jsx"},{"name":"RunBar","sourcePath":"components/studio/RunBar.jsx"},{"name":"TestList","sourcePath":"components/studio/TestList.jsx"},{"name":"TitleBar","sourcePath":"components/studio/TitleBar.jsx"},{"name":"YamlEditor","sourcePath":"components/studio/YamlEditor.jsx"},{"name":"ContextMenu","sourcePath":"components/surface/ContextMenu.jsx"},{"name":"Dialog","sourcePath":"components/surface/Dialog.jsx"},{"name":"Divider","sourcePath":"components/surface/Divider.jsx"},{"name":"EmptyState","sourcePath":"components/surface/EmptyState.jsx"},{"name":"GlassPanel","sourcePath":"components/surface/GlassPanel.jsx"},{"name":"PanelHeader","sourcePath":"components/surface/PanelHeader.jsx"},{"name":"TabStrip","sourcePath":"components/surface/TabStrip.jsx"},{"name":"Toolbar","sourcePath":"components/surface/Toolbar.jsx"}],"sourceHashes":{"components/core/Badge.jsx":"a5930bf169a3","components/core/Button.jsx":"cdf2b4b14000","components/core/Checkbox.jsx":"001bc191d563","components/core/Icon.jsx":"a449f77c7faf","components/core/IconButton.jsx":"dfe290a3ea47","components/core/Input.jsx":"362d6ff20788","components/core/Kbd.jsx":"fe13f03fb620","components/core/SegmentedControl.jsx":"227a9979e57c","components/core/Select.jsx":"66feb21b7caa","components/core/StatusDot.jsx":"16f6665004ee","components/core/Switch.jsx":"b7ad10c7a1f5","components/core/Tooltip.jsx":"76adcc4e387f","components/studio/ChatComposer.jsx":"19cebb31f254","components/studio/ChatMessage.jsx":"84df920d7dd4","components/studio/DeviceMirror.jsx":"5bed2b342dd5","components/studio/DeviceSelector.jsx":"451ef165c1f8","components/studio/FileTree.jsx":"930b2bbebf31","components/studio/LogStream.jsx":"9bf781b3d5c8","components/studio/RunBar.jsx":"9f9c52f9fb0f","components/studio/TestList.jsx":"954555828845","components/studio/TitleBar.jsx":"d15171c8ed3b","components/studio/YamlEditor.jsx":"5cda21f876bb","components/surface/ContextMenu.jsx":"6000eb4caffe","components/surface/Dialog.jsx":"aff822164d2f","components/surface/Divider.jsx":"5b4485a0dd2f","components/surface/EmptyState.jsx":"5155589764d8","components/surface/GlassPanel.jsx":"9362b153ec84","components/surface/PanelHeader.jsx":"a70d030b441c","components/surface/TabStrip.jsx":"dda2dd4d62c1","components/surface/Toolbar.jsx":"dcab2b0b1dad","ui_kits/conductor-c-aurora/AppUnderTest.jsx":"baf680a07a68","ui_kits/conductor-c-aurora/CDoctor.jsx":"cc5216aaaae5","ui_kits/conductor-c-aurora/CDoctorB.jsx":"9a97f0172d4d","ui_kits/conductor-c-aurora/CRegions.jsx":"3355ceafebe7","ui_kits/conductor-c-aurora/CRepo.jsx":"a23f65247a68","ui_kits/conductor-c-aurora/CReview.jsx":"a74c0e8200a8","ui_kits/conductor-c-aurora/CShell.jsx":"ac02c3de2cc1","ui_kits/conductor-c-aurora/data.jsx":"2dfafcd35260","ui_kits/conductor-c-aurora/useInspector.jsx":"8273301df2b8"},"inlinedExternals":[],"unexposedExports":[]} */
 
 (() => {
 
@@ -5023,7 +5023,7 @@ function CEditorColumn({
     }
   }, /*#__PURE__*/React.createElement(CTabStrip, {
     s: s
-  }), /*#__PURE__*/React.createElement("div", {
+  }), s.activeTab ? /*#__PURE__*/React.createElement("div", {
     className: "a-scroll",
     style: {
       display: "grid",
@@ -5034,7 +5034,47 @@ function CEditorColumn({
     value: s.yaml,
     activeLine: activeLine,
     aiLines: s.aiLines
-  })), /*#__PURE__*/React.createElement(CSubTabs, {
+  })) : /*#__PURE__*/React.createElement("div", {
+    style: {
+      display: "grid",
+      placeItems: "center",
+      alignContent: "center",
+      gap: 10,
+      minHeight: 0,
+      padding: 32
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "file-code",
+    size: 20,
+    color: "var(--text-disabled)"
+  }), /*#__PURE__*/React.createElement("span", {
+    style: {
+      font: "var(--type-caption)",
+      color: "var(--text-tertiary)",
+      textAlign: "center",
+      textWrap: "pretty"
+    }
+  }, "No flow open. Pick one in the sidebar, or create the first one."), /*#__PURE__*/React.createElement("button", {
+    type: "button",
+    onClick: () => s.startNew("flow", ""),
+    style: {
+      display: "flex",
+      alignItems: "center",
+      gap: 6,
+      height: 26,
+      padding: "0 11px",
+      background: "var(--a-well)",
+      border: A_HAIR,
+      borderRadius: "var(--a-radius-field)",
+      cursor: "pointer",
+      font: "var(--type-caption)",
+      color: "var(--text-primary)"
+    }
+  }, /*#__PURE__*/React.createElement(Icon, {
+    name: "plus",
+    size: 12,
+    color: "var(--accent)"
+  }), "New flow")), /*#__PURE__*/React.createElement(CSubTabs, {
     value: s.lower,
     onChange: s.setLower,
     running: s.running
@@ -6730,7 +6770,7 @@ function useStudioC(opts = {}) {
       label: first.name
     }] : []);
     setActiveTab(first ? first.id : null);
-    setYaml(window.FLOW_START.replace("com.example.app", r.bundle));
+    setYaml(first ? window.FLOW_START.replace("com.example.app", r.bundle) : "");
   }
   function startNew(kind, folder = "") {
     setRenameItem(null);
@@ -7339,12 +7379,12 @@ function CToolbar({
       textOverflow: "ellipsis",
       whiteSpace: "nowrap"
     }
-  }, active ? active.label : "Conductor"), /*#__PURE__*/React.createElement("span", {
+  }, active ? active.label : s.repo.name), /*#__PURE__*/React.createElement("span", {
     style: {
       font: "var(--type-mono-label)",
       color: "var(--text-disabled)"
     }
-  }, s.commandCount(), " ", s.commandCount() === 1 ? "command" : "commands", " \xB7 ", s.running ? "running" : "saved on this Mac")), /*#__PURE__*/React.createElement("span", {
+  }, active ? s.commandCount() + (s.commandCount() === 1 ? " command · " : " commands · ") + (s.running ? "running" : "saved on this Mac") : s.repo.org + "/" + s.repo.name + " · " + s.repo.branch)), /*#__PURE__*/React.createElement("span", {
     style: {
       flex: 1
     }

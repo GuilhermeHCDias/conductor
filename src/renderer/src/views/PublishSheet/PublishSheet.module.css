@@ -1,3 +1,34 @@
+/*
+ * Design-system keyframes, restated here because CSS Modules hashes every
+ * `animation-name` in this file: a reference to a keyframe declared only in
+ * `utilities/animation.css` resolves to nothing and the animation is silently
+ * dead. Same names, same frames — the DS stays the source of the motion.
+ */
+@keyframes cd-shimmer {
+  from {
+    background-position: -200% 0;
+  }
+  to {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes cd-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes cd-pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.35;
+  }
+}
+
 /* The kit's CSendSheet, inside the app's Dialog: rows in a sunken well, the
    one note field, the send footer. This module declares no blur of its own —
    the Dialog owns the modal frost, and frost never nests. Each change kind
@@ -209,6 +240,13 @@
   resize: none;
   transition: var(--t-hover);
   width: 100%;
+  /* The AI's note is read here, not scrolled two lines at a time: the field
+     sizes to its content from six lines up, and only past 40% of the window
+     does it scroll on its own — the dialog body scrolls the rest. */
+  field-sizing: content;
+  min-height: calc(6lh + 16px);
+  max-height: 40vh;
+  overflow-y: auto;
   /* The sheen rides `background-image` under `cd-shimmer`, so it is declared
      here and only travels while writing. */
   background-image: linear-gradient(

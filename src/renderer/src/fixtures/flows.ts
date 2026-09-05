@@ -10,16 +10,13 @@
  * local workspace spec (`stores/flow.store.ts`, fed by `flow:*`); the AI
  * thread, its suggestions and its status line left with the assistant spec
  * (`stores/ai.store.ts`, fed by `ai:*`). What is left belongs to the run
- * domain's error surface and the toolbar's environment tag, and leaves with
- * their own specs.
+ * domain's error surface, and leaves with its own spec.
  *
  * Content belonging to the app under test stays in the team's own Portuguese.
  */
 
 /** Lines Maestro reported as failing. */
 export const ERROR_LINES: readonly number[] = [];
-
-export const ENVIRONMENT = 'staging';
 
 /** What the segmented control reports on its right-hand side for the run
  * panel. The assistant's side is real state now (`ai.store` availability). */

@@ -1,3 +1,29 @@
+/*
+ * Design-system keyframes, restated here because CSS Modules hashes every
+ * `animation-name` in this file: a reference to a keyframe declared only in
+ * `utilities/animation.css` resolves to nothing and the animation is silently
+ * dead. Same names, same frames — the DS stays the source of the motion.
+ */
+@keyframes cd-dialog-in {
+  from {
+    opacity: 0;
+    transform: translateY(-14px) scale(0.985);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+
+@keyframes cd-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
 /* Ported from the design system's surface/Dialog. The dialog blurs heavier
    than any other layer — that is how its depth is read. Its fill departs
    from the kit (decision 2026-08-08): --glass-dialog is near-opaque, because
@@ -38,6 +64,11 @@
   box-shadow: var(--shadow-inset-top), var(--shadow-3);
   animation: cd-dialog-in var(--dur-slow) var(--ease-glass);
   overflow: hidden;
+  /* Never taller than the window: the body scrolls between a pinned header
+     and footer, so a long note or a long change list stays reachable. */
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - var(--space-8) * 2);
 }
 
 .header {
@@ -85,6 +116,9 @@
 
 .body {
   padding: 0 var(--space-6) var(--space-6);
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
 }
 
 .footer {

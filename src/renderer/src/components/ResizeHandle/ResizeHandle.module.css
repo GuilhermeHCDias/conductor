@@ -1,0 +1,39 @@
+/*
+ * A divider that can be grabbed is still a hairline: the rule is the same 1px
+ * the pane borders draw, and the grab area is a transparent strip laid over it
+ * — 7px is what a pointer can actually hit, and 7px of chrome between two
+ * panes is a bar.
+ */
+.handle {
+  background: var(--a-hair);
+  border: none;
+  cursor: row-resize;
+  height: 1px;
+  margin: 0;
+  position: relative;
+  /* The gesture is the pointer's; the panes must not scroll under it. */
+  touch-action: none;
+  transition: var(--t-hover);
+  /* Over the rows on both sides, so the strip below catches the pointer
+     rather than the tab bar it overlaps. */
+  z-index: 1;
+}
+
+.handle::after {
+  content: "";
+  inset: -3px 0;
+  position: absolute;
+}
+
+/* The rule lights up under the pointer and stays lit for the drag, which is
+   what says the hairline is a control at all. */
+.handle:hover,
+.handle[data-dragging="true"] {
+  background: var(--accent-edge);
+}
+
+.handle:focus-visible {
+  background: var(--accent-edge);
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

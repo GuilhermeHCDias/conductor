@@ -5,7 +5,14 @@
   background: var(--a-content);
   display: grid;
   grid-template-columns: minmax(0, 1fr);
-  grid-template-rows: 38px minmax(120px, 0.95fr) 38px minmax(0, 1.05fr) auto;
+  /* Document bar · YAML · the divider · the tab bar · the lower panel ·
+     composer. The two flexible rows carry their share as a variable, because
+     the person drags it: `--editor-top` and `--editor-bottom` are `fr` values
+     written by the view, and the fallbacks are the proportions the column had
+     before it could move. */
+  grid-template-rows:
+    38px minmax(120px, var(--editor-top, 0.95fr)) auto 38px
+    minmax(120px, var(--editor-bottom, 1.05fr)) auto;
   min-height: 0;
   min-width: 0;
 }
@@ -173,10 +180,11 @@
 }
 
 /* Criterion 29. */
+/* The top rule is the resize handle's now — it draws the same hairline, and
+   two of them stacked is a 2px bar. */
 .subTabs {
   align-items: center;
   border-bottom: 1px solid var(--a-hair);
-  border-top: 1px solid var(--a-hair);
   display: flex;
   flex: none;
   gap: var(--space-4);

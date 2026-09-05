@@ -1,8 +1,11 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { DEFAULT_SPLIT, MIN_PANE } from '../lib/editor-split';
 import { setPrefersDark } from '../test-setup';
 import {
   APPEARANCE_KEY,
+  EDITOR_SPLIT_KEY,
   initialAppearance,
+  initialEditorSplit,
   resetUiStore,
   selectMirrorWidth,
   selectSidebarVisible,
@@ -182,5 +185,61 @@ describe('search', () => {
     ui().clearQuery();
 
     expect(ui().query).toBe('');
+  });
+});
+
+/**
+ * The editor split is a size the person chose, so it outlives the window the
+ * way the appearance does — reopening Conductor to someone else's proportions
+ * is the whole complaint the handle exists to answer.
+ */
+describe('the editor split', () => {
+  it("opens at the column's own proportions", () => {
+    expect(initialEditorSplit()).toBe(DEFAULT_SPLIT);
+    expect(ui().editorSplit).toBe(DEFAULT_SPLIT);
+  });
+
+  it('persists what the person dragged to', () => {
+    ui().setEditorSplit(0.7);
+
+    expect(ui().editorSplit).toBe(0.7);
+    expect(localStorage.getItem(EDITOR_SPLIT_KEY)).toBe('0.7');
+    expect(initialEditorSplit()).toBe(0.7);
+  });
+
+  /** The band is not known here — the view measures it and clamps in px. This
+   * guard is for the stored value alone, which anyone can edit to anything. */
+  it('refuses a stored split that would collapse a pane outright', () => {
+    localStorage.setItem(EDITOR_SPLIT_KEY, '0');
+    expect(initialEditorSplit()).toBe(DEFAULT_SPLIT);
+
+    localStorage.setItem(EDITOR_SPLIT_KEY, 'sideways');
+    expect(initialEditorSplit()).toBe(DEFAULT_SPLIT);
+  });
+
+  it('falls back to the default when storage is unreadable', () => {
+    vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw new Error('SecurityError');
+    });
+
+    expect(initialEditorSplit()).toBe(DEFAULT_SPLIT);
+  });
+
+  /** Mid-drag the split changes at pointer rate, and storage is synchronous:
+   * the preview only moves the boundary, and the drop is what gets written. */
+  it('previews a split without writing it', () => {
+    ui().setEditorSplit(0.6);
+    ui().previewEditorSplit(0.7);
+
+    expect(ui().editorSplit).toBe(0.7);
+    expect(localStorage.getItem(EDITOR_SPLIT_KEY)).toBe('0.6');
+  });
+
+  /** A minimum in px is the view's business; the store only refuses nonsense. */
+  it('keeps the pane minimum out of the store', () => {
+    expect(MIN_PANE).toBeGreaterThan(0);
+    ui().setEditorSplit(0.9);
+
+    expect(ui().editorSplit).toBe(0.9);
   });
 });

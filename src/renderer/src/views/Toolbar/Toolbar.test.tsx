@@ -2,7 +2,6 @@ import type { ConnectedRepo } from '@shared/ipc';
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
-import { ENVIRONMENT } from '../../fixtures/flows';
 import { resetDeviceStore, useDeviceStore } from '../../stores/device.store';
 import { resetDoctorStore, useDoctorStore } from '../../stores/doctor.store';
 import { resetFlowStore, useFlowStore } from '../../stores/flow.store';
@@ -73,7 +72,7 @@ describe('Toolbar', () => {
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label') ?? button.textContent);
 
-    expect(names).toEqual(['Toggle sidebar', ENVIRONMENT, 'Run', 'Dark appearance']);
+    expect(names).toEqual(['Toggle sidebar', 'Run', 'Dark appearance']);
   });
 
   /**
@@ -183,12 +182,6 @@ describe('Toolbar', () => {
     expect(screen.getByRole('button', { name: 'Light appearance' })).toBeInTheDocument();
   });
 
-  it('shows the environment the flow would run against', () => {
-    render(<Toolbar />);
-
-    expect(screen.getByRole('button', { name: ENVIRONMENT })).toBeInTheDocument();
-  });
-
   // Criterion 12 — the Run button becomes Stop while a run is in flight.
   it('offers Run while idle', () => {
     render(<Toolbar />);
@@ -225,7 +218,7 @@ describe('the send control', () => {
     const names = within(screen.getByRole('toolbar'))
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label') ?? button.textContent);
-    expect(names).toEqual(['Toggle sidebar', ENVIRONMENT, 'Run', 'Dark appearance']);
+    expect(names).toEqual(['Toggle sidebar', 'Run', 'Dark appearance']);
   });
 
   /** Criterion 2 — the filled action with the count, before the appearance
@@ -243,13 +236,7 @@ describe('the send control', () => {
     const names = within(screen.getByRole('toolbar'))
       .getAllByRole('button')
       .map((button) => button.getAttribute('aria-label') ?? button.textContent);
-    expect(names).toEqual([
-      'Toggle sidebar',
-      ENVIRONMENT,
-      'Run',
-      'Send changes2',
-      'Dark appearance',
-    ]);
+    expect(names).toEqual(['Toggle sidebar', 'Run', 'Send changes2', 'Dark appearance']);
   });
 
   /** Criterion 3 — the neutral pill, +N when changes piled on top. */
@@ -402,7 +389,7 @@ describe('the doctor badge', () => {
     useDoctorStore.setState({ loaded: true, report: REPORT });
     render(<Toolbar />);
 
-    expect(names()).toEqual(['Toggle sidebar', 'Doctor', ENVIRONMENT, 'Run', 'Dark appearance']);
+    expect(names()).toEqual(['Toggle sidebar', 'Doctor', 'Run', 'Dark appearance']);
   });
 
   it('is the amber count while things need the person', () => {
@@ -412,7 +399,6 @@ describe('the doctor badge', () => {
     expect(names()).toEqual([
       'Toggle sidebar',
       'Doctor · 2 items need you',
-      ENVIRONMENT,
       'Run',
       'Dark appearance',
     ]);

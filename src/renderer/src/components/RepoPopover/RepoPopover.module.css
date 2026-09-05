@@ -1,3 +1,20 @@
+/*
+ * Design-system keyframes, restated here because CSS Modules hashes every
+ * `animation-name` in this file: a reference to a keyframe declared only in
+ * `utilities/animation.css` resolves to nothing and the animation is silently
+ * dead. Same names, same frames — the DS stays the source of the motion.
+ */
+@keyframes cd-menu-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96) translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
 .backdrop {
   background: none;
   border: none;

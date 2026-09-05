@@ -1325,6 +1325,50 @@ describe('the publication lifecycle', () => {
 
     await until(() => ghCalls().filter((call) => call.args[1] === 'view').length > viewsBefore);
   });
+
+  /** Criteria 9 and 28 — a publication belongs to the repo it was sent from.
+   * Switching to another clone shows that clone's own truth (no review, its
+   * own unsent set), and switching back finds the first review still open. */
+  it('keeps the review state per repository across a switch', async () => {
+    const bundle = await harness();
+    const { deps, dir, changed } = bundle;
+    await sent(bundle);
+
+    const otherRoot = join(dir, 'repos', 'loja-azul-app-9f8e7d6c');
+    await plantRepo(otherRoot, join(dir, 'other-origin.git'));
+    const first = {
+      slug: 'loja-verde-pnp-1a2b3c4d',
+      org: 'loja-verde',
+      name: 'pnp',
+      root: bundle.cloneRoot,
+    };
+    const other = {
+      slug: 'loja-azul-app-9f8e7d6c',
+      org: 'loja-azul',
+      name: 'app',
+      root: otherRoot,
+    };
+    let active = first;
+    const second = new PublishService({ ...deps, activeClone: () => active });
+    services.push(second);
+    await second.start();
+
+    active = other;
+    await second.activeRepoChanged();
+    expect(data(changed.at(-1) as Result<PublishState>)).toEqual({
+      repo: 'loja-azul-app-9f8e7d6c',
+      changes: [],
+      reviewOpen: false,
+    });
+    expect(code(await second.openPr())).toBe('publish/no-review');
+
+    active = first;
+    await second.activeRepoChanged();
+    expect(data(changed.at(-1) as Result<PublishState>)).toMatchObject({
+      repo: 'loja-verde-pnp-1a2b3c4d',
+      reviewOpen: true,
+    });
+  });
 });
 
 describe('View on GitHub', () => {

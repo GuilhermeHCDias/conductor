@@ -3,8 +3,6 @@ import { DoctorBadge } from '../../components/DoctorBadge/DoctorBadge';
 import { Icon } from '../../components/Icon/Icon';
 import { IconButton } from '../../components/IconButton/IconButton';
 import { SendControl } from '../../components/SendControl/SendControl';
-import { Tooltip } from '../../components/Tooltip/Tooltip';
-import { ENVIRONMENT } from '../../fixtures/flows';
 import { documentTitle } from '../../lib/document-title';
 import { countCommands } from '../../lib/yaml-tokens';
 import { selectSelectedId, useDeviceStore } from '../../stores/device.store';
@@ -86,14 +84,12 @@ export function Toolbar(): JSX.Element {
       {/* The OS draws the lights here; nothing of ours may sit underneath them. */}
       <span aria-hidden="true" className={styles.trafficLightInset} />
 
-      <Tooltip content={sidebarVisible ? 'Hide sidebar' : 'Show sidebar'} shortcut="⌘B">
-        <IconButton
-          icon="panel-left"
-          label="Toggle sidebar"
-          onClick={toggleSidebar}
-          selected={sidebarVisible}
-        />
-      </Tooltip>
+      <IconButton
+        icon="panel-left"
+        label="Toggle sidebar"
+        onClick={toggleSidebar}
+        selected={sidebarVisible}
+      />
 
       {/* macOS document title: the name plus a quiet subtitle, left of centre. */}
       <span className={styles.document}>
@@ -108,12 +104,6 @@ export function Toolbar(): JSX.Element {
       {issues !== null ? (
         <DoctorBadge issues={issues} onClick={toggleDoctor} selected={doctorOpen} />
       ) : null}
-
-      <button className={styles.environment} type="button">
-        <Icon className={styles.environmentGlyph} name="variable" size={12} />
-        {ENVIRONMENT}
-        <Icon className={styles.environmentGlyph} name="chevron-down" size={12} />
-      </button>
 
       <button
         className={styles.run}
@@ -135,13 +125,11 @@ export function Toolbar(): JSX.Element {
         <SendControl count={unsentCount} onClick={openSheet} phase={controlPhase} />
       ) : null}
 
-      <Tooltip content={dark ? 'Light appearance' : 'Dark appearance'}>
-        <IconButton
-          icon={dark ? 'sun' : 'moon'}
-          label={dark ? 'Light appearance' : 'Dark appearance'}
-          onClick={toggleAppearance}
-        />
-      </Tooltip>
+      <IconButton
+        icon={dark ? 'sun' : 'moon'}
+        label={dark ? 'Light appearance' : 'Dark appearance'}
+        onClick={toggleAppearance}
+      />
     </div>
   );
 }

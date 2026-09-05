@@ -1,6 +1,5 @@
 import type { JSX } from 'react';
 import { Icon } from '../Icon/Icon';
-import { Tooltip } from '../Tooltip/Tooltip';
 import styles from './SendControl.module.css';
 
 /**
@@ -32,26 +31,20 @@ export function SendControl({ phase, count, onClick }: SendControlProps): JSX.El
 
   if (phase === 'review') {
     return (
-      <Tooltip content="Sent for review — new changes join the same review">
-        <button className={styles.control} data-phase="review" onClick={onClick} type="button">
-          <Icon className={styles.quiet} name="clock" size={13} />
-          Waiting for review
-          {count > 0 ? <span className={styles.plus}>+{count}</span> : null}
-        </button>
-      </Tooltip>
+      <button className={styles.control} data-phase="review" onClick={onClick} type="button">
+        <Icon className={styles.quiet} name="clock" size={13} />
+        Waiting for review
+        {count > 0 ? <span className={styles.plus}>+{count}</span> : null}
+      </button>
     );
   }
 
   return (
-    <Tooltip
-      content={count === 1 ? 'Send 1 change to the team' : `Send ${count} changes to the team`}
-    >
-      {/* Criterion 2: the one filled accent beside Run — the kit draws both. */}
-      <button className={styles.control} data-phase="unsent" onClick={onClick} type="button">
-        <Icon name="send" size={13} />
-        Send changes
-        <span className={styles.count}>{count}</span>
-      </button>
-    </Tooltip>
+    /* Criterion 2: the one filled accent beside Run — the kit draws both. */
+    <button className={styles.control} data-phase="unsent" onClick={onClick} type="button">
+      <Icon name="send" size={13} />
+      Send changes
+      <span className={styles.count}>{count}</span>
+    </button>
   );
 }

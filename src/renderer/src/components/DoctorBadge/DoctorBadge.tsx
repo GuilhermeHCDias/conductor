@@ -1,7 +1,6 @@
 import type { JSX } from 'react';
 import { Icon } from '../Icon/Icon';
 import { IconButton } from '../IconButton/IconButton';
-import { Tooltip } from '../Tooltip/Tooltip';
 import styles from './DoctorBadge.module.css';
 
 export type DoctorBadgeProps = {
@@ -20,27 +19,21 @@ export type DoctorBadgeProps = {
  */
 export function DoctorBadge({ issues, selected, onClick }: DoctorBadgeProps): JSX.Element {
   if (issues <= 0) {
-    return (
-      <Tooltip content="Doctor">
-        <IconButton icon="activity" label="Doctor" onClick={onClick} selected={selected} />
-      </Tooltip>
-    );
+    return <IconButton icon="activity" label="Doctor" onClick={onClick} selected={selected} />;
   }
   const name = issues === 1 ? 'Doctor · 1 item needs you' : `Doctor · ${issues} items need you`;
   return (
-    <Tooltip content={name}>
-      <button
-        aria-label={name}
-        aria-pressed={selected}
-        className={styles.pill}
-        data-issues="true"
-        onClick={onClick}
-        title={name}
-        type="button"
-      >
-        <Icon name="triangle-alert" size={13} />
-        {issues}
-      </button>
-    </Tooltip>
+    <button
+      aria-label={name}
+      aria-pressed={selected}
+      className={styles.pill}
+      data-issues="true"
+      onClick={onClick}
+      title={name}
+      type="button"
+    >
+      <Icon name="triangle-alert" size={13} />
+      {issues}
+    </button>
   );
 }
