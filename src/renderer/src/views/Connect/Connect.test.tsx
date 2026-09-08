@@ -88,7 +88,7 @@ describe('the connect screen', () => {
       'github.com/loja-verde/pnp-fast-mode{Enter}',
     );
 
-    expect(resolve).toHaveBeenCalledExactlyOnceWith('github.com/loja-verde/pnp-fast-mode');
+    expect(resolve).toHaveBeenCalledExactlyOnceWith('github.com/loja-verde/pnp-fast-mode', null);
     expect(screen.getByText('Reading the repository')).toBeInTheDocument();
   });
 });

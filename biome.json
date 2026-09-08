@@ -69,6 +69,10 @@
     {
       "includes": ["src/main/maestro/CliRunner.ts", "src/main/process/run.ts"],
       "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
+    },
+    {
+      "includes": ["build/**"],
+      "linter": { "rules": { "style": { "noRestrictedImports": "off" } } }
     }
   ]
 }

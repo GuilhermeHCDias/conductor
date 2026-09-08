@@ -153,7 +153,18 @@ const repoResolveRef = z.object({ resolveId });
  */
 const repoResolveEvent = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('step'), resolveId, step: z.number().int().min(0).max(3) }),
-  z.object({ kind: z.literal('found'), resolveId, repo: resolvedRepo }),
+  // `branches` rides on the event, not on `resolvedRepo`, because it is a
+  // resolution-time affordance and not a fact about a repo: the choice exists
+  // only before connecting. Switching branch on a connected clone would mean a
+  // `checkout` under the user, which rule 23 bans outright. Empty when the
+  // listing failed — the card then shows the cloned branch alone, which is
+  // exactly the behaviour that shipped before the picker existed.
+  z.object({
+    kind: z.literal('found'),
+    resolveId,
+    repo: resolvedRepo,
+    branches: z.array(z.string()).readonly(),
+  }),
   z.object({ kind: z.literal('failed'), resolveId, code: z.string(), message: z.string() }),
 ]);
 
@@ -784,12 +795,20 @@ export const IPC = {
   },
   [CHANNELS.configGet]: { request: noArguments, response: configGetResponse },
   [CHANNELS.repoList]: { request: noArguments, response: repoState },
-  // The raw pasted URL and nothing else (§9.3): main parses, sanitizes and
-  // derives slug and paths itself. The answer is the id, immediately —
-  // progress arrives as `repo:resolve-event` pushes, and a clone against a
-  // remote hangs often enough that awaiting it here would freeze the window.
-  // Bounded: no repository address is measured in kilobytes.
-  [CHANNELS.repoResolve]: { request: z.tuple([z.string().max(2048)]), response: repoResolveRef },
+  // The raw pasted URL (§9.3): main parses, sanitizes and derives slug and
+  // paths itself. The answer is the id, immediately — progress arrives as
+  // `repo:resolve-event` pushes, and a clone against a remote hangs often
+  // enough that awaiting it here would freeze the window. Bounded: no
+  // repository address is measured in kilobytes.
+  // The second argument is which branch to resolve at — `null` means the
+  // repository's own default. Picking a branch in the card re-runs exactly
+  // this, because a branch changes every fact on it: `app.json` (and so the
+  // bundle id) and the flows under `conductor/` are both per-branch. A ref
+  // name is a git object name, not a URL, so it is bounded far tighter.
+  [CHANNELS.repoResolve]: {
+    request: z.tuple([z.string().max(2048), z.string().min(1).max(255).nullable()]),
+    response: repoResolveRef,
+  },
   // Confirming names the resolution main already holds; the derived facts
   // never make a renderer round-trip.
   [CHANNELS.repoConnect]: { request: z.tuple([resolveId]), response: repoState },

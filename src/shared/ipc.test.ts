@@ -767,15 +767,29 @@ describe('repo:resolve', () => {
 
   /** §9.3 — the renderer sends the raw pasted URL and nothing else: no paths,
    * no slugs. Main parses, sanitizes and derives everything itself. */
-  it('takes the raw pasted URL alone', () => {
-    expect(schema.request.safeParse(['github.com/loja-verde/pnp-fast-mode']).success).toBe(true);
+  it('takes the raw pasted URL and the branch to resolve at', () => {
+    expect(schema.request.safeParse(['github.com/loja-verde/pnp-fast-mode', null]).success).toBe(
+      true,
+    );
+    expect(
+      schema.request.safeParse(['github.com/loja-verde/pnp-fast-mode', 'develop']).success,
+    ).toBe(true);
     expect(schema.request.safeParse([]).success).toBe(false);
+  });
+
+  /** A ref name is a git object name, not an address: it is bounded far
+   * tighter, and an empty one is not a branch. */
+  it('refuses a branch that is empty or past any ref length', () => {
+    expect(schema.request.safeParse(['github.com/loja-verde/app', '']).success).toBe(false);
+    expect(schema.request.safeParse(['github.com/loja-verde/app', 'b'.repeat(300)]).success).toBe(
+      false,
+    );
   });
 
   /** No repository address is measured in kilobytes — a multi-megabyte
    * paste is refused at the boundary, not round-tripped. */
   it('refuses an address past any honest length', () => {
-    expect(schema.request.safeParse(['g'.repeat(3000)]).success).toBe(false);
+    expect(schema.request.safeParse(['g'.repeat(3000), null]).success).toBe(false);
   });
 
   /** The start invoke returns an id immediately; progress arrives as
@@ -1003,14 +1017,16 @@ describe('repo:resolve-event', () => {
   });
 
   it('carries everything the found card shows', () => {
-    expect(schema.safeParse({ kind: 'found', resolveId: 1, repo: RESOLVED_REPO }).success).toBe(
-      true,
-    );
+    expect(
+      schema.safeParse({ kind: 'found', resolveId: 1, repo: RESOLVED_REPO, branches: ['main'] })
+        .success,
+    ).toBe(true);
     expect(
       schema.safeParse({
         kind: 'found',
         resolveId: 1,
         repo: { ...RESOLVED_REPO, flowCount: undefined },
+        branches: ['main'],
       }).success,
     ).toBe(false);
   });
@@ -1019,8 +1035,12 @@ describe('repo:resolve-event', () => {
    * crosses as `null`, never as a guessed default. */
   it('lets the branch be unknown', () => {
     expect(
-      schema.safeParse({ kind: 'found', resolveId: 1, repo: { ...RESOLVED_REPO, branch: null } })
-        .success,
+      schema.safeParse({
+        kind: 'found',
+        resolveId: 1,
+        repo: { ...RESOLVED_REPO, branch: null },
+        branches: ['main'],
+      }).success,
     ).toBe(true);
   });
 

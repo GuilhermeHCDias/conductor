@@ -69,6 +69,12 @@ type HarnessOptions = {
   /** Clone hangs and ignores the abort — the worst-case child that outlives
    * its SIGTERM — until the test settles it by hand via `heldClones`. */
   holdClone?: boolean;
+  /** What `gh api .../branches` answers. `null` makes the call fail, which is
+   * the offline case: the card must still resolve, with no picker. */
+  branches?: readonly string[] | null;
+  /** `app.json` keyed by branch — the picker's whole reason to exist is that
+   * these differ. Falls back to `APP_JSON` for any branch not named. */
+  appJsonByBranch?: Readonly<Record<string, string>>;
 };
 
 function harness(options: HarnessOptions = {}): {
@@ -104,11 +110,30 @@ function harness(options: HarnessOptions = {}): {
       if (args[0] === 'auth') {
         return Promise.resolve({ stdout: '', stderr: '', code: options.authCode ?? 0 });
       }
+      if (args[0] === 'api') {
+        if (options.branches === null) {
+          return Promise.resolve({ stdout: '', stderr: 'gh: not found', code: 1 });
+        }
+        const names = options.branches ?? ['main'];
+        return Promise.resolve({ stdout: `${names.join('\n')}\n`, stderr: '', code: 0 });
+      }
       if (args[0] === 'repo' && args[1] === 'clone') {
         const target = args[3];
         if (target === undefined) {
           throw new Error(`The clone call carried no target: ${JSON.stringify(args)}`);
         }
+        // `-b` is how a picked branch reaches the clone, and the real `git`
+        // leaves HEAD naming it — the fake has to, or nothing downstream of
+        // `readBranch` is being tested at all.
+        const flag = args.indexOf('-b');
+        const wanted = flag === -1 ? null : (args[flag + 1] ?? null);
+        const planted =
+          wanted === null
+            ? {}
+            : {
+                head: `ref: refs/heads/${wanted}\n`,
+                appJson: options.appJsonByBranch?.[wanted] ?? APP_JSON,
+              };
         if (options.holdClone === true) {
           return new Promise((resolvePromise) => {
             heldClones.push((exitCode) => {
@@ -139,7 +164,7 @@ function harness(options: HarnessOptions = {}): {
           const code = options.clone(target);
           return Promise.resolve({ stdout: '', stderr: 'cloning...', code });
         }
-        plantClone(target);
+        plantClone(target, planted);
         return Promise.resolve({ stdout: '', stderr: 'cloning...', code: 0 });
       }
       throw new Error(`Unexpected command: ${command} ${args.join(' ')}`);
@@ -214,8 +239,9 @@ async function resolved(
   service: RepoService,
   resolveEvents: Result<RepoResolveEvent>[],
   url = URL,
+  branch: string | null = null,
 ): Promise<number> {
-  const { resolveId } = data(await service.resolve(url));
+  const { resolveId } = data(await service.resolve(url, branch));
   const mine = (): RepoResolveEvent[] =>
     events(resolveEvents).filter((event) => event.resolveId === resolveId);
   await until(
@@ -346,9 +372,60 @@ describe('resolution', () => {
       org: 'loja-verde',
       name: 'pnp-fast-mode',
       appName: 'PnP Fast Mode',
-      appId: { android: 'com.lojaverde.pnp', ios: 'com.lojaverde.pnp' },
+      appId: { android: 'com.lojaverde.pnp.preview', ios: 'com.lojaverde.pnp.preview' },
       branch: 'develop',
       flowCount: 2,
+    });
+  });
+
+  /** §2.1 — a repo can carry a different `app.json`, and so a different
+   * bundle id, on each branch. The picker exists to reach those. */
+  it('offers the repository branches on the found event', async () => {
+    const { service, resolveEvents } = harness({ branches: ['main', 'develop', 'release/1.4'] });
+
+    await resolved(service, resolveEvents);
+
+    const found = events(resolveEvents).find((event) => event.kind === 'found');
+    expect(found?.kind === 'found' ? found.branches : null).toEqual([
+      'main',
+      'develop',
+      'release/1.4',
+    ]);
+  });
+
+  /** The listing is a convenience, not a stage: losing it must not lose the
+   * repo. The card falls back to the branch it actually cloned. */
+  it('still resolves when the branch listing fails', async () => {
+    const { service, resolveEvents } = harness({ branches: null });
+
+    await resolved(service, resolveEvents);
+
+    const found = events(resolveEvents).find((event) => event.kind === 'found');
+    expect(found?.kind === 'found' ? found.branches : null).toEqual(['main']);
+  });
+
+  /** Rule 23 bans `checkout`, so a picked branch is cloned into directly —
+   * and `.git/HEAD` naming it is what §8.3 later reads for the PR base. */
+  it('clones at the picked branch and derives that branch app.json', async () => {
+    const { service, resolveEvents, calls } = harness({
+      branches: ['main', 'develop'],
+      appJsonByBranch: {
+        develop: JSON.stringify({
+          expo: { name: 'PnP Next', android: { package: 'com.lojaverde.next' } },
+        }),
+      },
+    });
+
+    await resolved(service, resolveEvents, URL, 'develop');
+
+    const clone = calls.find((call) => call.args[1] === 'clone');
+    expect(clone?.args).toContain('develop');
+    expect(clone?.args).not.toContain('checkout');
+    const found = events(resolveEvents).find((event) => event.kind === 'found');
+    expect(found?.kind === 'found' ? found.repo : null).toMatchObject({
+      appName: 'PnP Next',
+      appId: { android: 'com.lojaverde.next.preview', ios: null },
+      branch: 'develop',
     });
   });
 
@@ -515,7 +592,7 @@ describe('connect', () => {
         name: 'pnp-fast-mode',
         slug: SLUG,
         appName: 'PnP Fast Mode',
-        appId: { android: 'com.lojaverde.pnp', ios: 'com.lojaverde.pnp' },
+        appId: { android: 'com.lojaverde.pnp.preview', ios: 'com.lojaverde.pnp.preview' },
         branch: 'main',
         flowCount: 0,
         connectedAt: '2026-08-06T12:00:00.000Z',
@@ -523,7 +600,7 @@ describe('connect', () => {
     ]);
     // The workspace re-pointed to the clone's conductor/ with the header id.
     expect(workspaces).toEqual([
-      { root: join(reposDir, SLUG, 'conductor'), appId: 'com.lojaverde.pnp' },
+      { root: join(reposDir, SLUG, 'conductor'), appId: 'com.lojaverde.pnp.preview' },
     ]);
     // The push carries the same projection the invoke answered.
     expect(changed.map(data).at(-1)).toEqual(state);
@@ -573,7 +650,7 @@ describe('switch', () => {
     expect(data(result).active).toBe(SLUG);
     expect(workspaces.at(-1)).toEqual({
       root: join(reposDir, SLUG, 'conductor'),
-      appId: 'com.lojaverde.pnp',
+      appId: 'com.lojaverde.pnp.preview',
     });
     expect(data(result).repos.map((repo) => repo.slug)).toEqual([SLUG, otherSlug]);
     expect(changed.length).toBeGreaterThanOrEqual(3);
@@ -635,8 +712,47 @@ describe('persistence', () => {
     expect(state.repos[0]?.branch).toBe('main');
     expect(second.activeWorkspace()).toEqual({
       root: join(first.reposDir, SLUG, 'conductor'),
-      appId: 'com.lojaverde.pnp',
+      appId: 'com.lojaverde.pnp.preview',
     });
+  });
+
+  /** §2.1 — the persisted ids are a cache of what `app.json` says, so an
+   * edit in the clone wins over what connect wrote. */
+  it('re-derives the name and ids from the clone on start', async () => {
+    const first = harness();
+    await first.service.connect(await resolved(first.service, first.resolveEvents));
+    writeFileSync(
+      join(first.reposDir, SLUG, 'app.json'),
+      JSON.stringify({
+        expo: {
+          name: 'Renamed',
+          android: { package: 'com.outra.app' },
+          ios: { bundleIdentifier: 'com.outra.app' },
+        },
+      }),
+    );
+
+    const second = new RepoService({ ...first.deps });
+    services.push(second);
+    await second.start();
+
+    expect(data(await second.list()).repos[0]?.appName).toBe('Renamed');
+    expect(second.activeWorkspace()?.appId).toBe('com.outra.app.preview');
+  });
+
+  /** A clone that is gone keeps its persisted facts: losing the repo over a
+   * missing file would be worse than a stale id. */
+  it('keeps the persisted facts when the clone is unreadable', async () => {
+    const first = harness();
+    await first.service.connect(await resolved(first.service, first.resolveEvents));
+    rmSync(join(first.reposDir, SLUG, 'app.json'));
+
+    const second = new RepoService({ ...first.deps });
+    services.push(second);
+    await second.start();
+
+    expect(data(await second.list()).repos[0]?.appName).toBe('PnP Fast Mode');
+    expect(second.activeWorkspace()?.appId).toBe('com.lojaverde.pnp.preview');
   });
 
   it('starts empty when nothing was ever saved', async () => {

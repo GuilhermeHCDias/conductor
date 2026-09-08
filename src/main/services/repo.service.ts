@@ -122,11 +122,27 @@ export class RepoService {
     }
     try {
       const state = persistedState.parse(JSON.parse(text));
-      this.repos = state.repos;
+      this.repos = await Promise.all(state.repos.map((repo) => this.rederived(repo)));
       this.active = state.active;
     } catch (error) {
       console.error('The repo list could not be read; starting empty.', error);
     }
+  }
+
+  /**
+   * §2.1 — `appName` and `appId` are derived from the clone's `app.json`, so
+   * the persisted copy is a cache, not the truth: an `app.json` edited in the
+   * clone (or a change in how we derive) has to win over what was written at
+   * connect time. A clone that is gone or unreadable keeps what it had —
+   * losing the repo over a missing file would be worse than a stale id.
+   */
+  private async rederived(repo: PersistedRepo): Promise<PersistedRepo> {
+    const appJson = await this.readAppJson(join(this.deps.reposDir, repo.slug));
+    if (appJson === null) {
+      return repo;
+    }
+    const meta = deriveAppMeta(appJson, repo.name);
+    return meta.ok ? { ...repo, appName: meta.appName, appId: meta.appId } : repo;
   }
 
   /** Ends whatever resolution is in flight; nothing else is held. */
@@ -173,8 +189,14 @@ export class RepoService {
    * the network; everything real streams as `repo:resolve-event` pushes. A
    * new resolve supersedes the one in flight: the stale work is aborted and
    * nothing it says reaches the surface.
+   *
+   * `branch` is the one the person picked in the card, or `null` for the
+   * repository's default. Picking one comes back through here rather than
+   * through a channel of its own because a branch changes every fact the card
+   * shows — `app.json` and the flows under `conductor/` are both per-branch —
+   * so the honest answer is to resolve it again, at that branch.
    */
-  async resolve(url: string): Promise<Result<{ resolveId: number }>> {
+  async resolve(url: string, branch: string | null = null): Promise<Result<{ resolveId: number }>> {
     const parsed = parseRepoUrl(url);
     if (parsed === null) {
       return refuse(ERROR_CODES.repoInvalidUrl, 'That is not a repository address.');
@@ -203,6 +225,7 @@ export class RepoService {
       parsed.org,
       parsed.name,
       url,
+      branch,
       controller.signal,
       this.running,
     );
@@ -265,6 +288,7 @@ export class RepoService {
     org: string,
     name: string,
     url: string,
+    wanted: string | null,
     signal: AbortSignal,
     prior: Promise<void>,
   ): Promise<void> {
@@ -296,11 +320,15 @@ export class RepoService {
       // retry starts clean instead of cloning into a refusal.
       await rm(target, { recursive: true, force: true });
       await mkdir(this.deps.reposDir, { recursive: true });
-      const clone = await this.deps.run(
-        gh,
-        ['repo', 'clone', `${org}/${name}`, target, '--', '--filter=blob:none'],
-        { signal },
-      );
+      // A picked branch is cloned into directly rather than checked out
+      // afterwards: rule 23 bans `checkout` outright, and cloning at the ref
+      // leaves `.git/HEAD` naming it, which is what §8.3 later reads to decide
+      // the base of every publication from this repo.
+      const cloneArgs =
+        wanted === null
+          ? ['repo', 'clone', `${org}/${name}`, target, '--', '--filter=blob:none']
+          : ['repo', 'clone', `${org}/${name}`, target, '--', '--filter=blob:none', '-b', wanted];
+      const clone = await this.deps.run(gh, cloneArgs, { signal });
       if (clone.code !== 0) {
         await this.discard(target);
         this.fail(
@@ -332,7 +360,10 @@ export class RepoService {
       }
       this.emit(resolveId, { kind: 'step', resolveId, step: 2 });
       const branch = await this.readBranch(target);
-      const flowCount = await this.countFlows(target);
+      const [flowCount, branches] = await Promise.all([
+        this.countFlows(target),
+        this.listBranches(gh, org, name, signal),
+      ]);
       this.emit(resolveId, { kind: 'step', resolveId, step: 3 });
       const repo: ResolvedRepo = {
         url,
@@ -345,7 +376,12 @@ export class RepoService {
       };
       if (this.currentResolveId === resolveId && !this.disposed) {
         this.pendingFound = { resolveId, repo };
-        this.emit(resolveId, { kind: 'found', resolveId, repo });
+        this.emit(resolveId, {
+          kind: 'found',
+          resolveId,
+          repo,
+          branches: withBranch(branches, branch),
+        });
       }
     } catch (error) {
       // A superseded or disposed resolution was aborted on purpose; it says
@@ -379,6 +415,41 @@ export class RepoService {
    * did not fail, the named resolution did (criterion: stable codes). */
   private fail(resolveId: number, code: string, message: string): void {
     this.emit(resolveId, { kind: 'failed', resolveId, code, message });
+  }
+
+  /**
+   * The branches the card may offer. Read over `gh` rather than off the clone
+   * because rule 16 makes `gh` the one GitHub door, and because a blobless
+   * clone's local refs are an implementation detail of how we cloned. A repo
+   * with more branches than one page is capped rather than paginated: a picker
+   * nobody can scan is not more useful than a short one, and the cloned branch
+   * is merged in regardless.
+   *
+   * Failure is not a resolution failure — the card falls back to the single
+   * branch it cloned, which is exactly today's behaviour.
+   */
+  private async listBranches(
+    gh: string,
+    org: string,
+    name: string,
+    signal: AbortSignal,
+  ): Promise<string[]> {
+    try {
+      const listed = await this.deps.run(
+        gh,
+        ['api', `repos/${org}/${name}/branches`, '--paginate', '--jq', '.[].name'],
+        { signal },
+      );
+      if (listed.code !== 0) {
+        return [];
+      }
+      return listed.stdout
+        .split('\n')
+        .map((line) => line.trim())
+        .filter((line) => line !== '');
+    } catch {
+      return [];
+    }
   }
 
   private async readAppJson(target: string): Promise<string | null> {
@@ -496,6 +567,16 @@ export class RepoService {
 
 function refuse<T>(code: string, message: string): Result<T> {
   return { ok: false, error: { code, message } };
+}
+
+/** The branch actually cloned always belongs in the picker, even when the
+ * listing came back empty or does not mention it — the card must never offer a
+ * set that excludes what it is currently showing. */
+function withBranch(branches: readonly string[], branch: string | null): string[] {
+  if (branch === null) {
+    return [...branches];
+  }
+  return branches.includes(branch) ? [...branches] : [branch, ...branches];
 }
 
 function isEnoent(error: unknown): boolean {

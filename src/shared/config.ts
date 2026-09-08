@@ -27,6 +27,14 @@ export const CONFIG = {
   FLOW_EXTENSIONS: ['.yml', '.yaml'] as const,
 
   /**
+   * O que o `app.json` declara é o id do build de produção; o binário contra o
+   * qual se roda E2E é o de preview, publicado com este sufixo. O build de
+   * development não entra: não é alvo de E2E. Vale para qualquer repo — o
+   * prefixo é de cada aplicação, o sufixo é nosso (§2.1).
+   */
+  APP_ID_PREVIEW_SUFFIX: '.preview',
+
+  /**
    * Caminho explícito do binário `adb`. Vazio = resolver sozinho, na ordem que
    * o `AdbBridge` documenta. A resolução é comportamento e mora lá; aqui fica
    * só a constante que o usuário pode sobrescrever.

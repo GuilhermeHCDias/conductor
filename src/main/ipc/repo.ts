@@ -13,8 +13,8 @@ import { handleResult } from './handle';
 export function registerRepoIpc(deps: { readonly repo: RepoService }): void {
   handleResult(CHANNELS.repoList, IPC[CHANNELS.repoList].request, () => deps.repo.list());
 
-  handleResult(CHANNELS.repoResolve, IPC[CHANNELS.repoResolve].request, (url) =>
-    deps.repo.resolve(url),
+  handleResult(CHANNELS.repoResolve, IPC[CHANNELS.repoResolve].request, (url, branch) =>
+    deps.repo.resolve(url, branch),
   );
 
   handleResult(CHANNELS.repoConnect, IPC[CHANNELS.repoConnect].request, (resolveId) =>

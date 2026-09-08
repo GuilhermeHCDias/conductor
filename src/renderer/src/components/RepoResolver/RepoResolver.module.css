@@ -266,6 +266,30 @@
   white-space: nowrap;
 }
 
+/* Reads as the row's value until you reach for it — the row is a fact sheet,
+   and this is the one line on it that is a choice. */
+.rowSelect {
+  background: var(--a-well);
+  border: 1px solid var(--a-hair);
+  border-radius: var(--a-radius-field);
+  color: var(--text-primary);
+  font: var(--type-caption);
+  max-width: 100%;
+  min-width: 0;
+  padding: 1px 4px;
+  transition: border-color var(--dur-fast) var(--ease-out);
+}
+
+.rowSelect:hover {
+  border-color: var(--a-hair-strong);
+}
+
+.rowSelect:focus-visible {
+  border-color: var(--accent-edge);
+  box-shadow: var(--glow-accent);
+  outline: none;
+}
+
 .foundNote {
   color: var(--text-tertiary);
   font: var(--type-caption);

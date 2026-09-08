@@ -73,7 +73,12 @@ describe('registerRepoIpc', () => {
   /** Thin controllers: one channel, one method, the arguments verbatim. */
   it.each([
     ['repo:list', [], 'list', []],
-    ['repo:resolve', ['github.com/loja-verde/app'], 'resolve', ['github.com/loja-verde/app']],
+    [
+      'repo:resolve',
+      ['github.com/loja-verde/app', null],
+      'resolve',
+      ['github.com/loja-verde/app', null],
+    ],
     ['repo:connect', [3], 'connect', [3]],
     ['repo:switch', ['loja-verde-app-1a2b3c4d'], 'switch', ['loja-verde-app-1a2b3c4d']],
   ] as const)('%s calls %s', async (channel, args, method, methodArgs) => {
@@ -90,7 +95,7 @@ describe('registerRepoIpc', () => {
       error: { code: 'repo/invalid-url', message: 'That is not a repository address.' },
     });
 
-    const result = await invoke('repo:resolve', 'not a repository');
+    const result = await invoke('repo:resolve', 'not a repository', null);
 
     expect(result).toEqual({
       ok: false,

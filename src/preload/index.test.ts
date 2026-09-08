@@ -150,7 +150,7 @@ describe('the bridge', () => {
     await api.flowDelete('checkout/pix.yml');
     await api.flowDeleteFolder('drafts');
     await api.repoList();
-    await api.repoResolve('github.com/loja-verde/pnp-fast-mode');
+    await api.repoResolve('github.com/loja-verde/pnp-fast-mode', null);
     await api.repoConnect(3);
     await api.repoSwitch('loja-verde-pnp-fast-mode-1a2b3c4d');
     await api.appReadClipboard();
@@ -194,7 +194,7 @@ describe('the bridge', () => {
       { channel: CHANNELS.flowDelete, args: ['checkout/pix.yml'] },
       { channel: CHANNELS.flowDeleteFolder, args: ['drafts'] },
       { channel: CHANNELS.repoList, args: [] },
-      { channel: CHANNELS.repoResolve, args: ['github.com/loja-verde/pnp-fast-mode'] },
+      { channel: CHANNELS.repoResolve, args: ['github.com/loja-verde/pnp-fast-mode', null] },
       { channel: CHANNELS.repoConnect, args: [3] },
       { channel: CHANNELS.repoSwitch, args: ['loja-verde-pnp-fast-mode-1a2b3c4d'] },
       { channel: CHANNELS.appReadClipboard, args: [] },

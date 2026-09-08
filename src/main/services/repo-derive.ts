@@ -1,3 +1,4 @@
+import { CONFIG } from '@shared/config';
 import { hashText } from '@shared/hash';
 import type { RepoAppId } from '@shared/ipc';
 
@@ -66,6 +67,12 @@ export type AppMeta =
  * Resolution fails only on the ids; a missing `expo.name` falls back to the
  * repo's own name, because the ids are what launch the app and the name only
  * labels it.
+ *
+ * Both ids carry `CONFIG.APP_ID_PREVIEW_SUFFIX`: `app.json` names the
+ * production build, and E2E runs against the preview one. The suffix lands on
+ * both sides rather than on Android alone, so a repo whose two ids agree keeps
+ * agreeing — `headerAppId` reads a divergent pair as "no header value at all",
+ * and suffixing one side would manufacture that divergence for every repo.
  */
 export function deriveAppMeta(appJsonText: string, fallbackName: string): AppMeta {
   let parsed: unknown;
@@ -89,8 +96,17 @@ export function deriveAppMeta(appJsonText: string, fallbackName: string): AppMet
   return {
     ok: true,
     appName: nonEmptyString(expo.name) ?? fallbackName,
-    appId: { android, ios },
+    appId: { android: previewId(android), ios: previewId(ios) },
   };
+}
+
+/** Idempotent: a repo that already declares the preview id gets it back
+ * unchanged, never `com.x.preview.preview`. */
+function previewId(id: string | null): string | null {
+  if (id === null || id.endsWith(CONFIG.APP_ID_PREVIEW_SUFFIX)) {
+    return id;
+  }
+  return `${id}${CONFIG.APP_ID_PREVIEW_SUFFIX}`;
 }
 
 /**

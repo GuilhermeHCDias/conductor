@@ -25,9 +25,11 @@ function resolver(overrides: Partial<RepoResolverProps> = {}): RepoResolverProps
     phase: 'idle',
     step: 0,
     found: null,
+    branches: [],
     error: null,
     onUrlChange: vi.fn(),
     onSubmit: vi.fn(),
+    onPickBranch: vi.fn(),
     onPaste: vi.fn(),
     onCopyCommand: vi.fn(),
     ...overrides,
@@ -110,6 +112,41 @@ describe('the found card', () => {
     expect(screen.getByText('com.lojaverde.pnp')).toBeInTheDocument();
     expect(screen.getByText('develop')).toBeInTheDocument();
     expect(screen.getByText('4 flows')).toBeInTheDocument();
+  });
+
+  /** One branch is not a choice — a select you cannot change is a lie about
+   * what the card can do. */
+  it('shows the branch as plain text when there is nothing to pick', () => {
+    render(
+      <RepoResolver
+        {...resolver({ url: 'x', phase: 'found', found: RESOLVED, branches: ['develop'] })}
+      />,
+    );
+
+    expect(screen.queryByRole('combobox', { name: 'Branch' })).not.toBeInTheDocument();
+    expect(screen.getByText('develop')).toBeInTheDocument();
+  });
+
+  it('offers the branches and reports the pick', async () => {
+    const onPickBranch = vi.fn();
+    render(
+      <RepoResolver
+        {...resolver({
+          url: 'x',
+          phase: 'found',
+          found: RESOLVED,
+          branches: ['main', 'develop'],
+          onPickBranch,
+        })}
+      />,
+    );
+
+    const select = screen.getByRole('combobox', { name: 'Branch' });
+    expect(select).toHaveValue('develop');
+
+    await userEvent.selectOptions(select, 'main');
+
+    expect(onPickBranch).toHaveBeenCalledExactlyOnceWith('main');
   });
 
   /** Zero flows is a normal state with the kit's own note, never an error. */

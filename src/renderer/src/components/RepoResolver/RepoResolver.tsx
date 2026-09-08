@@ -30,10 +30,14 @@ export type RepoResolverProps = {
   /** How many steps completed (0–3). */
   readonly step: number;
   readonly found: ResolvedRepo | null;
+  /** What the branch picker may offer; a list of one (or none) renders as
+   * plain text, because a select with nothing to choose is a lie. */
+  readonly branches: readonly string[];
   readonly error: RepoErrorSurface | null;
   readonly autoFocus?: boolean;
   readonly onUrlChange: (url: string) => void;
   readonly onSubmit: () => void;
+  readonly onPickBranch: (branch: string) => void;
   readonly onPaste: () => void;
   readonly onCopyCommand: (command: string) => void;
 };
@@ -43,10 +47,12 @@ export function RepoResolver({
   phase,
   step,
   found,
+  branches,
   error,
   autoFocus,
   onUrlChange,
   onSubmit,
+  onPickBranch,
   onPaste,
   onCopyCommand,
 }: RepoResolverProps): JSX.Element {
@@ -114,7 +120,9 @@ export function RepoResolver({
       </div>
 
       {phase === 'resolving' ? <Steps step={step} /> : null}
-      {phase === 'found' && found !== null ? <FoundCard repo={found} /> : null}
+      {phase === 'found' && found !== null ? (
+        <FoundCard branches={branches} onPickBranch={onPickBranch} repo={found} />
+      ) : null}
       {phase === 'error' && error !== null ? (
         <ErrorCard error={error} onCopyCommand={onCopyCommand} onRetry={onSubmit} />
       ) : null}
@@ -152,12 +160,16 @@ function Steps({ step }: StepsProps): JSX.Element {
   );
 }
 
-type FoundCardProps = { readonly repo: ResolvedRepo };
+type FoundCardProps = {
+  readonly repo: ResolvedRepo;
+  readonly branches: readonly string[];
+  readonly onPickBranch: (branch: string) => void;
+};
 
 /** What was read, in the order it matters: the app that will launch, the
  * branch, the folder. The bundle id is shown because it is the thing the
  * person would otherwise have had to find (CRepo.jsx). */
-function FoundCard({ repo }: FoundCardProps): JSX.Element {
+function FoundCard({ repo, branches, onPickBranch }: FoundCardProps): JSX.Element {
   const bundle = primaryBundleId(repo.appId);
   return (
     <div className={styles.found} data-testid="repo-found">
@@ -178,7 +190,24 @@ function FoundCard({ repo }: FoundCardProps): JSX.Element {
         <span className={styles.foundRow}>
           <Icon className={styles.rowGlyph} name="git-branch" size={13} />
           <span className={styles.rowLabel}>Branch</span>
-          <span className={styles.rowValue}>{repo.branch ?? '—'}</span>
+          {branches.length > 1 ? (
+            <select
+              aria-label="Branch"
+              className={styles.rowSelect}
+              onChange={(event) => {
+                onPickBranch(event.target.value);
+              }}
+              value={repo.branch ?? ''}
+            >
+              {branches.map((branch) => (
+                <option key={branch} value={branch}>
+                  {branch}
+                </option>
+              ))}
+            </select>
+          ) : (
+            <span className={styles.rowValue}>{repo.branch ?? '—'}</span>
+          )}
         </span>
         <span className={styles.foundRow}>
           <Icon className={styles.rowGlyph} name="folder" size={13} />

@@ -96,13 +96,50 @@ describe('deriveAppMeta', () => {
     },
   });
 
-  /** §2.1's table: appName from expo.name, appId from the two platform ids. */
-  it('derives the name and both ids', () => {
+  /** §2.1's table: appName from expo.name, appId from the two platform ids —
+   * each one the preview build, which is what E2E runs against. */
+  it('derives the name and both ids, as the preview build', () => {
     expect(deriveAppMeta(full, 'pnp-fast-mode')).toEqual({
       ok: true,
       appName: 'PnP Fast Mode',
-      appId: { android: 'com.lojaverde.pnp', ios: 'com.lojaverde.pnp.ios' },
+      appId: { android: 'com.lojaverde.pnp.preview', ios: 'com.lojaverde.pnp.ios.preview' },
     });
+  });
+
+  /** The prefix belongs to the app, the suffix to us: whatever the repo
+   * declares is what gets suffixed. */
+  it('suffixes whatever prefix the repo declares', () => {
+    const placeholder = JSON.stringify({
+      expo: { name: 'X', android: { package: 'com.anonymous.higiafit' } },
+    });
+    const meta = deriveAppMeta(placeholder, 'x');
+
+    expect(meta.ok && meta.appId.android).toBe('com.anonymous.higiafit.preview');
+  });
+
+  /** Suffixing only Android would make every agreeing pair diverge, and
+   * `headerAppId` reads a divergent pair as no header value at all. */
+  it('keeps an agreeing pair agreeing', () => {
+    const agreeing = JSON.stringify({
+      expo: {
+        name: 'X',
+        android: { package: 'com.x.app' },
+        ios: { bundleIdentifier: 'com.x.app' },
+      },
+    });
+    const meta = deriveAppMeta(agreeing, 'x');
+
+    expect(meta.ok && headerAppId(meta.appId)).toBe('com.x.app.preview');
+  });
+
+  /** A repo that already names the preview build is left alone. */
+  it('does not double the suffix', () => {
+    const already = JSON.stringify({
+      expo: { name: 'X', android: { package: 'com.x.preview' } },
+    });
+    const meta = deriveAppMeta(already, 'x');
+
+    expect(meta.ok && meta.appId.android).toBe('com.x.preview');
   });
 
   it('lets one side be missing', () => {
@@ -113,7 +150,7 @@ describe('deriveAppMeta', () => {
     expect(deriveAppMeta(androidOnly, 'x')).toEqual({
       ok: true,
       appName: 'X',
-      appId: { android: 'com.x', ios: null },
+      appId: { android: 'com.x.preview', ios: null },
     });
   });
 

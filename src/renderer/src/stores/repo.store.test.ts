@@ -157,7 +157,41 @@ describe('submit', () => {
 
     expect(store().phase).toBe('resolving');
     expect(store().step).toBe(0);
-    expect(resolve).toHaveBeenCalledExactlyOnceWith('  github.com/loja-verde/pnp-fast-mode  ');
+    expect(resolve).toHaveBeenCalledExactlyOnceWith(
+      '  github.com/loja-verde/pnp-fast-mode  ',
+      null,
+    );
+  });
+
+  /** Picking a branch resolves again at that ref: every fact on the card —
+   * app.json and the flows — belongs to the branch it was read from. */
+  it('resolves again at the picked branch', async () => {
+    const resolve = vi.fn(() => Promise.resolve(ok({ resolveId: 8 })));
+    window.conductor.repoResolve = resolve;
+    store().setUrl('github.com/loja-verde/pnp-fast-mode');
+
+    await store().pickBranch('release/1.4');
+
+    expect(resolve).toHaveBeenCalledExactlyOnceWith(
+      'github.com/loja-verde/pnp-fast-mode',
+      'release/1.4',
+    );
+    expect(store().phase).toBe('resolving');
+  });
+
+  it('keeps the branches a found event carried, and drops them on reset', async () => {
+    window.conductor.repoResolve = vi.fn(() => Promise.resolve(ok({ resolveId: 9 })));
+    store().setUrl('github.com/loja-verde/pnp-fast-mode');
+    await store().submit();
+
+    store().applyResolveEvent(
+      ok({ kind: 'found', resolveId: 9, repo: RESOLVED, branches: ['main', 'develop'] }),
+    );
+    expect(store().branches).toEqual(['main', 'develop']);
+
+    store().resetResolver();
+
+    expect(store().branches).toEqual([]);
   });
 
   it('surfaces a refusal from main with the kit surface', async () => {
@@ -192,7 +226,9 @@ describe('resolve events', () => {
     await resolving();
 
     store().applyResolveEvent(ok({ kind: 'step', resolveId: 6, step: 1 }));
-    store().applyResolveEvent(ok({ kind: 'found', resolveId: 6, repo: RESOLVED }));
+    store().applyResolveEvent(
+      ok({ kind: 'found', resolveId: 6, repo: RESOLVED, branches: ['main'] }),
+    );
 
     expect(store().step).toBe(0);
     expect(store().phase).toBe('resolving');
@@ -201,7 +237,9 @@ describe('resolve events', () => {
   it('lands on the found card', async () => {
     await resolving();
 
-    store().applyResolveEvent(ok({ kind: 'found', resolveId: 7, repo: RESOLVED }));
+    store().applyResolveEvent(
+      ok({ kind: 'found', resolveId: 7, repo: RESOLVED, branches: ['main'] }),
+    );
 
     expect(store().phase).toBe('found');
     expect(store().found?.appName).toBe('PnP Fast Mode');
@@ -265,7 +303,9 @@ describe('confirm', () => {
     window.conductor.repoResolve = vi.fn(() => Promise.resolve(ok({ resolveId: 7 })));
     store().setUrl('github.com/loja-verde/pnp-fast-mode');
     await store().submit();
-    store().applyResolveEvent(ok({ kind: 'found', resolveId: 7, repo: RESOLVED }));
+    store().applyResolveEvent(
+      ok({ kind: 'found', resolveId: 7, repo: RESOLVED, branches: ['main'] }),
+    );
   }
 
   it('connects the pending resolution and applies the fresh state', async () => {
@@ -370,7 +410,9 @@ describe('the resolver field', () => {
 
     expect(store().addOpen).toBe(false);
     // A late event from the abandoned resolve changes nothing.
-    store().applyResolveEvent(ok({ kind: 'found', resolveId: 1, repo: RESOLVED }));
+    store().applyResolveEvent(
+      ok({ kind: 'found', resolveId: 1, repo: RESOLVED, branches: ['main'] }),
+    );
     expect(store().phase).toBe('idle');
   });
 

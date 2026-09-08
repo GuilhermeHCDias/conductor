@@ -32,6 +32,9 @@ export type RepoData = {
   /** How many of the three real stages completed (0–3). */
   readonly step: number;
   readonly found: ResolvedRepo | null;
+  /** What the found card's branch picker may offer. Empty until a `found`
+   * says otherwise, and empty again on every reset. */
+  readonly branches: readonly string[];
   readonly resolveError: RepoErrorSurface | null;
   /** The add sheet, opened from the switcher popover. */
   readonly addOpen: boolean;
@@ -47,6 +50,10 @@ export type RepoActions = {
   applyResolveEvent: (payload: PushPayload<'repo:resolve-event'>) => void;
   setUrl: (url: string) => void;
   submit: () => Promise<void>;
+  /** Picking a branch on the found card resolves the repo again at that
+   * branch — `app.json` and the flows under `conductor/` are both per-branch,
+   * so there is nothing to patch locally. */
+  pickBranch: (branch: string) => Promise<void>;
   confirm: () => Promise<void>;
   switchRepo: (slug: string) => Promise<void>;
   openAdd: () => void;
@@ -84,9 +91,73 @@ function createRepoData(): RepoData {
     phase: 'idle',
     step: 0,
     found: null,
+    branches: [],
     resolveError: null,
     addOpen: false,
   };
+}
+
+/**
+ * The instant refusals never leave the renderer (criterion: no network); a URL
+ * that survives them goes to main raw, and main re-checks everything as the
+ * authority. `branch` is `null` for the repository's default and a ref name
+ * when the person picked one on the card — the only difference between
+ * submitting the field and changing the picker.
+ */
+async function startResolve(
+  set: (partial: Partial<RepoData>) => void,
+  get: () => RepoStoreState,
+  branch: string | null,
+): Promise<void> {
+  const url = get().url;
+  const parsed = parseRepoUrl(url);
+  lastParsed = parsed;
+  if (parsed === null) {
+    set({
+      phase: 'error',
+      found: null,
+      resolveError: repoErrorSurface('repo/invalid-url', '', null),
+    });
+    return;
+  }
+  if (parsed.host !== 'github.com') {
+    set({
+      phase: 'error',
+      found: null,
+      resolveError: repoErrorSurface('repo/unsupported-host', '', parsed),
+    });
+    return;
+  }
+  if (isConnected(get().repos, parsed)) {
+    set({
+      phase: 'error',
+      found: null,
+      resolveError: repoErrorSurface('repo/already-connected', '', parsed),
+    });
+    return;
+  }
+  currentResolveId = null;
+  pendingEvents = [];
+  // The picker's own list survives the round trip: blanking it would collapse
+  // the control the person is currently using, and main sends it back anyway.
+  set({ phase: 'resolving', step: 0, found: null, resolveError: null });
+  const result = await window.conductor.repoResolve(url, branch);
+  if (!result.ok) {
+    pendingEvents = [];
+    set({
+      phase: 'error',
+      resolveError: repoErrorSurface(result.error.code, result.error.message, parsed),
+    });
+    return;
+  }
+  currentResolveId = result.data.resolveId;
+  // Whatever outran the reply replays now, through the same guard — an early
+  // event of another resolution still dies on the id check.
+  const queued = pendingEvents;
+  pendingEvents = [];
+  for (const event of queued) {
+    get().applyResolveEvent({ ok: true, data: event });
+  }
 }
 
 export const useRepoStore = create<RepoStoreState>((set, get) => ({
@@ -151,7 +222,7 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
       return;
     }
     if (event.kind === 'found') {
-      set({ phase: 'found', found: event.repo, step: 3 });
+      set({ phase: 'found', found: event.repo, branches: event.branches, step: 3 });
       return;
     }
     set({
@@ -177,53 +248,18 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
    * as the authority.
    */
   submit: async () => {
-    const url = get().url;
-    const parsed = parseRepoUrl(url);
-    lastParsed = parsed;
-    if (parsed === null) {
-      set({
-        phase: 'error',
-        found: null,
-        resolveError: repoErrorSurface('repo/invalid-url', '', null),
-      });
-      return;
-    }
-    if (parsed.host !== 'github.com') {
-      set({
-        phase: 'error',
-        found: null,
-        resolveError: repoErrorSurface('repo/unsupported-host', '', parsed),
-      });
-      return;
-    }
-    if (isConnected(get().repos, parsed)) {
-      set({
-        phase: 'error',
-        found: null,
-        resolveError: repoErrorSurface('repo/already-connected', '', parsed),
-      });
-      return;
-    }
-    currentResolveId = null;
-    pendingEvents = [];
-    set({ phase: 'resolving', step: 0, found: null, resolveError: null });
-    const result = await window.conductor.repoResolve(url);
-    if (!result.ok) {
-      pendingEvents = [];
-      set({
-        phase: 'error',
-        resolveError: repoErrorSurface(result.error.code, result.error.message, parsed),
-      });
-      return;
-    }
-    currentResolveId = result.data.resolveId;
-    // Whatever outran the reply replays now, through the same guard — an
-    // early event of another resolution still dies on the id check.
-    const queued = pendingEvents;
-    pendingEvents = [];
-    for (const event of queued) {
-      get().applyResolveEvent({ ok: true, data: event });
-    }
+    await startResolve(set, get, null);
+  },
+
+  /**
+   * The picker re-resolves rather than patching the card: `app.json` and the
+   * flows under `conductor/` both live per branch, so every fact on the card
+   * belongs to the branch it was read from. Main clones at the ref, which is
+   * also what §8.3 later reads to pick a publication's base — so this choice
+   * is the one that decides it, and it exists only before connecting.
+   */
+  pickBranch: async (branch) => {
+    await startResolve(set, get, branch);
   },
 
   /** "Open <app>" — names the resolution and nothing else; main persists
@@ -295,7 +331,7 @@ export const useRepoStore = create<RepoStoreState>((set, get) => ({
     currentResolveId = null;
     lastParsed = null;
     pendingEvents = [];
-    set({ phase: 'idle', step: 0, found: null, resolveError: null });
+    set({ phase: 'idle', step: 0, found: null, branches: [], resolveError: null });
   },
 }));
 

@@ -16,9 +16,11 @@ export function Connect(): JSX.Element {
   const phase = useRepoStore((state) => state.phase);
   const step = useRepoStore((state) => state.step);
   const found = useRepoStore((state) => state.found);
+  const branches = useRepoStore((state) => state.branches);
   const resolveError = useRepoStore((state) => state.resolveError);
   const setUrl = useRepoStore((state) => state.setUrl);
   const submit = useRepoStore((state) => state.submit);
+  const pickBranch = useRepoStore((state) => state.pickBranch);
   const confirm = useRepoStore((state) => state.confirm);
   const pasteFromClipboard = useRepoStore((state) => state.pasteFromClipboard);
   const copyCommand = useRepoStore((state) => state.copyCommand);
@@ -37,6 +39,7 @@ export function Connect(): JSX.Element {
         </div>
         <RepoResolver
           autoFocus
+          branches={branches}
           error={resolveError}
           found={found}
           onCopyCommand={(command) => {
@@ -44,6 +47,9 @@ export function Connect(): JSX.Element {
           }}
           onPaste={() => {
             void pasteFromClipboard();
+          }}
+          onPickBranch={(branch) => {
+            void pickBranch(branch);
           }}
           onSubmit={() => {
             void submit();

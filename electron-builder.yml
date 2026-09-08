@@ -4,6 +4,7 @@ appId: com.vtex.conductor
 productName: Conductor
 directories:
   buildResources: build
+afterPack: build/after-pack.js
 files:
   - '!**/.vscode/*'
   - '!src/**/*'
@@ -38,8 +39,11 @@ mac:
     - dmg
     - zip
   category: public.app-category.developer-tools
-  # Unsigned: no certificate and no notarization credentials belong to us
-  # (.context.md §9.0 — no credential is ours).
+  # No certificate and no notarization credentials belong to us (.context.md
+  # §9.0 — no credential is ours), so electron-builder signs nothing here.
+  # `build/after-pack.js` then ad-hoc signs the bundle, which needs no
+  # certificate: without it the .app carries only the linker's mark and macOS
+  # calls it damaged on any machine but this one. See that file for why.
   identity: null
   notarize: false
 win:
