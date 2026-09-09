@@ -4,9 +4,10 @@ import { create } from 'zustand';
 /**
  * The AI domain, renderer side: the conversation as a projection of the
  * `ai:event` stream plus the turn id the send answered with, the assistant's
- * availability, and the editor's `ai` wash. Main owns the truth — the child,
- * the session, the budget (which this store never sees, criterion 25) — and
- * its actions are the only renderer code invoking the `ai:*` channels.
+ * availability, and the editor's `ai` wash. Main owns the truth — the child and
+ * the session — and its actions are the only renderer code invoking the `ai:*`
+ * channels. No cost, token count or budget reaches here, because none is
+ * tracked anywhere (§6.4 as amended).
  *
  * Every turn-scoped event is checked against the turn this store holds: a
  * late event from a killed turn must never decorate the turn that replaced

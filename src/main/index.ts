@@ -348,7 +348,9 @@ if (!app.requestSingleInstanceLock()) {
     });
     // Holds no process and no watcher — the MCP child behind `hierarchy()`
     // stays `MaestroMcpService`'s — so it is not in the disposal registry.
-    const snapshot = new SnapshotService({ gateway });
+    // Criterion 16 — an AI turn takes the device itself, so ours lets go: the
+    // lease stops this child and the next inspection starts a fresh one.
+    const snapshot = new SnapshotService({ gateway, stopMcp: () => mcp.stop() });
     // Owns the live `maestro test` child and §4.3.2's exclusion: it suspends
     // the snapshot path before the CLI spawns and resumes it on settle — and,
     // beside it, the run's recording, kept in the person's Movies folder when
@@ -370,7 +372,6 @@ if (!app.requestSingleInstanceLock()) {
     // injection; the service creates nothing itself (§10.1).
     const aiService = new AiService({
       model: CONFIG.AI_MODEL,
-      budgetUsd: CONFIG.AI_BUDGET_USD,
       pluginDir: conductorPluginDir({
         packaged: app.isPackaged,
         resourcesPath: process.resourcesPath,

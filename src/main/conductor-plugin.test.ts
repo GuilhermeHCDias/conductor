@@ -2,6 +2,7 @@ import { readdirSync, readFileSync, statSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
+import { allowedTools } from './services/ai.service';
 import { conductorPluginDir, stripFrontMatter } from './services/publish.service';
 
 /**
@@ -32,14 +33,29 @@ const PLUGIN_DIR = conductorPluginDir({
 
 const SKILLS_DIR = join(PLUGIN_DIR, 'skills');
 
-/** §4.3.4's allowlist, and nothing else. The client blocks everything outside
- * it before the model learns the tool exists, so a skill naming one of the
- * Cloud tools is teaching a step that cannot run. */
-const MCP_ALLOWLIST = ['cheat_sheet', 'inspect_screen', 'list_devices', 'take_screenshot'];
+/**
+ * §4.3.4's allowlist as the app itself declares it — derived from `argv`'s own
+ * list rather than copied, so a skill can never teach a step the client blocks
+ * before the model learns the tool exists. The two drifting apart is exactly
+ * the failure this reads the real function to prevent.
+ */
+const MCP_ALLOWLIST = allowedTools('conductor').flatMap(
+  (tool) => tool.match(/^mcp__maestro__(.+)$/)?.slice(1) ?? [],
+);
+
+/**
+ * `run` is the tool that gives the assistant hands, and it is also an ordinary
+ * English word: "nothing will run", "at run time", "a green run". The plain
+ * bare-name check cannot tell the two apart, so for these the rule narrows to
+ * the form a skill would use when it *names a tool*: backticked. Prose never
+ * backticks an English verb, so nothing legitimate trips it and an unqualified
+ * instruction still does.
+ */
+const ALSO_AN_ENGLISH_WORD = ['run'];
 
 /** Registered unconditionally by the MCP server (§4.3.4) and deliberately left
- * out of the allowlist — `run` included, which is the one that would let the
- * assistant drive the device (this spec's Out of scope). */
+ * out of the allowlist. Every one of them is Cloud or the Viewer: `run` is no
+ * longer among them, because the assistant drives the device now. */
 const MCP_WITHHELD = [
   'describe_cloud_run',
   'get_cloud_run_status',
@@ -123,6 +139,12 @@ function relativeLinks(text: string): string[] {
   return [...text.matchAll(/\[[^\]]*\]\(([^)\s]+)[^)]*\)/g)]
     .map((match) => match[1] ?? '')
     .filter((href) => !/^(https?:|mailto:|#)/.test(href));
+}
+
+/** The fenced blocks of a file — what a skill offers to be copied, as opposed
+ * to what it says in prose about what must never be written. */
+function fenced(text: string): string[] {
+  return [...text.matchAll(/^```[a-z]*\r?\n([\s\S]*?)^```/gm)].map((match) => match[1] ?? '');
 }
 
 const exists = (path: string): boolean => {
@@ -287,7 +309,10 @@ describe('criterion 5 — MCP tools', () => {
   it.each(SKILLS)('$name qualifies every tool it names', ({ files }) => {
     for (const file of files) {
       for (const tool of MCP_ALLOWLIST) {
-        const bare = file.text.match(`(?<!mcp__maestro__)\\b${tool}\\b`);
+        const pattern = ALSO_AN_ENGLISH_WORD.includes(tool)
+          ? `\`${tool}\``
+          : `(?<!mcp__maestro__)\\b${tool}\\b`;
+        const bare = file.text.match(pattern);
 
         expect({ file: file.path, tool, bare }).toEqual({ file: file.path, tool, bare: null });
       }
@@ -296,12 +321,85 @@ describe('criterion 5 — MCP tools', () => {
 
   it.each(SKILLS)('$name names none of the tools we withhold', ({ files }) => {
     for (const file of files) {
-      for (const tool of [...MCP_WITHHELD, 'mcp__maestro__run\\b']) {
+      for (const tool of MCP_WITHHELD) {
         expect({ file: file.path, found: file.text.match(tool) }).toEqual({
           file: file.path,
           found: null,
         });
       }
+    }
+  });
+
+  /** The allowlist is what the assistant may call; a skill that never names the
+   * tool it depends on teaches a journey it cannot walk. */
+  it('write-flow names the tool that drives the device', () => {
+    const files = SKILLS.find((skill) => skill.name === 'write-flow')?.files ?? [];
+
+    expect(files.map((file) => file.text).join('\n')).toContain('mcp__maestro__run');
+  });
+});
+
+/**
+ * Criteria 11–13. `run` reaches the device, and two things bound it — both of
+ * them instructions, because the MCP allowlist is name-level only and a tool's
+ * *arguments* cannot be constrained by us. Weakening either is weakening
+ * §12.18's "no shell, no network" guarantee.
+ */
+describe('what the assistant may do with the device', () => {
+  const houseRules = SKILLS.find((skill) => skill.name === 'work-in-conductor');
+
+  /** Criterion 11 — the session can run a test now, and a skill still claiming
+   * otherwise would talk the assistant out of the one thing this spec adds.
+   * Absence alone would also pass on a deleted section, so the capability has
+   * to be stated as well as the false claim removed. */
+  it('no longer says the session cannot run a test', () => {
+    for (const file of houseRules?.files ?? []) {
+      expect({ file: file.path, claim: file.text.match(/cannot run a test/i) }).toEqual({
+        file: file.path,
+        claim: null,
+      });
+    }
+  });
+
+  it('tells the assistant it may act on the device', () => {
+    expect(houseRules?.body ?? '').toContain('mcp__maestro__run');
+  });
+
+  /** Criterion 13 — the tool reaches the whole device, and only an instruction
+   * bounds it: name the mode that would run a folder, and the folder that is
+   * the only place a flow may come from. */
+  it.each(['dir', 'conductor/'])('bounds the device work by naming %s', (bound) => {
+    expect(houseRules?.body ?? '').toContain(bound);
+  });
+
+  /** Criterion 12 — `runScript` and `evalScript` execute arbitrary code and
+   * reach the network. They are reachable *through* `run`, so the ban has to be
+   * stated: nothing else in this session can be told not to. */
+  it.each(['runScript', 'evalScript'])('forbids %s by name', (command) => {
+    // Bullet by bullet, not paragraph by paragraph: a list whose *other*
+    // bullets carry the negation would let this one recommend the command.
+    const naming = (houseRules?.body ?? '')
+      .split(/^[-*] /m)
+      .filter((bullet) => bullet.includes(command));
+
+    // Naming it is not enough: "always use runScript" would pass that alone.
+    expect(naming).not.toEqual([]);
+    for (const bullet of naming) {
+      expect({ command, bullet }).toMatchObject({
+        bullet: expect.stringMatching(/\bnever\b|\bnot\b|\bno\b/i),
+      });
+    }
+  });
+
+  /** And no skill may show one in an example, which is what a model copies. */
+  it.each(SKILLS)('$name shows neither in any example', ({ files }) => {
+    for (const file of files) {
+      const shown = fenced(file.text).join('\n');
+
+      expect({ file: file.path, shown: shown.match(/runScript|evalScript/) }).toEqual({
+        file: file.path,
+        shown: null,
+      });
     }
   });
 });

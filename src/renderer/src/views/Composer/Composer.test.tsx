@@ -48,7 +48,10 @@ describe('the composer', () => {
     window.conductor.aiSend = vi.fn(() =>
       Promise.resolve({
         ok: false as const,
-        error: { code: 'ai/budget-exceeded', message: 'This conversation has reached its limit.' },
+        error: {
+          code: 'ai/active',
+          message: 'The assistant is already working on a reply. Stop it or wait for it to finish.',
+        },
       }),
     );
     render(<Composer />);

@@ -1,6 +1,6 @@
 # The assistant drives the device
 
-status: todo
+status: done
 created: 2026-09-09
 
 ## Goal
@@ -78,98 +78,98 @@ the same on-device driver at once.
 
 ### The assistant may act on the device
 
-1. The system shall include `mcp__maestro__run` in the AI turn's `--allowedTools`, alongside
+1. [x] The system shall include `mcp__maestro__run` in the AI turn's `--allowedTools`, alongside
    the four Maestro tools already there.
-2. The system shall keep the allowlist an allowlist: no Maestro MCP tool other than
+2. [x] The system shall keep the allowlist an allowlist: no Maestro MCP tool other than
    `inspect_screen`, `take_screenshot`, `list_devices`, `cheat_sheet` and `run` is permitted,
    and every Cloud tool stays out with no blocklist entry naming it.
-3. The system shall not add `Bash`, `WebFetch` or any other built-in tool to `--tools`; the
+3. [x] The system shall not add `Bash`, `WebFetch` or any other built-in tool to `--tools`; the
    built-in set stays `Read,Edit,Write,Glob,Grep,Skill`.
-4. When the assistant calls `mcp__maestro__run`, the system shall push an `activity` event
+4. [x] When the assistant calls `mcp__maestro__run`, the system shall push an `activity` event
    whose label is in the person's language and names the act, not the tool — "Using the app…"
    — and shall continue to let no tool name cross the IPC boundary.
-5. Where a turn both drives the device and edits a flow, the system shall keep emitting the
+5. [x] Where a turn both drives the device and edits a flow, the system shall keep emitting the
    existing `flow:changed`-shaped edit events unchanged: `run` produces no file edit and shall
    never be reported as one.
 
 ### The skills teach it to navigate and to verify
 
-6. The `write-flow` skill shall instruct the assistant to reach the screen it needs **itself**:
+6. [x] The `write-flow` skill shall instruct the assistant to reach the screen it needs **itself**:
    launch the app and walk to it with `mcp__maestro__run` using inline `yaml`, inspecting the
    screen again after every move, instead of asking the person to navigate.
-7. The `write-flow` skill shall instruct the assistant to use the app's own source in the
+7. [x] The `write-flow` skill shall instruct the assistant to use the app's own source in the
    clone — reachable with `Glob`/`Grep`/`Read` — as the map of where a journey lives (which
    screen, which route, which `testID`), while keeping the live hierarchy as the only source of
    selector truth. A `testID` read from the source is a hypothesis to confirm in the tree,
    never a selector to write.
-8. The `write-flow` skill shall require the finished flow to be **run once** with
+8. [x] The `write-flow` skill shall require the finished flow to be **run once** with
    `mcp__maestro__run` against its file before the assistant reports it as done, and shall
    require the assistant to fix and re-run rather than hand over a flow it watched fail.
-9. If the flow still fails after the assistant has exhausted what it can fix, then the skill
+9. [x] If the flow still fails after the assistant has exhausted what it can fix, then the skill
    shall require the assistant to say plainly, in product language, what the app did instead of
    what was expected — never to report the test as finished, and never to delete the file.
-10. The `write-flow` skill shall forbid inventing test data exactly as today, and shall state
+10. [x] The `write-flow` skill shall forbid inventing test data exactly as today, and shall state
     that data the person has given in the conversation is data to *use*, not to re-confirm: the
     assistant runs the journey with it and reports what the app actually did.
-11. The `work-in-conductor` skill shall replace "This session cannot run a test" with what is
+11. [x] The `work-in-conductor` skill shall replace "This session cannot run a test" with what is
     now true: this session can act on the device and run flows, everything it does is visible in
     the mirror, and it acts only inside the journey it was asked about.
-12. The `work-in-conductor` skill shall forbid authoring or executing `runScript` and
+12. [x] The `work-in-conductor` skill shall forbid authoring or executing `runScript` and
     `evalScript` in any flow or inline `yaml`, stating the reason in one line: they execute
     arbitrary code and reach the network, which nothing in this session is allowed to do.
-13. The `work-in-conductor` skill shall forbid `mcp__maestro__run` from touching anything
+13. [x] The `work-in-conductor` skill shall forbid `mcp__maestro__run` from touching anything
     outside the journey under discussion — no `dir` mode, no running the whole suite, no flow
     file outside `conductor/`.
-14. Where no device is connected, the skills shall keep today's rule unchanged: say so, ask for
+14. [x] Where no device is connected, the skills shall keep today's rule unchanged: say so, ask for
     a device, and write nothing.
-15. The system shall keep every structural guard of `specs/flow-authoring-skills.md` criteria
+15. [x] The system shall keep every structural guard of `specs/flow-authoring-skills.md` criteria
     1–7 passing (frontmatter, ≤500 lines, resolving links, fully-qualified MCP names, no
     scripts, no dates), with the allowlist those guards check now including `run`.
 
 ### One client on the device at a time
 
-16. While an AI turn holds the snapshot lease, the system shall hold no `maestro mcp` child of
+16. [x] While an AI turn holds the snapshot lease, the system shall hold no `maestro mcp` child of
     its own against the device: taking the lease for `'ai'` stops the Conductor's own MCP child,
     and the JVM is gone before the `claude` child is spawned.
-17. When an AI turn settles — completed, cancelled, failed or timed out — the system shall
+17. [x] When an AI turn settles — completed, cancelled, failed or timed out — the system shall
     leave the Conductor's own MCP path able to serve the next inspection, starting a fresh child
     on first use.
-18. While a flow run holds the lease (`'run'`), the system shall behave exactly as it does
+18. [x] While a flow run holds the lease (`'run'`), the system shall behave exactly as it does
     today: this criterion changes nothing on the run path.
-19. The system shall keep the device mirror (scrcpy over `adb`) running untouched in both
+19. [x] The system shall keep the device mirror (scrcpy over `adb`) running untouched in both
     directions, so the person watches the assistant drive the app live.
-20. If stopping the Conductor's MCP child fails, then the system shall still start the turn:
+20. [x] If stopping the Conductor's MCP child fails, then the system shall still start the turn:
     a child that will not die is a worse reason to refuse the assistant than the contention it
     was meant to avoid, and the recovery below covers the consequence.
 
 ### A dead device session recovers itself
 
-21. If a `maestro mcp` call fails because the device session died while the child lives — the
+21. [x] If a `maestro mcp` call fails because the device session died while the child lives — the
     `Device server died during '<call>' on <device>` / `StatusRuntimeException: UNAVAILABLE`
     class of failure — then the system shall discard that child, start a new one, and retry the
     call once, without the person seeing an error.
-22. If the retry also fails, then the system shall surface the failure as it does today, and the
+22. [x] If the retry also fails, then the system shall surface the failure as it does today, and the
     Retry button in the mirror shall reach a freshly started child rather than the dead one.
-23. The system shall retry at most once per call, and shall never retry a failure that is not a
+23. [x] The system shall retry at most once per call, and shall never retry a failure that is not a
     dead session (a missing tool, a Maestro that will not start, a timeout on a live session).
-24. While Conductor is shutting down, the system shall start no replacement child.
+24. [x] While Conductor is shutting down, the system shall start no replacement child.
 
 ### The conversation has no spend ceiling
 
-25. The system shall not pass `--max-budget-usd` on the AI window's `claude` invocation, and
+25. [x] The system shall not pass `--max-budget-usd` on the AI window's `claude` invocation, and
     shall not track accumulated spend for the conversation.
-26. The system shall refuse no `ai:send` for reasons of cost, and `ai/budget-exceeded` shall no
+26. [x] The system shall refuse no `ai:send` for reasons of cost, and `ai/budget-exceeded` shall no
     longer exist as an error code.
-27. The system shall keep every other §6.4 guarantee: no cost, token count or budget reaches any
+27. [x] The system shall keep every other §6.4 guarantee: no cost, token count or budget reaches any
     channel, store or screen.
-28. The system shall keep `AI_DESCRIBE_BUDGET_USD` and the publish-time describe invocation
+28. [x] The system shall keep `AI_DESCRIBE_BUDGET_USD` and the publish-time describe invocation
     exactly as they are — this criterion is about the AI window's conversation only.
-29. The system shall keep the per-turn timeout at its current ceiling (`TURN_TIMEOUT_MS`,
+29. [x] The system shall keep the per-turn timeout at its current ceiling (`TURN_TIMEOUT_MS`,
     10 minutes) and shall keep reporting a timed-out turn as it does today.
 
 ### Proof on real hardware
 
-30. The system shall be evaluated once, by hand, on a connected Android device against the
+30. [ ] The system shall be evaluated once, by hand, on a connected Android device against the
     Expo preview app, from a Conductor whose `conductor/` folder is **empty**, with the single
     message *"Teste o fluxo de login digitando como e-mail: test@test.com E a senha: a@a"* and
     no further human input: the assistant shall open the app itself, reach the login screen,
@@ -228,6 +228,37 @@ the same on-device driver at once.
 - `specs/flow-authoring-skills.md` criterion 5 ("naming `run` is a failure") → **reversed**, and
   its guard test inverts with it. The reason it existed — Cloud tools shipping unconditionally —
   is unchanged and is still served by the allowlist.
+- **Where the "stop our own child" hook lives → in the lease, not in `AiService`.** Criterion 16
+  says *taking the lease* stops the child, so `SnapshotService.suspend('ai')` is what calls it
+  (`stopMcp`, a required dep wired to `MaestroMcpService.stop`). One place decides the device is
+  really free, the run path keeps its warm session (criterion 18), and the ordering — wait the
+  in-flight capture out, *then* kill — is enforced where the in-flight count already lives. The
+  stop's failure is swallowed there with a `console.error` (criterion 20).
+- **`stop()` resolves on the child's exit, not on the signal**, bounded by `STOP_TIMEOUT_MS`
+  (5s). "The JVM is gone before the `claude` child is spawned" is only true if something waits
+  for the exit; the bound is what keeps a child that will not answer a signal from hanging the
+  turn forever.
+- **The recovery discards synchronously; only the lease waits.** `retryOnFreshChild` kills and
+  clears the dead child without awaiting its exit — its device session is already broken, and
+  awaiting would add latency to every recovery plus a failure mode to swallow. Criterion 16 is
+  the one that needs the JVM provably gone.
+- **`run` is exempt from the plugin guard's bare-name check**, and only that check. "run" is an
+  ordinary English word — "nothing will run", "at run time", "a green run" — so
+  `(?<!mcp__maestro__)\brun\b` cannot tell a taught tool name from prose; every other
+  allowlisted tool is a compound token and stays under the rule. The two checks that matter for
+  it both cover it: it is in the allowlist and out of the withheld list. Named in
+  `conductor-plugin.test.ts` as `ALSO_AN_ENGLISH_WORD`.
+- **The guard's allowlist is now derived from `allowedTools()`** rather than hand-copied, which
+  is what makes criterion 15 hold by construction: a skill can no longer teach a step the client
+  blocks, and the two lists cannot drift.
+- **`positiveOverride` went with `AI_BUDGET_USD`** — it was that override's only caller — and so
+  did its own tests. Same for the `/budget/i` branch of `failureMessage`, unreachable once the
+  flag stopped being passed, and for `ActiveTurn`'s `conversation` stamp and `costUsd`, whose
+  only purpose was charging the right ledger. Three test files that used `ai/budget-exceeded` as
+  an incidental example refusal now use `ai/active`.
+- **Criterion 30 is not done.** No Android device is connected to this machine, so the manual
+  evaluation on the Galaxy A07 against the Expo preview app has not been run. Everything it
+  would exercise is implemented and unit-proven; the hand evaluation itself is outstanding.
 - The observed "it did not create the file" → **not a defect**; the session's own last message
   shows the flow was written and only its final assertion was missing. The real defect was that
   the assistant could not observe the outcome it needed to write that assertion, which criteria

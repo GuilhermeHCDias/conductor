@@ -12,9 +12,10 @@ import {
 
 /**
  * The AI domain, renderer side: a projection of the `ai:event` stream plus
- * the turn id the send answered with. Main owns the truth — the child, the
- * session, the budget — and this store never sees a cost (criterion 25). Its
- * actions are the only renderer code invoking the ai channels.
+ * the turn id the send answered with. Main owns the truth — the child and the
+ * session — and no cost, token count or budget exists to reach this store
+ * (§6.4 as amended). Its actions are the only renderer code invoking the ai
+ * channels.
  */
 
 beforeEach(() => {
@@ -69,7 +70,10 @@ describe('sending', () => {
   /** Criterion 21 — a refusal is a quiet in-thread notice; the person's words
    * stay in the composer (the draft only clears on a successful send). */
   it('turns a refusal into a notice and keeps the thread free of the message', async () => {
-    refusedSend('ai/budget-exceeded', 'This conversation has reached its limit.');
+    refusedSend(
+      'ai/active',
+      'The assistant is already working on a reply. Stop it or wait for it to finish.',
+    );
 
     const accepted = await useAiStore.getState().send('mais uma coisa', null);
 
@@ -79,7 +83,7 @@ describe('sending', () => {
     expect(thread).toHaveLength(1);
     expect(thread[0]).toMatchObject({
       role: 'notice',
-      text: 'This conversation has reached its limit.',
+      text: 'The assistant is already working on a reply. Stop it or wait for it to finish.',
     });
     expect(selectStreaming(useAiStore.getState())).toBe(false);
   });

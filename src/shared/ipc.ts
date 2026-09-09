@@ -590,8 +590,9 @@ const aiOutcome = z.enum(['done', 'canceled', 'failed']);
  * (criterion 9): tool names never cross this boundary. `file-edited` carries
  * the §7.2 flow identity — the path relative to `conductor/`, the vocabulary
  * of `flow:changed` and `flow:save` — so the renderer can open it (criterion
- * 26). Spend is deliberately not in any payload: the number stops at
- * `AiService` (§6.4 as amended; criterion 25).
+ * 26). No payload carries a cost, a token count or a budget — the
+ * conversation has no spend ceiling and nothing tracks its spend, so there is
+ * no number anywhere to leak (§6.4 as amended).
  */
 const aiEvent = z.discriminatedUnion('kind', [
   z.object({ kind: z.literal('turn-started'), turnId: z.string() }),
@@ -1243,10 +1244,6 @@ export const ERROR_CODES = {
    * cause (criterion 16).
    */
   aiActive: 'ai/active',
-  /** The conversation reached `CONFIG.AI_BUDGET_USD`. The message names a
-   * limit, never an amount — no surface of the app shows a cost (§6.4 as
-   * amended, criterion 25). */
-  aiBudgetExceeded: 'ai/budget-exceeded',
   /** The honest fallback for a turn that ended wrong — the child exited
    * non-zero, or would not start. Auth failures keep this code but carry
    * their own message: the person's Claude sign-in is what fixes them
@@ -1397,8 +1394,8 @@ export interface ConductorApi {
    * already on disk stays, exactly as saving works everywhere else. Its own
    * channel, so a child that hangs never stands between the person and Stop. */
   aiCancel: (...args: Request<'ai:cancel'>) => Promise<Result<Response<'ai:cancel'>>>;
-  /** Criterion 12 — ends any turn, clears the remembered session and the
-   * accumulated spend; the renderer empties the thread on the pushed reset. */
+  /** Criterion 12 — ends any turn and clears the remembered session; the
+   * renderer empties the thread on the pushed reset. */
   aiReset: (...args: Request<'ai:reset'>) => Promise<Result<Response<'ai:reset'>>>;
   /** The availability question (criteria 6, 25): ready, or the blocking
    * reason as the error's stable code and product-language message. */

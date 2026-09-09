@@ -22,6 +22,18 @@ import {
 
 export type SnapshotServiceDeps = {
   readonly gateway: MaestroGateway;
+  /**
+   * Stops the Conductor's own `maestro mcp` child — `MaestroMcpService.stop`,
+   * injected. Taking the lease for the assistant means handing over the
+   * device itself, not merely holding our captures off: the AI turn's `claude`
+   * spawns a second `maestro mcp`, and two clients on one on-device driver is
+   * the silent truncation §4.3.6 measured (§4.3.7's two children).
+   *
+   * Required rather than optional on purpose: a `SnapshotService` built
+   * without it would keep every visible behaviour and quietly lose the one
+   * guarantee this dependency exists for.
+   */
+  readonly stopMcp: () => Promise<void>;
 };
 
 /**
@@ -85,18 +97,49 @@ export class SnapshotService {
    * AI turn holds the same lease as `'ai'` (ai criterion 15), and a suspend
    * against the *other* owner's hold rejects with that holder's code — the
    * mutual exclusion both `run:start` and `ai:send` ride.
+   *
+   * For `'ai'` the hold goes one step further and the contract grows with it:
+   * the device is not merely quiet, it is *free*. Our own `maestro mcp` child
+   * is stopped and its JVM gone before this resolves, because the turn is
+   * about to start one of its own (criterion 16). A run needs none of that —
+   * a raw `maestro test` does not hold a second MCP session, and paying a cold
+   * start after every run would be a regression nobody asked for
+   * (criterion 18).
    */
-  suspend(owner: SnapshotLeaseOwner = 'run'): Promise<void> {
+  async suspend(owner: SnapshotLeaseOwner = 'run'): Promise<void> {
     if (this.heldBy !== null && this.heldBy !== owner) {
-      return Promise.reject(new SnapshotLeaseHeldError(this.heldBy));
+      throw new SnapshotLeaseHeldError(this.heldBy);
     }
     this.heldBy = owner;
+    await this.idle();
+    if (owner === 'ai') {
+      await this.releaseDevice();
+    }
+  }
+
+  /** Resolves once nothing is talking to the device — immediately when nothing
+   * was. */
+  private idle(): Promise<void> {
     if (this.inFlight === 0) {
       return Promise.resolve();
     }
     return new Promise((resolve) => {
       this.idleWaiters.push(resolve);
     });
+  }
+
+  /**
+   * Criterion 20 — a child that will not die is a worse reason to refuse the
+   * assistant than the contention stopping it was meant to avoid, and the
+   * turn's own dead-session recovery covers the consequence. The failure is
+   * reported where whoever debugs it will look (§8.0), never to the person.
+   */
+  private async releaseDevice(): Promise<void> {
+    try {
+      await this.deps.stopMcp();
+    } catch (error) {
+      console.error('The Maestro MCP child could not be stopped for an AI turn:', error);
+    }
   }
 
   /** The run or turn settled — the device is ours again. Only the holder can

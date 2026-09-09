@@ -16,7 +16,9 @@ Electronics list and checks the price is on the product page."*
 
 ### What was inspected
 
-The Electronics list was already on the screen. `mcp__maestro__inspect_screen`
+The app was launched with `mcp__maestro__run` and the Electronics tab tapped —
+the source in the clone named that route, so the walk was two moves. On the
+list, `mcp__maestro__inspect_screen`
 reported a scrollable container holding six product rows. Each row looked
 like this one:
 
@@ -70,8 +72,11 @@ memory.
 
 ### What was reported back
 
+The file was run once before anything was reported, and it passed on the first
+attempt.
+
 *"The new test opens Electronics, scrolls down to the Bluetooth headphones and
-checks that the price shows on the product page."*
+checks that the price shows on the product page. I ran it and it passes."*
 
 ## Example: adding a check to a flow that already exists
 
@@ -106,7 +111,8 @@ Three things in it decide how the edit is made:
 
 ### What was inspected
 
-The confirmation screen, reached by walking the journey by hand first. The tree
+The confirmation screen, reached by walking the existing flow's journey with
+`mcp__maestro__run` first — sign in, add the item, pay. The tree
 held a node with `txt: "A confirmation was sent to qa.team@example.com"`, and
 one other node containing that same address in a footer.
 
@@ -145,5 +151,9 @@ read by a human reviewer, and a rewritten file is a review nobody can do.
 
 ### What was reported back
 
+Running the edited file caught something the tree alone could not: the notice
+arrives a moment after the payment screen does, so the first attempt asserted
+too early. An explicit wait fixed it and the second attempt passed.
+
 *"The checkout test now also checks that the notice about the confirmation
-e-mail appears after paying."*
+e-mail appears after paying. I ran the whole test and it passes."*

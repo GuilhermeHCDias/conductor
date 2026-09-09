@@ -1,6 +1,6 @@
 ---
 name: write-flow
-description: Turn a described journey into a Maestro flow that runs — inspect the live screen, choose the right commands, prove every selector matches exactly one element, and write the .yml file. Use when someone asks to write, generate, add, extend or fix an end-to-end test or flow for a journey such as logging in, checking out or searching.
+description: Turn a described journey into a Maestro flow that runs — walk the journey on the device, inspect each live screen, prove every selector matches exactly one element, write the .yml file and run it. Use when someone asks to write, generate, add, extend or fix an end-to-end test or flow for a journey such as logging in, checking out or searching.
 ---
 
 # write-flow
@@ -15,14 +15,14 @@ name one element before it is ever written down.
 
 ## Non-negotiables
 
-Four rules. Everything after them is craft; these four are the difference
+Six rules. Everything after them is craft; these six are the difference
 between a flow that runs and a flow that looks right and fails.
 
 **1. The live view hierarchy is the only source of selector truth.**
 `mcp__maestro__inspect_screen` returns the tree of what is on the screen right
 now. Every selector comes from a node in that tree and from nowhere else —
-never from a screenshot, never from the app's source code, never from memory of
-what this screen usually holds. An icon that reads as "Favorite" in a picture
+never from a screenshot, never from the app's source code however plainly that
+source declares a `testID`, never from memory of what this screen usually holds. An icon that reads as "Favorite" in a picture
 is often a node with no text at all, and a selector built from what the picture
 seemed to say is the classic hallucinated selector.
 
@@ -60,6 +60,20 @@ count the nodes in the inspected tree it would match, and act on the count:
 
 A selector that is never counted is a guess, however plausible it looks.
 
+**5. Walk the journey yourself.** The tree describes the screen that is
+showing, so reaching the right screen is part of the job — never something to
+ask the person to do. `mcp__maestro__run` drives the device from inline `yaml`:
+launch the app, tap, type, scroll, one short move at a time, inspecting again
+after every move. Asking someone to open the app, navigate to a screen, press a
+button or read an error message back is asking them to run the test by hand,
+which is the whole thing this product exists to spare them.
+
+**6. Run the finished flow before calling it done.** `mcp__maestro__run` takes
+the file as well as inline commands. A flow that has never been run is a draft,
+however carefully each selector was counted: a step can be right about the
+element and wrong about the order, the wait, or what the app does next. Run it,
+read what happened, fix what broke, run it again.
+
 ## The ladder to exactly one element
 
 Climb only when the rung below cannot name the target on its own:
@@ -84,6 +98,52 @@ Landing on `point:` is **reported to the person**, never written in silence:
 say plainly that this one step is tied to a position on the screen and will
 need attention when the screen changes. Everything else is invisible to them;
 this one is not, because it is the step that will fail first.
+
+## Walking the journey
+
+Every step the flow will take, taken live first — because a selector can only
+come from a screen that is actually showing, and the only way to make a screen
+show is to go there.
+
+- **Start from a known state.** Launch the app, resetting its state when the
+  journey assumes a fresh one, so the walk begins where the flow will begin.
+- **Move in small steps.** One tap, one field, one scroll per call. A long
+  inline sequence that fails says only that something in it failed.
+- **Inspect after every move.** The tree that was true before the tap says
+  nothing about the screen after it, and a selector taken from the stale one is
+  the classic invisible mistake.
+- **Expect the app to answer slowly.** A screen that is still loading reports a
+  tree that is missing the very element being looked for. Move on when the
+  element is there, not when the call returns.
+- **Stay inside the journey.** Only the screens this journey passes through get
+  touched. Nothing else on the device is any of this work's business.
+
+Walking is also how the unknowns get settled: which of two buttons is the real
+one, what the app says when a field is wrong, whether a step needs a wait. Those
+answers come from the app, not from asking the person to guess with you.
+
+## Proving it runs
+
+The last step before reporting back, always: run the file that was just written
+with `mcp__maestro__run`, and read the result.
+
+- **It passed** — say so when reporting back, in the same plain language
+  everything else is reported in.
+- **It failed** — this is normal, and it is the point. Read which step failed
+  and what the screen held at that moment, inspect if needed, fix the flow and
+  run it again. A wrong selector, a missing wait and a step in the wrong order
+  all look identical until the flow is run.
+- **It keeps failing, and the flow is right** — then the app did something the
+  journey did not expect, and that is a finding, not a failure to hide. Say
+  plainly what was expected and what the app did instead: "the test signs in
+  and expects the order list, but the app answers that the user name or
+  password is wrong." **Never report a test as finished when it was watched
+  failing, and never delete the file** — the file is the work, and the person
+  decides what to do about what it found.
+
+Reporting a flow as done without running it is the same failure as writing a
+selector without counting it: it looks like finished work, and only the person
+finds out otherwise.
 
 ## Command syntax comes from the cheat sheet
 
@@ -131,17 +191,19 @@ Follow it in order; each step depends on the one before it.
    produces a test that passes while checking the wrong thing, which is worse
    than no test.
 2. **Gather context**, in the order set out below.
-3. **Inspect the current screen** with `mcp__maestro__inspect_screen`. This is
-   the tree every selector for this screen comes from. When the journey crosses
-   several screens, inspect again after each move: the tree describes the
-   screen that is showing, not the one that will show next.
+3. **Walk the journey on the device** with `mcp__maestro__run`, launching the
+   app and moving one step at a time, and **inspect each screen** with
+   `mcp__maestro__inspect_screen` as it arrives. Those trees are where every
+   selector comes from.
 4. **Plan the steps** as intent to command, straight down the journey, before
    writing anything.
 5. **Synthesize and validate each selector** — the ladder, then the count.
    Exactly one match, or climb.
 6. **Write the file.** The flow lands on disk, never in the chat.
-7. **Report back in plain language** — what the test now does, and any step
-   known to be fragile.
+7. **Run the file** with `mcp__maestro__run`. Fix and run again until it passes,
+   or until what is left is the app disagreeing with the journey.
+8. **Report back in plain language** — what the test now does, what happened
+   when it ran, and any step known to be fragile.
 
 ## Gathering context, in order
 
@@ -152,13 +214,18 @@ Follow it in order; each step depends on the one before it.
    at review even when it runs.
 2. **Then the live screen** — the inspected tree. This is where selectors come
    from, always.
-3. **Then the app's source code, only if it is within reach** — and only ever
-   as a *hint*. It is good for guessing which `testID` values exist, what the
-   screens are called, and in which order a journey moves through them. It is
-   never a source of selectors: what the source declares and what the running
-   app reports can differ, and only the tree knows what is on the screen. When
-   the source is out of reach, nothing here changes — steps 1 and 2 are the
-   whole job.
+3. **The app's own source, when the project is the app under test** — reachable
+   with `Glob`, `Grep` and `Read`. Use it as the *map*: which screen a journey
+   lives on, what route reaches it, which fields it has, and which `testID`
+   values were written into them. It shortens the walk enormously — knowing the
+   login screen exists and what it declares beats tapping around to find it.
+
+   It is still never a source of selectors. What the source declares and what
+   the running app reports can differ: a `testID` may not survive to the
+   platform, a component may be swapped at run time, a screen may be behind a
+   flag. **A `testID` read from the source is a hypothesis to confirm in the
+   tree**, and only the tree it appears in makes it a selector. When the source
+   is out of reach, nothing here changes — steps 1 and 2 are the whole job.
 
 ## The quality bar
 
@@ -198,14 +265,25 @@ produces a failure nobody can explain.
   the same account, the same fixture, the same helper flow.
 - When nothing exists to copy, **ask the person** which account or data to use.
   Waiting for an answer is cheap; a test built on invented data is not.
+- **Data the person already gave is data to use.** An address, a card, a login
+  named in the conversation is the answer to that question — use it, walk the
+  journey with it, and report what the app did. Asking them to confirm it, or
+  asking them to type it in themselves, is asking the same question twice.
+  Credentials that turn out to be wrong are a finding to report in plain
+  language, not a reason to have withheld the attempt.
 
 ## Worked example: logging in
 
 The request: *"write me a test for the login flow — it should end on the
 welcome message."*
 
-**What was inspected.** After launching the app and landing on the sign-in
-screen, `mcp__maestro__inspect_screen` reported, among others:
+**Getting there.** The source in the clone showed a sign-in screen as the app's
+first route, so the walk was short: `mcp__maestro__run` with inline `yaml`
+launched the app with its state reset, and the screen that came up was the one
+the journey starts on. No one was asked to open anything.
+
+**What was inspected.** On that sign-in screen,
+`mcp__maestro__inspect_screen` reported, among others:
 
 - a node with `txt: "Sign in"` — the screen's title
 - a node with `rid: "com.example.app:id/email_input"`, `hint: "E-mail"`
@@ -251,9 +329,15 @@ appId: com.example.app
 - assertVisible: "Welcome back, Ana"
 ```
 
+**What happened when it ran.** The file was run once with `mcp__maestro__run`
+before anything was reported. The first attempt failed on the last step: the
+welcome message needs a moment to arrive, and the assertion arrived first. An
+explicit wait fixed it, and the second run passed.
+
 **What was reported back:** *"The login test now signs in with the QA account
-and checks that the welcome message appears on the home screen."* No mention of
-selectors, of the tree, or of the file — none of it is the person's business.
+and checks that the welcome message appears on the home screen. I ran it and it
+passes."* No mention of selectors, of the tree, or of the file — none of it is
+the person's business.
 
 Two more worked examples — one that has to scroll to reach its element, one
 that extends a flow that already exists — are in
@@ -276,3 +360,8 @@ Each of these produces a flow that looks finished and is not:
   never delivered — nothing was written, nothing will run. Write the file.
 - **Writing a selector without counting its matches.** Two matches means the
   runner picks one of them, and it will not always be the one intended.
+- **Asking the person to be the hands.** "Open the app and go to the login
+  screen", "tap Enter and tell me what it says" — every one of those is a step
+  this session can take itself, and asking turns a finished test into homework.
+- **Handing over a flow that was never run.** It is a draft described as a
+  test. Run it first; if it fails and cannot be fixed, say what the app did.

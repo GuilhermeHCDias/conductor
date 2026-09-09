@@ -109,6 +109,37 @@ function code(result: Result<unknown>): string {
   return result.error.code;
 }
 
+/**
+ * Every construction goes through here. The second dependency is this spec's:
+ * taking the lease for an AI turn stops the Conductor's own `maestro mcp`
+ * child, because two clients on one on-device driver is the silent truncation
+ * §4.3.6 measured.
+ */
+function makeService(
+  gateway: MaestroGateway,
+  stopMcp: () => Promise<void> = () => Promise.resolve(),
+): SnapshotService {
+  return new SnapshotService({ gateway, stopMcp });
+}
+
+/** Records every stop, and holds it open until the test lets the JVM die. The
+ * gate exists before the first call, so releasing early is safe. */
+function fakeStop(): { stopMcp: () => Promise<void>; calls: number; release: () => void } {
+  let release: () => void = () => {};
+  const gate = new Promise<void>((resolveGate) => {
+    release = resolveGate;
+  });
+  const box = {
+    calls: 0,
+    release,
+    stopMcp: () => {
+      box.calls += 1;
+      return gate;
+    },
+  };
+  return box;
+}
+
 /* ── capturing ──────────────────────────────────────────────────────────── */
 
 describe('capturing a snapshot', () => {
@@ -125,7 +156,7 @@ describe('capturing a snapshot', () => {
       gateway.hierarchyCalls.push(deviceId);
       return held.then(() => tree);
     };
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     const capture = service.capture('R9QYC01EMXL');
     // The hierarchy is still pending; a sequential implementation would not
@@ -140,7 +171,7 @@ describe('capturing a snapshot', () => {
   });
 
   it('answers the parsed tree, the screenshot size, the scale and a fresh id', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
 
     const first = view(await service.capture('R9QYC01EMXL'));
     const second = view(await service.capture('R9QYC01EMXL'));
@@ -167,7 +198,7 @@ describe('capturing a snapshot', () => {
         ],
       }),
     );
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(view(await service.capture('device')).scale).toBe(2);
   });
@@ -176,7 +207,7 @@ describe('capturing a snapshot', () => {
    * against, and a guessed scale is a hit-test that selects the wrong element. */
   it('refuses a tree in which no node carries bounds', async () => {
     const gateway = fakeGateway(node({ children: [node(), node()] }));
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.snapshotNoBounds);
   });
@@ -186,7 +217,7 @@ describe('capturing a snapshot', () => {
   it('answers the hierarchy failure with its own stable code', async () => {
     const gateway = fakeGateway();
     gateway.hierarchyFailure = coded(ERROR_CODES.mcpCallFailed, 'inspect_screen refused.');
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.mcpCallFailed);
   });
@@ -194,7 +225,7 @@ describe('capturing a snapshot', () => {
   it('answers the screenshot failure with its own stable code', async () => {
     const gateway = fakeGateway();
     gateway.screenshotFailure = coded(ERROR_CODES.captureFailed, 'screencap produced nothing.');
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.captureFailed);
   });
@@ -203,7 +234,7 @@ describe('capturing a snapshot', () => {
     const gateway = fakeGateway();
     gateway.hierarchyFailure = coded(ERROR_CODES.mcpCallFailed, 'gone');
     gateway.screenshotFailure = coded(ERROR_CODES.captureFailed, 'gone too');
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.mcpCallFailed);
   });
@@ -215,7 +246,7 @@ describe('capturing a snapshot', () => {
   it('falls back to its own code when the failure carries a foreign one', async () => {
     const gateway = fakeGateway();
     gateway.screenshotFailure = coded('ENOENT', 'spawn adb ENOENT');
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.captureFailed);
   });
@@ -223,7 +254,7 @@ describe('capturing a snapshot', () => {
   it('refuses a screenshot that is not a readable PNG', async () => {
     const gateway = fakeGateway();
     gateway.shot = Buffer.from('definitely not a picture');
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.captureFailed);
   });
@@ -231,7 +262,7 @@ describe('capturing a snapshot', () => {
   /** Criterion 6 — the screenshot's bytes exist to calibrate, and nothing in
    * this spec renders them. They must not ride an IPC answer at ~1MB a go. */
   it('sends no screenshot bytes in the snapshot view', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
 
     const result = view(await service.capture('device'));
     expect(Object.keys(result).sort()).toEqual([
@@ -248,7 +279,7 @@ describe('capturing a snapshot', () => {
 
 describe('synthesising against the held snapshot', () => {
   it('synthesises a selector for a path of the current snapshot', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     const snapshot = view(await service.capture('device'));
 
     // The status-bar clock: a unique resource-id, so the first rung answers.
@@ -263,7 +294,7 @@ describe('synthesising against the held snapshot', () => {
    * longer seeing, and synthesising against it writes a selector for a screen
    * that is gone. */
   it('refuses a snapshotId that is no longer current', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     const first = view(await service.capture('device'));
     await service.capture('device');
 
@@ -271,13 +302,13 @@ describe('synthesising against the held snapshot', () => {
   });
 
   it('refuses a snapshotId that was never issued', () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
 
     expect(code(service.synthesize('snapshot-imagined', []))).toBe(ERROR_CODES.snapshotStale);
   });
 
   it('holds one current snapshot per device, not one overall', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     const phone = view(await service.capture('phone'));
     const tablet = view(await service.capture('tablet'));
 
@@ -289,7 +320,7 @@ describe('synthesising against the held snapshot', () => {
    * "no partial snapshot" cuts both ways. */
   it('keeps the previous snapshot when a recapture fails', async () => {
     const gateway = fakeGateway();
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
     const first = view(await service.capture('device'));
 
     gateway.hierarchyFailure = coded(ERROR_CODES.mcpCallFailed, 'gone');
@@ -299,7 +330,7 @@ describe('synthesising against the held snapshot', () => {
   });
 
   it('answers the synthesis failure code for a path the tree does not have', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     const snapshot = view(await service.capture('device'));
 
     expect(code(service.synthesize(snapshot.snapshotId, [99, 99]))).toBe(
@@ -316,7 +347,7 @@ describe('synthesising against the held snapshot', () => {
     const gateway = fakeGateway(
       node({ bounds: { x1: 0, y1: 0, x2: 100, y2: 100 }, children: [node()] }),
     );
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
     const snapshot = view(await service.capture('device'));
 
     expect(code(service.synthesize(snapshot.snapshotId, [0]))).toBe(ERROR_CODES.selectorNoMatch);
@@ -335,7 +366,7 @@ describe('synthesising against the held snapshot', () => {
 describe('suspension during a run', () => {
   it('refuses a capture while suspended, without touching the mcp child', async () => {
     const gateway = fakeGateway();
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     await service.suspend();
     const result = await service.capture('device');
@@ -354,7 +385,7 @@ describe('suspension during a run', () => {
       new Promise((resolvePromise) => {
         releaseHierarchy = resolvePromise;
       });
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     const capture = service.capture('device');
     let suspended = false;
@@ -371,7 +402,7 @@ describe('suspension during a run', () => {
   });
 
   it('suspend resolves immediately when nothing is in flight', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
 
     await expect(service.suspend()).resolves.toBeUndefined();
   });
@@ -380,7 +411,7 @@ describe('suspension during a run', () => {
    * actually lifts the refusal. */
   it('captures again after resume', async () => {
     const gateway = fakeGateway();
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
     await service.suspend();
 
     service.resume();
@@ -392,7 +423,7 @@ describe('suspension during a run', () => {
   /** Synthesis reads memory, not the device — the pre-run right-click that
    * raced the Run button still completes, against the tree it hit-tested. */
   it('still synthesizes from the held snapshot while suspended', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     const snapshot = view(await service.capture('device'));
 
     await service.suspend();
@@ -411,7 +442,7 @@ describe('suspension during a run', () => {
 describe('the lease owner', () => {
   it('refuses a capture during an AI turn with ai/active, naming the assistant', async () => {
     const gateway = fakeGateway();
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
 
     await service.suspend('ai');
     const result = await service.capture('device');
@@ -425,14 +456,14 @@ describe('the lease owner', () => {
   });
 
   it('refuses to suspend for a run while the assistant holds the lease', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     await service.suspend('ai');
 
     await expect(service.suspend()).rejects.toMatchObject({ code: ERROR_CODES.aiActive });
   });
 
   it('refuses to suspend for the assistant while a run holds the lease', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     await service.suspend();
 
     await expect(service.suspend('ai')).rejects.toMatchObject({ code: ERROR_CODES.runActive });
@@ -441,7 +472,7 @@ describe('the lease owner', () => {
   /** RunService's failure path calls a plain `resume()`; when its own suspend
    * was the one that was refused, that resume must not lift the AI's hold. */
   it('ignores a resume from an owner that does not hold the lease', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     await service.suspend('ai');
 
     service.resume();
@@ -451,7 +482,7 @@ describe('the lease owner', () => {
 
   it('captures again once the assistant releases its own hold', async () => {
     const gateway = fakeGateway();
-    const service = new SnapshotService({ gateway });
+    const service = makeService(gateway);
     await service.suspend('ai');
 
     service.resume('ai');
@@ -461,9 +492,117 @@ describe('the lease owner', () => {
 
   /** The default stays `'run'`, so `RunService` and its tests are untouched. */
   it('keeps the run refusal for a plain suspend', async () => {
-    const service = new SnapshotService({ gateway: fakeGateway() });
+    const service = makeService(fakeGateway());
     await service.suspend();
 
     expect(code(await service.capture('device'))).toBe(ERROR_CODES.runActive);
+  });
+});
+
+/**
+ * Criteria 16–20. An AI turn's `claude` child spawns a `maestro mcp` of its
+ * own, so ours has to be gone before it wakes up — the lease is where that
+ * happens, because the lease is already the one place that knows the device is
+ * about to change hands.
+ */
+describe('handing the device to the assistant', () => {
+  it('stops our own mcp child before the assistant has the device', async () => {
+    const stop = fakeStop();
+    const service = makeService(fakeGateway(), stop.stopMcp);
+
+    let held = false;
+    const suspended = service.suspend('ai').then(() => {
+      held = true;
+    });
+
+    await Promise.resolve();
+    expect(stop.calls).toBe(1);
+    // The JVM is still dying: the turn must not start on top of it.
+    expect(held).toBe(false);
+
+    stop.release();
+    await suspended;
+    expect(held).toBe(true);
+  });
+
+  /** The stop comes after the in-flight capture, never during it: killing the
+   * child a live `inspect_screen` is talking to would fail that capture rather
+   * than free the device cleanly. */
+  it('waits the in-flight capture out before killing the child', async () => {
+    const gateway = fakeGateway();
+    let releaseCapture: () => void = () => {};
+    const held = new Promise<void>((resolveHeld) => {
+      releaseCapture = resolveHeld;
+    });
+    const tree = gateway.tree;
+    gateway.hierarchy = () => held.then(() => tree);
+    const stop = fakeStop();
+    const service = makeService(gateway, stop.stopMcp);
+
+    const capture = service.capture('R9QYC01EMXL');
+    const suspended = service.suspend('ai');
+    await Promise.resolve();
+    expect(stop.calls).toBe(0);
+
+    releaseCapture();
+    await capture;
+    stop.release();
+    await suspended;
+    expect(stop.calls).toBe(1);
+  });
+
+  /** Criterion 18 — the run path is untouched. `RunService` spawns a raw
+   * `maestro test`, which does not contend with our session the way a second
+   * MCP client does, and paying a cold start after every run would be a
+   * regression nobody asked for. */
+  it('leaves our mcp child alone for a flow run', async () => {
+    const stop = fakeStop();
+    const service = makeService(fakeGateway(), stop.stopMcp);
+
+    await service.suspend('run');
+
+    expect(stop.calls).toBe(0);
+  });
+
+  /** Criterion 20 — a child that will not die is a worse reason to refuse the
+   * assistant than the contention stopping it was meant to avoid. */
+  it('starts the turn anyway when the child will not stop', async () => {
+    const service = makeService(fakeGateway(), () =>
+      Promise.reject(new Error('The Maestro MCP server would not stop.')),
+    );
+
+    await expect(service.suspend('ai')).resolves.toBeUndefined();
+    expect(code(await service.capture('device'))).toBe(ERROR_CODES.aiActive);
+  });
+
+  /** Criterion 17 — releasing starts nothing: the next inspection does, and it
+   * reaches the gateway exactly as before. */
+  it('starts nothing on resume, and captures again through the gateway', async () => {
+    const gateway = fakeGateway();
+    const stop = fakeStop();
+    const service = makeService(gateway, stop.stopMcp);
+    const suspended = service.suspend('ai');
+    stop.release();
+    await suspended;
+
+    service.resume('ai');
+
+    expect((await service.capture('R9QYC01EMXL')).ok).toBe(true);
+    expect(gateway.hierarchyCalls).toEqual(['R9QYC01EMXL']);
+    expect(stop.calls).toBe(1);
+  });
+
+  /**
+   * Criterion 19 — the mirror is scrcpy over `adb` and shares nothing with this
+   * path, so the person watches the assistant drive the app live in both
+   * directions. Asserting that this service does not start mirrors would prove
+   * nothing: it never could. The direction worth guarding is the other one —
+   * the service that owns the mirror must not learn this lease exists, or a
+   * turn would blank the picture exactly when it is most worth watching.
+   */
+  it('leaves the mirror out of the lease entirely', () => {
+    const owner = readFileSync(resolve('src/main/services/device.service.ts'), 'utf8');
+
+    expect(owner).not.toMatch(/SnapshotService|snapshots?\.(suspend|resume)|heldBy/);
   });
 });

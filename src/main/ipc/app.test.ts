@@ -85,11 +85,9 @@ describe('registerAppIpc', () => {
   });
 
   /**
-   * §12.6 — what crosses as CONFIG carries no appId and no repo URL. And
-   * §6.4 as amended — the wire carries exactly the three fields the response
-   * schema declares: budgets and binary paths are main's business, and the
-   * AI conversation's ceiling in particular crosses no channel at all
-   * (ai-assistant-session constraint).
+   * §12.6 — what crosses as CONFIG carries no appId and no repo URL: the
+   * wire carries exactly the three fields the response schema declares, and
+   * binary paths, release URLs and pins stay main's business.
    */
   it('exposes exactly the declared constants over config:get', async () => {
     const result = await invoke('config:get');
