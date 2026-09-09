@@ -95,6 +95,11 @@ export class MaestroMcpService {
   /** The death currently being waited out, so overlapping stops wait for the
    * same JVM instead of the second one being told it is already gone. */
   private stopping: Promise<void> | null = null;
+  /** Children signalled by `stop` and not yet observed dead. `stop` empties the
+   * slot before it waits, so without this a JVM that outlived `STOP_TIMEOUT_MS`
+   * would be referenced by nothing and survive `before-quit` — `run.ts`'s kill
+   * is SIGTERM with no escalation, so nothing else collects it. */
+  private readonly dying = new Set<StreamingProcess>();
   private disposed = false;
 
   constructor(deps: MaestroMcpServiceDeps) {
@@ -193,18 +198,34 @@ export class MaestroMcpService {
    */
   async stop(): Promise<void> {
     const connection = this.connection;
-    if (connection === null) {
-      await (this.stopping ?? Promise.resolve());
+    if (connection !== null) {
+      const { child } = connection;
+      // `discard` sends the signal; the wait below only observes the death, so
+      // a child is never signalled twice for one stop.
+      this.discard(connection);
+      this.dying.add(child);
+      const tracked: Promise<void> = new Promise<void>((resolve) => {
+        // The listener goes on after the signal deliberately: `spawnStreaming`
+        // replays a past exit to a late subscriber, so a child that died
+        // synchronously still resolves this.
+        child.onExit(() => resolve());
+      }).then(() => {
+        this.dying.delete(child);
+        if (this.stopping === tracked) {
+          this.stopping = null;
+        }
+      });
+      this.stopping = tracked;
+    }
+
+    const stopping = this.stopping;
+    if (stopping === null) {
       return;
     }
-    this.discard(connection);
-    const stopping = gone(connection.child).finally(() => {
-      if (this.stopping === stopping) {
-        this.stopping = null;
-      }
-    });
-    this.stopping = stopping;
-    await stopping;
+    // Cleared only by the real exit, never by a deadline: a stop that gave up
+    // waiting leaves the JVM alive, and the next caller must wait for that same
+    // death rather than be told the device is free.
+    await withDeadline(stopping);
   }
 
   /** Criterion 20 — no JVM survives `before-quit`. */
@@ -212,6 +233,11 @@ export class MaestroMcpService {
     this.disposed = true;
     this.connection?.child.kill();
     this.connection = null;
+    // Whatever a stop gave up on is still ours to collect.
+    for (const child of this.dying) {
+      child.kill();
+    }
+    this.dying.clear();
   }
 
   /** Drops a child, by identity rather than by slot — the same reasoning
@@ -360,10 +386,11 @@ function callFailed(error: unknown): McpStartError {
   );
 }
 
-/** Signals the child and resolves when it is really gone. The listener goes on
- * before the signal: a child that has already exited replays its exit to a late
- * subscriber, and one that dies synchronously would otherwise resolve nothing. */
-function gone(child: StreamingProcess): Promise<void> {
+/** Bounds a wait on a child's death. The death itself is never rejected — the
+ * JVM either exits or does not — so the deadline belongs to the *caller*: each
+ * one waits its own `STOP_TIMEOUT_MS` and then carries on (criterion 20),
+ * leaving the death still tracked for whoever asks next. */
+function withDeadline(death: Promise<void>): Promise<void> {
   return new Promise((resolve, reject) => {
     const timer = setTimeout(() => {
       reject(
@@ -373,10 +400,9 @@ function gone(child: StreamingProcess): Promise<void> {
     // A timer that outlives its child would hold the event loop open, and main
     // holds this service for the whole session.
     timer.unref?.();
-    child.onExit(() => {
+    death.then(() => {
       clearTimeout(timer);
       resolve();
-    });
-    child.kill();
+    }, reject);
   });
 }

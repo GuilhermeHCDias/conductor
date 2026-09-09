@@ -30,6 +30,9 @@ type Spawned = {
   readonly args: readonly string[];
   readonly options: SpawnOptions;
   readonly killed: () => boolean;
+  /** How many signals the child was sent — `dispose` re-signalling a JVM that
+   * outlived its stop is the difference between a bounded stop and an orphan. */
+  readonly killCount: () => number;
   /** Fires the child's exit listeners, as a dying JVM would. */
   readonly exit: (reason?: ExitReason) => void;
 };
@@ -75,7 +78,7 @@ function makeService(
 
   const service = new MaestroMcpService({
     spawn: (command, args, options) => {
-      let killed = false;
+      let kills = 0;
       let exited: ExitReason | null = null;
       // `spawnStreaming` keeps a *set* of exit listeners and replays the exit
       // to a late one. A fake that held a single listener would let a second
@@ -93,14 +96,15 @@ function makeService(
           listeners.add(listener);
         },
         kill: () => {
-          killed = true;
+          kills += 1;
         },
       };
       spawns.push({
         command,
         args,
         options,
-        killed: () => killed,
+        killed: () => kills > 0,
+        killCount: () => kills,
         exit: (reason = { code: 1, error: null }) => {
           exited = reason;
           for (const listener of [...listeners]) {
@@ -602,6 +606,72 @@ describe('stopping for the assistant', () => {
       expect(await settled).toBe('rejected');
       await h.service.inspectScreen(DEVICE);
       expect(h.spawns).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The JVM that outlived its stop is held by nothing: `stop` emptied the slot
+   * before waiting, so `dispose` — which only ever knew the slot — would let a
+   * child that ignored SIGTERM survive `before-quit`. `run.ts` never escalates
+   * to SIGKILL, so nothing else would collect it either. */
+  it('still kills a JVM that outlived its stop when the app quits', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeService();
+      await h.service.inspectScreen(DEVICE);
+
+      const settled = h.service.stop().then(
+        () => 'resolved',
+        () => 'rejected',
+      );
+      await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
+      expect(await settled).toBe('rejected');
+
+      const signalled = h.spawns[0]?.killCount() ?? 0;
+      h.service.dispose();
+
+      expect(h.spawns[0]?.killCount()).toBeGreaterThan(signalled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** And the device is not free just because an earlier stop gave up waiting.
+   * Reporting it free is what spawns `claude` on top of a live JVM — criterion
+   * 16's failure — so a later stop waits for the same death, and answers only
+   * when the JVM is really gone. */
+  it('makes a later stop wait for a JVM that outlived an earlier stop', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeService();
+      await h.service.inspectScreen(DEVICE);
+
+      const first = h.service.stop().then(
+        () => 'resolved',
+        () => 'rejected',
+      );
+      await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
+      expect(await first).toBe('rejected');
+
+      let answered = false;
+      const later = h.service.stop().then(
+        () => {
+          answered = true;
+        },
+        () => {
+          answered = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(answered).toBe(false);
+
+      h.spawns[0]?.exit();
+      await later;
+
+      expect(answered).toBe(true);
+      expect(h.spawns).toHaveLength(1);
     } finally {
       vi.useRealTimers();
     }

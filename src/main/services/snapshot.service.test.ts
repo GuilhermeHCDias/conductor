@@ -591,18 +591,4 @@ describe('handing the device to the assistant', () => {
     expect(gateway.hierarchyCalls).toEqual(['R9QYC01EMXL']);
     expect(stop.calls).toBe(1);
   });
-
-  /**
-   * Criterion 19 — the mirror is scrcpy over `adb` and shares nothing with this
-   * path, so the person watches the assistant drive the app live in both
-   * directions. Asserting that this service does not start mirrors would prove
-   * nothing: it never could. The direction worth guarding is the other one —
-   * the service that owns the mirror must not learn this lease exists, or a
-   * turn would blank the picture exactly when it is most worth watching.
-   */
-  it('leaves the mirror out of the lease entirely', () => {
-    const owner = readFileSync(resolve('src/main/services/device.service.ts'), 'utf8');
-
-    expect(owner).not.toMatch(/SnapshotService|snapshots?\.(suspend|resume)|heldBy/);
-  });
 });

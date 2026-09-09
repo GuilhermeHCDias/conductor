@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
 import type {
   AppIdentity,
   Device,
@@ -850,5 +852,21 @@ describe('ending mirror sessions', () => {
 
     await expect(service.dispose()).resolves.toBeUndefined();
     expect(gateway.sessions[1]?.stops).toBe(1);
+  });
+});
+
+/**
+ * `assistant-drives-device` criterion 19 — the AI turn takes the device with a
+ * snapshot lease, and the mirror must keep running through it in both
+ * directions, so the person watches the assistant drive the app live. The
+ * direction worth guarding is this one: the service that owns the mirror must
+ * not learn the lease exists, or a turn would blank the picture exactly when it
+ * is most worth watching.
+ */
+describe('the mirror and the snapshot lease', () => {
+  it('leaves the mirror out of the lease entirely', () => {
+    const owner = readFileSync(resolve('src/main/services/device.service.ts'), 'utf8');
+
+    expect(owner).not.toMatch(/SnapshotService|snapshots?\.(suspend|resume)|heldBy/);
   });
 });
