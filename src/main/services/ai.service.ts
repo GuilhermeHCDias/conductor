@@ -17,10 +17,15 @@ import type { SnapshotLeaseOwner } from './snapshot.service';
  * before it was written; the findings travel in the PR.
  *
  * This service holds the turn lifecycle, the stream-json parsing, the
- * `--resume` bookkeeping, the budget arithmetic (§6.4 — the number stops
- * here: it crosses no channel, enters no store, reaches no screen), and the
- * snapshot lease that keeps the AI's `maestro mcp` and our own off the
- * device at the same time (§4.3.2, criteria 15–16).
+ * `--resume` bookkeeping, and the snapshot lease that keeps the AI's
+ * `maestro mcp` and our own off the device at the same time (§4.3.2).
+ *
+ * The conversation has **no spend ceiling** (§6.4 as amended): driving a
+ * device costs several times what a chat turn costs, and a conversation dying
+ * mid-journey with a refusal the person cannot act on is worse than an
+ * uncapped spend on their own subscription. What survives of §6.4 is the
+ * guarantee that no number reaches a surface — and it survives by there being
+ * no number here at all.
  */
 
 /** Criterion 10's ceiling — generous on purpose: a turn legitimately spends
@@ -32,16 +37,28 @@ export const TURN_TIMEOUT_MS = 10 * 60_000;
  * the auth banner, bounded so a chatty child cannot grow main's heap. */
 const OUTPUT_TAIL_LIMIT = 4_096;
 
-/** The §4.3.4 allowlist, exactly — plus the criterion-3 containment: writes
+/** The §4.3.4 allowlist as this spec amends it — plus the containment: writes
  * scoped to the flows folder, reads to the clone (patterns resolve against
  * the child's cwd, verified). `Skill` is deliberately absent: it needs no
- * permission entry, so the allowlist stays exactly the spec's nine. */
-function allowedTools(flowsDir: string): string[] {
+ * permission entry, so the allowlist stays exactly the ten below.
+ *
+ * `run` is the one that gives the assistant hands: it launches the app, walks
+ * the journey and runs the finished file, instead of asking the person to
+ * navigate and transcribe what they saw. It stays an *allowlist* — the Cloud
+ * tools ship registered whatever we do, and only their absence here keeps them
+ * out; a blocklist would age in silence the next time Maestro adds one.
+ *
+ * Exported because `conductor-plugin.test.ts` derives the skills' permitted
+ * tool names from it: a skill teaching a step this list does not permit is a
+ * step that cannot run, and the two must not drift apart.
+ */
+export function allowedTools(flowsDir: string): string[] {
   return [
     'mcp__maestro__inspect_screen',
     'mcp__maestro__take_screenshot',
     'mcp__maestro__list_devices',
     'mcp__maestro__cheat_sheet',
+    'mcp__maestro__run',
     'Read(**)',
     `Edit(${flowsDir}/**)`,
     `Write(${flowsDir}/**)`,
@@ -78,8 +95,6 @@ export type SnapshotLease = {
 export type AiServiceDeps = {
   /** `CONFIG.AI_MODEL` — always the `sonnet` alias (§6.0). */
   readonly model: string;
-  /** `CONFIG.AI_BUDGET_USD` — the §6.4 conversation ceiling. */
-  readonly budgetUsd: number;
   /** `resources/conductor-plugin`, resolved for dev and packaged runs (§8.4). */
   readonly pluginDir: string;
   /** `CONFIG.FLOWS_DIR` — the one writable surface (§12.18 as amended). */
@@ -111,10 +126,6 @@ export type AiServiceDeps = {
 type ActiveTurn = {
   readonly turnId: string;
   readonly cloneRoot: string;
-  /** Which conversation this turn belongs to — a reset ends one and starts
-   * the next, and a killed turn's late cost must charge the ledger it spent
-   * from, never the fresh one. */
-  readonly conversation: number;
   child: StreamingProcess | null;
   canceled: boolean;
   timedOut: boolean;
@@ -122,8 +133,7 @@ type ActiveTurn = {
   lineBuffer: string;
   /** The last bytes the child said, for diagnosing a failed exit. */
   outputTail: string;
-  /** From the `result` event: what the turn cost, its session, its verdict. */
-  costUsd: number | null;
+  /** From the `result` event: its session and its verdict. */
   resultSessionId: string | null;
   resultIsError: boolean | null;
   resultText: string | null;
@@ -139,10 +149,6 @@ export class AiService {
   /** The session the next turn resumes — only ever the id a *completed* turn
    * reported (criterion 4); a canceled or failed turn's id is discarded. */
   private sessionId: string | null = null;
-  /** §6.4 — accumulated main-side and nowhere else. */
-  private spentUsd = 0;
-  /** Bumped by every reset; the ledger only takes costs from its own era. */
-  private conversation = 0;
   /** The turn the `'ai'` lease was taken for. The snapshot lease is keyed by
    * owner, not by turn — so an abandoned send waking after a reset must know
    * whether the hold is still its own before lifting it, or it would open
@@ -178,24 +184,14 @@ export class AiService {
         'The assistant is already working on a reply. Stop it or wait for it to finish.',
       );
     }
-    if (this.spentUsd >= this.deps.budgetUsd) {
-      // Criterion 5 — a limit, never an amount (§6.4 as amended).
-      return refuse(
-        ERROR_CODES.aiBudgetExceeded,
-        'This conversation has reached its limit — start a new one to keep going.',
-      );
-    }
-
     const turn: ActiveTurn = {
       turnId: `turn-${this.nextTurn}`,
       cloneRoot: clone.root,
-      conversation: this.conversation,
       child: null,
       canceled: false,
       timedOut: false,
       lineBuffer: '',
       outputTail: '',
-      costUsd: null,
       resultSessionId: null,
       resultIsError: null,
       resultText: null,
@@ -303,8 +299,7 @@ export class AiService {
   }
 
   /** Criterion 12 — a fresh conversation: any turn ends, the remembered
-   * session and the spend go, and the renderer empties the thread on the
-   * pushed reset. */
+   * session goes, and the renderer empties the thread on the pushed reset. */
   reset(): Result<{ turnId: string | null }> {
     const ended = this.clearConversation();
     this.push({ kind: 'reset' });
@@ -365,8 +360,6 @@ export class AiService {
       }
     }
     this.sessionId = null;
-    this.spentUsd = 0;
-    this.conversation += 1;
     return turn?.turnId ?? null;
   }
 
@@ -375,7 +368,6 @@ export class AiService {
    * with a dash can never parse as a flag (§12.19's spirit). */
   private argv(systemPrompt: string, prompt: string): string[] {
     const maestro = this.deps.resolveMaestro() ?? 'maestro';
-    const remaining = (this.deps.budgetUsd - this.spentUsd).toFixed(4);
     return [
       '-p',
       '--model',
@@ -405,8 +397,6 @@ export class AiService {
       BUILTIN_TOOLS,
       '--allowedTools',
       ...allowedTools(this.deps.flowsDir),
-      '--max-budget-usd',
-      remaining,
       '--append-system-prompt',
       systemPrompt,
       ...(this.sessionId === null ? [] : ['--resume', this.sessionId]),
@@ -532,9 +522,8 @@ export class AiService {
           break;
         }
         case 'result': {
-          if (typeof typed.total_cost_usd === 'number') {
-            turn.costUsd = typed.total_cost_usd;
-          }
+          // `total_cost_usd` is deliberately not read: nothing accumulates a
+          // conversation's spend, so there is no number to leak (criterion 27).
           if (typeof typed.session_id === 'string') {
             turn.resultSessionId = typed.session_id;
           }
@@ -565,13 +554,18 @@ export class AiService {
         ? "Reading the app's code…"
         : tool === 'mcp__maestro__inspect_screen' || tool === 'mcp__maestro__take_screenshot'
           ? 'Looking at the screen…'
-          : tool === 'mcp__maestro__list_devices'
-            ? 'Checking the connected device…'
-            : tool === 'mcp__maestro__cheat_sheet' || tool === 'Skill'
-              ? 'Getting ready…'
-              : tool === 'Edit' || tool === 'Write'
-                ? 'Writing the test…'
-                : null;
+          : // Criterion 4 — the act, not the tool. One label covers walking the
+            // journey and running the finished file: from the person's side
+            // both are the assistant using their app, live in the mirror.
+            tool === 'mcp__maestro__run'
+            ? 'Using the app…'
+            : tool === 'mcp__maestro__list_devices'
+              ? 'Checking the connected device…'
+              : tool === 'mcp__maestro__cheat_sheet' || tool === 'Skill'
+                ? 'Getting ready…'
+                : tool === 'Edit' || tool === 'Write'
+                  ? 'Writing the test…'
+                  : null;
     if (label !== null) {
       this.push({ kind: 'activity', turnId: turn.turnId, label });
     }
@@ -594,9 +588,8 @@ export class AiService {
   /**
    * The one exit, whatever it was. Resume comes first — the end-of-turn
    * recapture rides on the terminal event finding the gate open, exactly as
-   * `RunService.settle` reasons. Spend is accumulated on every outcome that
-   * reported a cost; the session id is remembered only from a *completed*
-   * turn (criterion 4).
+   * `RunService.settle` reasons. The session id is remembered only from a
+   * *completed* turn.
    */
   private settle(turn: ActiveTurn, reason: ExitReason): void {
     if (this.turn !== turn) {
@@ -608,9 +601,6 @@ export class AiService {
       turn.timer = null;
     }
     this.releaseLease(turn);
-    if (turn.costUsd !== null && turn.conversation === this.conversation) {
-      this.spentUsd += turn.costUsd;
-    }
 
     const outcome = outcomeOf(turn, reason);
     if (outcome === 'done' && turn.resultSessionId !== null) {
@@ -672,9 +662,6 @@ function failureMessage(turn: ActiveTurn): string {
     )
   ) {
     return 'The assistant needs you to sign in to Claude Code on this Mac. Open Claude Code, sign in, and try again.';
-  }
-  if (/budget/i.test(said)) {
-    return 'This conversation has reached its limit — start a new one to keep going.';
   }
   return 'The assistant hit a problem and stopped. Try again.';
 }

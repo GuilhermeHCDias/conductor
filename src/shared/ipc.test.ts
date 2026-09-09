@@ -1690,23 +1690,21 @@ describe('ai:event', () => {
   });
 });
 
-/** The five refusals the AI window declares (Context) — the doctor's future
- * vocabulary, and the panel's present one. */
+/** The four refusals the AI window declares — the doctor's future
+ * vocabulary, and the panel's present one. The conversation has no spend
+ * ceiling, so there is no fifth: nothing is ever refused over cost. */
 describe('the ai error codes', () => {
   it('tell the ai refusals apart', () => {
     expect([
       ERROR_CODES.aiNoRepo,
       ERROR_CODES.aiClaudeMissing,
       ERROR_CODES.aiActive,
-      ERROR_CODES.aiBudgetExceeded,
       ERROR_CODES.aiTurnFailed,
-    ]).toEqual([
-      'ai/no-repo',
-      'ai/claude-missing',
-      'ai/active',
-      'ai/budget-exceeded',
-      'ai/turn-failed',
-    ]);
+    ]).toEqual(['ai/no-repo', 'ai/claude-missing', 'ai/active', 'ai/turn-failed']);
+  });
+
+  it('declares no code that refuses a message over cost', () => {
+    expect(Object.values(ERROR_CODES).join(' ')).not.toMatch(/budget|cost|spend/i);
   });
 });
 

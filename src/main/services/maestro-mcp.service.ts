@@ -37,6 +37,25 @@ export const INSPECT_TOOL = 'inspect_screen';
  * at ~5.6s on this hardware. */
 const REQUEST_TIMEOUT_MS = 60_000;
 
+/** How long a SIGTERMed JVM is given to actually die before `stop` gives up on
+ * it. A child that will not answer a signal is a worse reason to refuse the
+ * assistant than the contention stopping it was meant to avoid, so the caller
+ * carries on — this bound is what keeps it from waiting forever to find out. */
+export const STOP_TIMEOUT_MS = 5_000;
+
+/**
+ * The failure text a live child reports once the device session inside it has
+ * died: the JVM is fine, the driver behind it is gone, and every call after
+ * this one fails identically until something restarts the child. Matched on the
+ * message because that is all the server gives us — it is a tool error, not a
+ * transport one.
+ *
+ * Deliberately narrow. A timeout, a missing tool and a Maestro that will not
+ * start are all *different* fixes, and restarting the JVM under them would turn
+ * one honest failure into two (criterion 23).
+ */
+const DEAD_SESSION = /device server died|StatusRuntimeException:\s*UNAVAILABLE/i;
+
 /** The slice of `McpClient` this service uses. Injected, so the lifecycle can
  * be tested without a wire. */
 export type McpSession = {
@@ -73,6 +92,14 @@ type Connection = {
 export class MaestroMcpService {
   private readonly deps: MaestroMcpServiceDeps;
   private connection: Connection | null = null;
+  /** The death currently being waited out, so overlapping stops wait for the
+   * same JVM instead of the second one being told it is already gone. */
+  private stopping: Promise<void> | null = null;
+  /** Children signalled by `stop` and not yet observed dead. `stop` empties the
+   * slot before it waits, so without this a JVM that outlived `STOP_TIMEOUT_MS`
+   * would be referenced by nothing and survive `before-quit` — `run.ts`'s kill
+   * is SIGTERM with no escalation, so nothing else collects it. */
+  private readonly dying = new Set<StreamingProcess>();
   private disposed = false;
 
   constructor(deps: MaestroMcpServiceDeps) {
@@ -110,11 +137,95 @@ export class MaestroMcpService {
     try {
       return await connection.session.callTool(INSPECT_TOOL, { device_id: deviceId });
     } catch (error) {
-      throw new McpStartError(
-        ERROR_CODES.mcpCallFailed,
-        message(error, 'The device screen could not be read.'),
-      );
+      if (!DEAD_SESSION.test(message(error, ''))) {
+        throw callFailed(error);
+      }
+      return await this.retryOnFreshChild(deviceId, connection, error);
     }
+  }
+
+  /**
+   * The device session died while the child holding it lived, so the child is
+   * worth nothing and the call is worth repeating: discard, start a new JVM,
+   * ask once more (criterion 21). The person sees a slow inspection rather than
+   * an error they cannot act on.
+   *
+   * Exactly one retry (criterion 23): a driver that is really gone would
+   * otherwise have this service restarting JVMs for as long as anyone keeps
+   * asking. And whatever happens, no dead child is left in the slot — the Retry
+   * button in the mirror reaches a JVM started after the failure, never the one
+   * that failed (criterion 22).
+   */
+  private async retryOnFreshChild(
+    deviceId: string,
+    dead: Connection,
+    cause: unknown,
+  ): Promise<string> {
+    console.warn('The maestro mcp device session died; starting a new child:', message(cause, ''));
+    this.discard(dead);
+    if (this.disposed) {
+      // Criterion 24 — `before-quit` landed mid-recovery. Nothing replaces it.
+      throw callFailed(cause);
+    }
+
+    const fresh = await this.connected();
+    try {
+      return await fresh.session.callTool(INSPECT_TOOL, { device_id: deviceId });
+    } catch (error) {
+      if (DEAD_SESSION.test(message(error, ''))) {
+        this.discard(fresh);
+      }
+      throw callFailed(error);
+    }
+  }
+
+  /**
+   * Criteria 16–17 — `dispose`'s non-terminal twin. The AI turn takes the
+   * device for itself, and two `maestro mcp` clients on one on-device driver is
+   * the silent truncation §4.3.6 measured; ours lets go for the length of the
+   * turn and starts again, cold, on the next inspection.
+   *
+   * Resolves only once the JVM is actually gone, so whoever takes the device
+   * knows it has it — and rejects rather than waiting forever on a child that
+   * will not answer a signal.
+   *
+   * Two stops legitimately overlap: a send abandoned inside its own suspend and
+   * the successor that took the lease under the same owner. The slot is emptied
+   * before the wait, so the second caller would otherwise find nothing to stop
+   * and answer *immediately* — spawning `claude` on top of a JVM that is still
+   * alive, which is exactly the contention this method exists to remove. It
+   * waits on the same death instead.
+   */
+  async stop(): Promise<void> {
+    const connection = this.connection;
+    if (connection !== null) {
+      const { child } = connection;
+      // `discard` sends the signal; the wait below only observes the death, so
+      // a child is never signalled twice for one stop.
+      this.discard(connection);
+      this.dying.add(child);
+      const tracked: Promise<void> = new Promise<void>((resolve) => {
+        // The listener goes on after the signal deliberately: `spawnStreaming`
+        // replays a past exit to a late subscriber, so a child that died
+        // synchronously still resolves this.
+        child.onExit(() => resolve());
+      }).then(() => {
+        this.dying.delete(child);
+        if (this.stopping === tracked) {
+          this.stopping = null;
+        }
+      });
+      this.stopping = tracked;
+    }
+
+    const stopping = this.stopping;
+    if (stopping === null) {
+      return;
+    }
+    // Cleared only by the real exit, never by a deadline: a stop that gave up
+    // waiting leaves the JVM alive, and the next caller must wait for that same
+    // death rather than be told the device is free.
+    await withDeadline(stopping);
   }
 
   /** Criterion 20 — no JVM survives `before-quit`. */
@@ -122,6 +233,21 @@ export class MaestroMcpService {
     this.disposed = true;
     this.connection?.child.kill();
     this.connection = null;
+    // Whatever a stop gave up on is still ours to collect.
+    for (const child of this.dying) {
+      child.kill();
+    }
+    this.dying.clear();
+  }
+
+  /** Drops a child, by identity rather than by slot — the same reasoning
+   * `connected()` holds: a newer, healthy child must never be taken down by an
+   * older call giving up. */
+  private discard(connection: Connection): void {
+    if (this.connection === connection) {
+      this.connection = null;
+    }
+    connection.child.kill();
   }
 
   /**
@@ -251,4 +377,32 @@ function startCode(error: unknown): ErrorCode {
 
 function message(error: unknown, fallback: string): string {
   return error instanceof Error ? error.message : fallback;
+}
+
+function callFailed(error: unknown): McpStartError {
+  return new McpStartError(
+    ERROR_CODES.mcpCallFailed,
+    message(error, 'The device screen could not be read.'),
+  );
+}
+
+/** Bounds a wait on a child's death. The death itself is never rejected — the
+ * JVM either exits or does not — so the deadline belongs to the *caller*: each
+ * one waits its own `STOP_TIMEOUT_MS` and then carries on (criterion 20),
+ * leaving the death still tracked for whoever asks next. */
+function withDeadline(death: Promise<void>): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const timer = setTimeout(() => {
+      reject(
+        new McpStartError(ERROR_CODES.mcpStartFailed, 'The Maestro MCP server would not stop.'),
+      );
+    }, STOP_TIMEOUT_MS);
+    // A timer that outlives its child would hold the event loop open, and main
+    // holds this service for the whole session.
+    timer.unref?.();
+    death.then(() => {
+      clearTimeout(timer);
+      resolve();
+    }, reject);
+  });
 }

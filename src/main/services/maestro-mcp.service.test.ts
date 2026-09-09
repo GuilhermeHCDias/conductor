@@ -3,7 +3,12 @@ import { resolve } from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { McpClosedError, McpProtocolError, McpTimeoutError } from '../maestro/McpClient';
 import type { ExitReason, SpawnOptions, StreamingProcess } from '../process/run';
-import { INSPECT_TOOL, MaestroMcpService, type McpSession } from './maestro-mcp.service';
+import {
+  INSPECT_TOOL,
+  MaestroMcpService,
+  type McpSession,
+  STOP_TIMEOUT_MS,
+} from './maestro-mcp.service';
 
 /**
  * Everything below runs with no `maestro` installed. The child and the MCP
@@ -25,6 +30,9 @@ type Spawned = {
   readonly args: readonly string[];
   readonly options: SpawnOptions;
   readonly killed: () => boolean;
+  /** How many signals the child was sent — `dispose` re-signalling a JVM that
+   * outlived its stop is the difference between a bounded stop and an orphan. */
+  readonly killCount: () => number;
   /** Fires the child's exit listeners, as a dying JVM would. */
   readonly exit: (reason?: ExitReason) => void;
 };
@@ -70,26 +78,38 @@ function makeService(
 
   const service = new MaestroMcpService({
     spawn: (command, args, options) => {
-      let killed = false;
-      let onExit: (reason: ExitReason) => void = () => {};
+      let kills = 0;
+      let exited: ExitReason | null = null;
+      // `spawnStreaming` keeps a *set* of exit listeners and replays the exit
+      // to a late one. A fake that held a single listener would let a second
+      // subscriber silently unhook the first.
+      const listeners = new Set<(reason: ExitReason) => void>();
       const child: StreamingProcess = {
         write: () => {},
         onStdout: () => {},
         onStderr: () => {},
         onExit: (listener) => {
-          onExit = listener;
+          if (exited !== null) {
+            listener(exited);
+            return;
+          }
+          listeners.add(listener);
         },
         kill: () => {
-          killed = true;
+          kills += 1;
         },
       };
       spawns.push({
         command,
         args,
         options,
-        killed: () => killed,
+        killed: () => kills > 0,
+        killCount: () => kills,
         exit: (reason = { code: 1, error: null }) => {
-          onExit(reason);
+          exited = reason;
+          for (const listener of [...listeners]) {
+            listener(reason);
+          }
         },
       });
       return child;
@@ -468,6 +488,315 @@ describe('dispose', () => {
     const h = makeService();
     await h.service.inspectScreen(DEVICE);
     h.service.dispose();
+
+    await expect(h.service.inspectScreen(DEVICE)).rejects.toThrow();
+    expect(h.spawns).toHaveLength(1);
+  });
+});
+
+/**
+ * Criteria 16–17 — the AI turn takes the device for itself, so ours has to let
+ * go: two `maestro mcp` clients on one on-device driver is exactly the silent
+ * truncation §4.3.6 measured. `stop` is `dispose`'s non-terminal twin — the JVM
+ * dies and the next inspection starts a fresh one.
+ */
+describe('stopping for the assistant', () => {
+  it('kills the child and resolves only once the JVM is gone', async () => {
+    const h = makeService();
+    await h.service.inspectScreen(DEVICE);
+
+    let gone = false;
+    const stopped = h.service.stop().then(() => {
+      gone = true;
+    });
+
+    expect(h.spawns[0]?.killed()).toBe(true);
+    await Promise.resolve();
+    // The signal is sent; the JVM has not answered it yet.
+    expect(gone).toBe(false);
+
+    h.spawns[0]?.exit();
+    await stopped;
+    expect(gone).toBe(true);
+  });
+
+  it('is safe when nothing was ever started', async () => {
+    const h = makeService();
+
+    await expect(h.service.stop()).resolves.toBeUndefined();
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  /** Two stops can overlap — a send abandoned inside its own suspend, then a
+   * successor taking the lease under the same owner. The second must wait for
+   * the same death the first is waiting for; telling it the JVM is already
+   * gone would spawn `claude` on top of a live one, which is the whole failure
+   * criterion 16 exists to prevent. */
+  it('makes a second stop wait for the same JVM rather than report it gone', async () => {
+    const h = makeService();
+    await h.service.inspectScreen(DEVICE);
+
+    let second = false;
+    const first = h.service.stop();
+    const overlapping = h.service.stop().then(() => {
+      second = true;
+    });
+
+    await Promise.resolve();
+    await Promise.resolve();
+    expect(second).toBe(false);
+
+    h.spawns[0]?.exit();
+    await Promise.all([first, overlapping]);
+    expect(second).toBe(true);
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  /** And a stop that arrives after a fresh child took the slot waits for
+   * *that* one, never for the death an older stop is still watching. */
+  it('waits for the child that is actually on the device', async () => {
+    const h = makeService();
+    await h.service.inspectScreen(DEVICE);
+    const stale = h.service.stop();
+    h.spawns[0]?.exit();
+    await stale;
+    await h.service.inspectScreen(DEVICE);
+
+    let stopped = false;
+    const stopping = h.service.stop().then(() => {
+      stopped = true;
+    });
+
+    await Promise.resolve();
+    expect(stopped).toBe(false);
+    h.spawns[1]?.exit();
+    await stopping;
+    expect(h.spawns[1]?.killed()).toBe(true);
+  });
+
+  /** Criterion 17 — unlike `dispose`, stopping is not the end: the next
+   * inspection pays a cold start and answers. */
+  it('lets the next inspection start a fresh child', async () => {
+    const h = makeService();
+    await h.service.inspectScreen(DEVICE);
+    const stopped = h.service.stop();
+    h.spawns[0]?.exit();
+    await stopped;
+
+    await expect(h.service.inspectScreen(DEVICE)).resolves.toBe(TREE);
+    expect(h.spawns).toHaveLength(2);
+  });
+
+  /** Criterion 20's other half lives in `SnapshotService`, which swallows this
+   * rejection and starts the turn anyway. Here the failure is only reported
+   * honestly, and the slot is freed either way. */
+  it('reports a JVM that will not die, and keeps no child for it', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeService();
+      await h.service.inspectScreen(DEVICE);
+
+      const stopped = h.service.stop();
+      const settled = stopped.then(
+        () => 'resolved',
+        () => 'rejected',
+      );
+      await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
+
+      expect(await settled).toBe('rejected');
+      await h.service.inspectScreen(DEVICE);
+      expect(h.spawns).toHaveLength(2);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** The JVM that outlived its stop is held by nothing: `stop` emptied the slot
+   * before waiting, so `dispose` — which only ever knew the slot — would let a
+   * child that ignored SIGTERM survive `before-quit`. `run.ts` never escalates
+   * to SIGKILL, so nothing else would collect it either. */
+  it('still kills a JVM that outlived its stop when the app quits', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeService();
+      await h.service.inspectScreen(DEVICE);
+
+      const settled = h.service.stop().then(
+        () => 'resolved',
+        () => 'rejected',
+      );
+      await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
+      expect(await settled).toBe('rejected');
+
+      const signalled = h.spawns[0]?.killCount() ?? 0;
+      h.service.dispose();
+
+      expect(h.spawns[0]?.killCount()).toBeGreaterThan(signalled);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  /** And the device is not free just because an earlier stop gave up waiting.
+   * Reporting it free is what spawns `claude` on top of a live JVM — criterion
+   * 16's failure — so a later stop waits for the same death, and answers only
+   * when the JVM is really gone. */
+  it('makes a later stop wait for a JVM that outlived an earlier stop', async () => {
+    vi.useFakeTimers();
+    try {
+      const h = makeService();
+      await h.service.inspectScreen(DEVICE);
+
+      const first = h.service.stop().then(
+        () => 'resolved',
+        () => 'rejected',
+      );
+      await vi.advanceTimersByTimeAsync(STOP_TIMEOUT_MS);
+      expect(await first).toBe('rejected');
+
+      let answered = false;
+      const later = h.service.stop().then(
+        () => {
+          answered = true;
+        },
+        () => {
+          answered = true;
+        },
+      );
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(answered).toBe(false);
+
+      h.spawns[0]?.exit();
+      await later;
+
+      expect(answered).toBe(true);
+      expect(h.spawns).toHaveLength(1);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+});
+
+/**
+ * Criteria 21–24. A `maestro mcp` child outlives the device session inside it:
+ * the JVM is healthy, the driver behind it is not, and every call after that
+ * fails the same way until something restarts the child. Recovering here is
+ * what keeps `Device server died during 'deviceInfo'` from ending a
+ * conversation the person is in the middle of.
+ */
+describe('a device session that died under a live child', () => {
+  const DEAD = `Device server died during 'deviceInfo' on ${DEVICE}`;
+  const UNAVAILABLE = 'io.grpc.StatusRuntimeException: UNAVAILABLE: io exception';
+
+  /** Fails the first `n` calls with `reason`, then answers normally. */
+  function failing(n: number, reason: string) {
+    let calls = 0;
+    return {
+      callTool: () => {
+        calls += 1;
+        return calls <= n ? Promise.reject(new Error(reason)) : Promise.resolve(TREE);
+      },
+      calls: () => calls,
+    };
+  }
+
+  it.each([
+    ['a dead device server', DEAD],
+    ['a gRPC session that went UNAVAILABLE', UNAVAILABLE],
+  ])('recovers from %s without the person seeing an error', async (_name, reason) => {
+    const dying = failing(1, reason);
+    const h = makeService({ session: { callTool: dying.callTool } });
+
+    await expect(h.service.inspectScreen(DEVICE)).resolves.toBe(TREE);
+    expect(h.spawns).toHaveLength(2);
+    expect(h.spawns[0]?.killed()).toBe(true);
+    expect(dying.calls()).toBe(2);
+  });
+
+  /** Criterion 23 — once, never twice. A driver that is really gone would
+   * otherwise have this service restarting JVMs in a loop. */
+  it('retries exactly once and then reports the failure', async () => {
+    const dying = failing(5, DEAD);
+    const h = makeService({ session: { callTool: dying.callTool } });
+
+    await expect(h.service.inspectScreen(DEVICE)).rejects.toMatchObject({
+      code: 'mcp/call-failed',
+    });
+    expect(dying.calls()).toBe(2);
+  });
+
+  /** Criterion 22 — what the Retry button reaches is a child that was started
+   * after the failure, never the one that failed. */
+  it('leaves a fresh child for the retry after both attempts failed', async () => {
+    const dying = failing(2, DEAD);
+    const h = makeService({ session: { callTool: dying.callTool } });
+    await expect(h.service.inspectScreen(DEVICE)).rejects.toThrow();
+
+    await expect(h.service.inspectScreen(DEVICE)).resolves.toBe(TREE);
+    expect(h.spawns).toHaveLength(3);
+    expect(h.spawns[1]?.killed()).toBe(true);
+  });
+
+  /** Criterion 23 — a live session that is merely slow is not a dead one, and
+   * restarting the JVM under it would turn a slow answer into a cold start. */
+  it('does not retry a call that timed out on a live session', async () => {
+    let calls = 0;
+    const h = makeService({
+      session: {
+        callTool: () => {
+          calls += 1;
+          return Promise.reject(new McpTimeoutError('tools/call', 60_000));
+        },
+      },
+    });
+
+    await expect(h.service.inspectScreen(DEVICE)).rejects.toMatchObject({
+      code: 'mcp/call-failed',
+    });
+    expect(calls).toBe(1);
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  it('does not retry a tool failure that is not a dead session', async () => {
+    let calls = 0;
+    const h = makeService({
+      session: {
+        callTool: () => {
+          calls += 1;
+          return Promise.reject(new McpProtocolError('inspect_screen failed. No such device.'));
+        },
+      },
+    });
+
+    await expect(h.service.inspectScreen(DEVICE)).rejects.toThrow();
+    expect(calls).toBe(1);
+    expect(h.spawns).toHaveLength(1);
+  });
+
+  /** Criterion 23 — a Maestro that will not start is a different fix (install
+   * it, upgrade it), and its code must survive the recovery path untouched. */
+  it('never retries a child that could not start', async () => {
+    const h = makeService({ executable: [], env: {} });
+
+    await expect(h.service.inspectScreen(DEVICE)).rejects.toMatchObject({
+      code: 'mcp/maestro-not-found',
+    });
+    expect(h.spawns).toHaveLength(0);
+  });
+
+  /** Criterion 24 — `before-quit` landing mid-recovery leaves no JVM behind. */
+  it('starts no replacement child while Conductor is shutting down', async () => {
+    const box: { service?: MaestroMcpService } = {};
+    const h = makeService({
+      session: {
+        callTool: () => {
+          box.service?.dispose();
+          return Promise.reject(new Error(DEAD));
+        },
+      },
+    });
+    box.service = h.service;
 
     await expect(h.service.inspectScreen(DEVICE)).rejects.toThrow();
     expect(h.spawns).toHaveLength(1);

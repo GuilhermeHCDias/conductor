@@ -78,14 +78,20 @@ describe('registerAiIpc', () => {
   it('hands a service refusal back untouched', async () => {
     ai.send?.mockResolvedValueOnce({
       ok: false,
-      error: { code: 'ai/budget-exceeded', message: 'This conversation has reached its limit.' },
+      error: {
+        code: 'ai/active',
+        message: 'The assistant is already working on a reply. Stop it or wait for it to finish.',
+      },
     });
 
     const result = await invoke('ai:send', 'more', null);
 
     expect(result).toEqual({
       ok: false,
-      error: { code: 'ai/budget-exceeded', message: 'This conversation has reached its limit.' },
+      error: {
+        code: 'ai/active',
+        message: 'The assistant is already working on a reply. Stop it or wait for it to finish.',
+      },
     });
   });
 

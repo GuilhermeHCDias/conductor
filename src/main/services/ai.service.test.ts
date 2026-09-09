@@ -11,7 +11,7 @@ import { AiService, type AiServiceDeps, TURN_TIMEOUT_MS } from './ai.service';
  * emits canned stream-json lines — the exact shapes read off claude 2.1.232
  * (spec constraint: behaviour read from the real binary, never deduced). No
  * `claude` runs here (§9.0); what these tests pin is *our* half: the argv,
- * the isolation flags, the lease, the budget arithmetic, the resume
+ * the isolation flags, the lease, the resume
  * bookkeeping, and what crosses as `ai:event`.
  */
 
@@ -130,7 +130,6 @@ function harness(over: Partial<AiServiceDeps> = {}): Harness {
   const lease = { suspends: [] as string[], resumes: [] as string[] };
   const deps: AiServiceDeps = {
     model: 'sonnet',
-    budgetUsd: 0.5,
     pluginDir,
     flowsDir: 'conductor',
     activeClone: () => ({ slug: 'acme-shop', org: 'acme', name: 'shop', root: CLONE_ROOT }),
@@ -203,6 +202,13 @@ function flagValues(args: readonly string[], flag: string): string[] {
   return values;
 }
 
+/** The argv without the one flag that legitimately differs between turns —
+ * the resumed session id. */
+function withoutResume(args: readonly string[]): string[] {
+  const at = args.indexOf('--resume');
+  return at === -1 ? [...args] : [...args.slice(0, at), ...args.slice(at + 2)];
+}
+
 async function startTurn(h: Harness, message = 'Write a login test'): Promise<Spawned> {
   const result = await h.service.send(message, null);
   if (!result.ok) {
@@ -269,11 +275,12 @@ describe('the spawned child', () => {
     });
   });
 
-  /** §4.3.4 — the allowlist, exactly, with the criterion-3 containment rules
-   * on the write tools and the whole-clone scope on Read. `Skill` is
-   * deliberately not here: it needs no permission entry (verified), so the
-   * allowlist stays exactly the spec's nine. */
-  it('allowlists exactly the nine tools, writes scoped to conductor/', async () => {
+  /** §4.3.4 as amended — the allowlist, exactly, with the criterion-3
+   * containment rules on the write tools and the whole-clone scope on Read.
+   * `Skill` is deliberately not here: it needs no permission entry (verified).
+   * Criterion 1 adds `run`: the assistant acts on the device rather than
+   * asking the person to be its hands. */
+  it('allowlists exactly the ten tools, writes scoped to conductor/', async () => {
     const h = harness();
     const { args } = await startTurn(h);
 
@@ -282,12 +289,33 @@ describe('the spawned child', () => {
       'mcp__maestro__take_screenshot',
       'mcp__maestro__list_devices',
       'mcp__maestro__cheat_sheet',
+      'mcp__maestro__run',
       'Read(**)',
       'Edit(conductor/**)',
       'Write(conductor/**)',
       'Glob',
       'Grep',
     ]);
+  });
+
+  /** Criterion 2 — an allowlist, still. The Cloud tools ship registered
+   * whatever we do (§4.3.4), so what keeps them out is their absence from
+   * this list, never a blocklist entry that would age in silence. */
+  it('names no Cloud tool anywhere, and blocks nothing by name', async () => {
+    const h = harness();
+    const { args } = await startTurn(h);
+
+    for (const cloud of [
+      'run_on_cloud',
+      'list_cloud_devices',
+      'get_cloud_run_status',
+      'describe_cloud_run',
+      'open_maestro_viewer',
+    ]) {
+      expect(args.join(' ')).not.toContain(cloud);
+    }
+    expect(args).not.toContain('--disallowedTools');
+    expect(args).not.toContain('--disallowed-tools');
   });
 
   /** §12.18's "no Bash" holds by construction: the tool is not even
@@ -303,11 +331,16 @@ describe('the spawned child', () => {
     expect(args).not.toContain('--disallowed-tools');
   });
 
-  it('rides the full budget on the first turn', async () => {
+  /** Criterion 25 — the conversation has no spend ceiling. Driving a device
+   * costs several times what a chat turn costs, and a conversation dying
+   * mid-journey with a refusal the person cannot act on is worse than an
+   * uncapped spend on their own subscription (§6.4 as amended here). */
+  it('passes no spend ceiling on the invocation', async () => {
     const h = harness();
     const { args } = await startTurn(h);
 
-    expect(Number.parseFloat(flagValue(args, '--max-budget-usd'))).toBeCloseTo(0.5);
+    expect(args).not.toContain('--max-budget-usd');
+    expect(args.join(' ')).not.toMatch(/budget/i);
   });
 
   /** Criterion 2 — cwd is the clone root, the env is the person's own plus
@@ -439,6 +472,28 @@ describe('refusing a send', () => {
     expect(h.spawns).toHaveLength(1);
   });
 
+  /** Criterion 16 — the lease is what hands the device over, and it is not
+   * done until our own `maestro mcp` has let go. No `claude` starts before
+   * that: its child spawns a second `maestro mcp`, and two clients on one
+   * on-device driver is the failure §4.3.6 measured. */
+  it('spawns nothing until the device lease has actually been handed over', async () => {
+    let handOver: () => void = () => {};
+    const held = new Promise<void>((resolveHeld) => {
+      handOver = resolveHeld;
+    });
+    const h = harness({
+      snapshots: { suspend: () => held, resume: () => {} },
+    });
+
+    const sending = h.service.send('abre o app', null);
+    await Promise.resolve();
+    expect(h.spawns).toHaveLength(0);
+
+    handOver();
+    expect((await sending).ok).toBe(true);
+    expect(h.spawns).toHaveLength(1);
+  });
+
   /** Criterion 5 — the lease held by a run refuses the send with the run's
    * own code, and the slot is released so the next send can try again. */
   it('refuses with run/active while a flow run holds the device', async () => {
@@ -463,26 +518,38 @@ describe('refusing a send', () => {
     expect((await again.service.send('oi', null)).ok).toBe(true);
   });
 
-  /** Criterion 5 — the budget refusal names a limit, never an amount. */
-  it('refuses with ai/budget-exceeded once the conversation spent its ceiling', async () => {
-    const h = harness({ budgetUsd: 0.05 });
-    await completeTurn(h, { total_cost_usd: 0.05 });
+  /** Criterion 26 — however much the conversation has cost, the next message
+   * is accepted: no send is refused for reasons of cost. */
+  it('refuses no send after an expensive conversation', async () => {
+    const h = harness();
+    await completeTurn(h, { total_cost_usd: 12.5 });
+    await completeTurn(h, { total_cost_usd: 40 });
 
-    const result = await h.service.send('more', null);
-
-    expect(refusalCode(result)).toBe(ERROR_CODES.aiBudgetExceeded);
-    expect(refusalMessage(result)).toMatch(/limit/i);
-    expect(refusalMessage(result)).toMatch(/start a new/i);
-    expect(refusalMessage(result)).not.toMatch(/[0-9]|\$|usd/i);
+    expect((await h.service.send('e agora?', null)).ok).toBe(true);
   });
 
-  it('rides the remaining budget on the next turn', async () => {
-    const h = harness({ budgetUsd: 0.5 });
-    await completeTurn(h, { total_cost_usd: 0.2 });
+  /** Criterion 25's other half — nothing accumulates, so what the last turn
+   * reported cannot change the next invocation. */
+  it('spawns the same invocation whatever the last turn reported', async () => {
+    const h = harness();
+    const first = await startTurn(h);
+    const cheap = first.args;
+    first.child.emitStdout(resultLine({ total_cost_usd: 0.01 }));
+    first.child.emitExit({ code: 0, error: null });
 
+    await completeTurn(h, { total_cost_usd: 99 });
     const { args } = await startTurn(h);
 
-    expect(Number.parseFloat(flagValue(args, '--max-budget-usd'))).toBeCloseTo(0.3);
+    expect(withoutResume(args)).toEqual(withoutResume(cheap));
+  });
+
+  /** Criterion 27 — §6.4's surviving guarantee: the number reaches no
+   * channel, so no cost, token count or budget is ever emitted. */
+  it('emits no cost, token count or budget for a turn that reported one', async () => {
+    const h = harness();
+    await completeTurn(h, { total_cost_usd: 3.25, session_id: 'session-1' });
+
+    expect(JSON.stringify(h.events)).not.toMatch(/cost|usd|token|budget|3\.25/i);
   });
 });
 
@@ -531,6 +598,7 @@ describe('the stream', () => {
 
     spawned.child.emitStdout(toolStart('Read'));
     spawned.child.emitStdout(toolStart('mcp__maestro__inspect_screen'));
+    spawned.child.emitStdout(toolStart('mcp__maestro__run'));
     spawned.child.emitStdout(toolStart('Edit'));
 
     const labels = h.events
@@ -539,11 +607,33 @@ describe('the stream', () => {
     expect(labels).toEqual([
       "Reading the app's code…",
       'Looking at the screen…',
+      'Using the app…',
       'Writing the test…',
     ]);
     for (const label of labels) {
-      expect(label).not.toMatch(/mcp__|Edit|Read\b|YAML|selector|regex/);
+      expect(label).not.toMatch(/mcp__|Edit|Read\b|YAML|selector|regex|Maestro|run\b/);
     }
+  });
+
+  /** Criterion 5 — a turn that drives the device and edits a flow reports the
+   * edit and nothing else: `run` writes no file, so it is never one. */
+  it('reports the flow edit of a driving turn, and never the driving itself', async () => {
+    const h = harness();
+    const spawned = await startTurn(h);
+
+    spawned.child.emitStdout(
+      toolUse('mcp__maestro__run', { device_id: 'emulator-5554', yaml: '- launchApp' }),
+    );
+    spawned.child.emitStdout(
+      toolUse('Write', { file_path: join(CLONE_ROOT, 'conductor', 'login.yml') }),
+    );
+    spawned.child.emitStdout(
+      toolUse('mcp__maestro__run', { device_id: 'emulator-5554', files: ['conductor/login.yml'] }),
+    );
+
+    expect(h.events.filter((event) => event.kind === 'file-edited')).toEqual([
+      { kind: 'file-edited', turnId: 'turn-1', path: 'login.yml' },
+    ]);
   });
 
   /** Criterion 8 — an Edit/Write under `conductor/` crosses as the §7.2 flow
@@ -616,7 +706,8 @@ describe('the stream', () => {
     expect(h.events.some((event) => event.kind === 'text-delta')).toBe(true);
   });
 
-  /** §6.4 as amended — spend is main-side arithmetic. No event carries it. */
+  /** §6.4 as amended here — no spend arithmetic is left anywhere, so no event
+   * could carry one. */
   it('pushes no event carrying a cost', async () => {
     const h = harness();
     const spawned = await startTurn(h);
@@ -733,8 +824,11 @@ describe('ending a turn', () => {
     expect(ended.message).toMatch(/too long|stopped/i);
   });
 
-  it('defaults the ceiling to minutes, not seconds', () => {
-    expect(TURN_TIMEOUT_MS).toBeGreaterThanOrEqual(5 * 60_000);
+  /** Criterion 29 — the ceiling this spec leaves exactly where it found it. A
+   * turn that now drives the device spends longer, not less, and ten minutes
+   * is the measured ceiling. */
+  it('keeps the ceiling at ten minutes', () => {
+    expect(TURN_TIMEOUT_MS).toBe(10 * 60_000);
   });
 
   /** Criterion 15 — the lease wraps the turn, whatever the outcome. */
@@ -760,9 +854,9 @@ describe('ending a turn', () => {
 /* ── reset, repo change, dispose (criteria 12–13) ───────────────────────── */
 
 describe('reset and dispose', () => {
-  it('reset ends the turn, clears the session and the spend, and pushes the reset', async () => {
+  it('reset ends the turn, clears the session, and pushes the reset', async () => {
     const h = harness();
-    await completeTurn(h, { session_id: 'session-old', total_cost_usd: 0.2 });
+    await completeTurn(h, { session_id: 'session-old' });
     const spawned = await startTurn(h);
 
     const result = h.service.reset();
@@ -772,10 +866,9 @@ describe('reset and dispose', () => {
     expect(h.events.at(-1)).toEqual({ kind: 'reset' });
 
     spawned.child.emitExit({ code: null, error: null });
-    // A fresh conversation: no --resume, the full budget again.
+    // A fresh conversation: the thread starts over rather than resuming.
     const { args } = await startTurn(h);
     expect(args).not.toContain('--resume');
-    expect(Number.parseFloat(flagValue(args, '--max-budget-usd'))).toBeCloseTo(0.5);
   });
 
   it('reset with nothing in flight still clears and pushes', async () => {
@@ -888,18 +981,19 @@ describe('reset and dispose', () => {
     expect(resumes).toEqual(['ai']);
   });
 
-  /** A turn the reset killed belongs to the conversation the reset ended —
-   * its reported cost must not charge the fresh ledger. */
-  it('a turn killed by reset never charges the fresh conversation', async () => {
-    const h = harness({ budgetUsd: 0.5 });
+  /** A turn the reset killed leaves nothing of itself behind: the session it
+   * reported is discarded with the conversation it belonged to, so the next
+   * message starts a fresh thread rather than resuming an emptied one. */
+  it('a turn killed by reset leaves no session for the fresh conversation', async () => {
+    const h = harness();
     const spawned = await startTurn(h);
-    spawned.child.emitStdout(resultLine({ total_cost_usd: 0.2 }));
+    spawned.child.emitStdout(resultLine({ session_id: 'session-killed' }));
 
     h.service.reset();
     spawned.child.emitExit({ code: null, error: null });
 
     const { args } = await startTurn(h);
-    expect(Number.parseFloat(flagValue(args, '--max-budget-usd'))).toBeCloseTo(0.5);
+    expect(args).not.toContain('--resume');
   });
 
   /** Criterion 12 — a conversation is about one repo's flows and one clone's

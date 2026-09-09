@@ -21,8 +21,8 @@ export function registerAppIpc(): void {
 
   // The declared fields, spelled out — never `CONFIG` wholesale: the response
   // schema is not enforced on the way out, and the config also holds values
-  // that are main's business alone (binary paths, and the AI budget, which
-  // crosses no channel at all — §6.4 as amended).
+  // that are main's business alone — binary paths, release URLs and pinned
+  // versions, none of which the renderer has any use for.
   handle(CHANNELS.configGet, IPC[CHANNELS.configGet].request, () => ({
     REPO_BASE_BRANCH: CONFIG.REPO_BASE_BRANCH,
     FLOWS_DIR: CONFIG.FLOWS_DIR,
