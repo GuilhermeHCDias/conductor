@@ -14,7 +14,9 @@ export type SendControlPhase = 'sent-all' | 'unsent' | 'review';
 
 export type SendControlProps = {
   readonly phase: SendControlPhase;
-  /** The unsent count — the badge on Send changes, the +N on the pill. */
+  /** The unsent count — the badge on Send changes. The review pill carries
+   * none: unsent work is its own future review, never an addition to the one
+   * already open (criterion 3 as amended, 2026-09-09). */
   readonly count: number;
   readonly onClick: () => void;
 };
@@ -34,7 +36,6 @@ export function SendControl({ phase, count, onClick }: SendControlProps): JSX.El
       <button className={styles.control} data-phase="review" onClick={onClick} type="button">
         <Icon className={styles.quiet} name="clock" size={13} />
         Waiting for review
-        {count > 0 ? <span className={styles.plus}>+{count}</span> : null}
       </button>
     );
   }

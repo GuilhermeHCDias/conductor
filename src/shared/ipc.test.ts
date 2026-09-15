@@ -1335,11 +1335,11 @@ describe('publish:event', () => {
     expect(schema.safeParse({ kind: 'send-step', sendId: 2, step: 'pushing' }).success).toBe(false);
   });
 
-  /** Criteria 23, 25 — the terminal success says whether the changes joined a
-   * review that was already open or opened a fresh one. */
-  it('carries the sent terminal with its joined flag', () => {
-    expect(schema.safeParse({ kind: 'sent', sendId: 2, joined: true }).success).toBe(true);
-    expect(schema.safeParse({ kind: 'sent', sendId: 2 }).success).toBe(false);
+  /** Criterion 25 as amended (2026-09-09) — every send opens a review of its
+   * own, so the terminal success has nothing left to qualify. */
+  it('carries the sent terminal, and nothing beside it', () => {
+    expect(schema.safeParse({ kind: 'sent', sendId: 2 }).success).toBe(true);
+    expect(schema.safeParse({ kind: 'sent', sendId: 2, joined: true }).success).toBe(false);
   });
 
   /** Criterion 26 — a failure travels as a typed event with the stable code
@@ -1519,7 +1519,7 @@ describe('the failure codes', () => {
   });
 
   /**
-   * The publish spec's eight (criteria 19, 24, 26, 31). `publish/maestro-missing`
+   * The publish spec's nine (criteria 19, 24, 26, 31). `publish/maestro-missing`
    * is distinct from the run path's `run/maestro-not-found` because it reaches a
    * different surface with its own message; the gh failures deliberately do NOT
    * get publish twins — criterion 26 reuses `repo/gh-missing` and
@@ -1529,6 +1529,7 @@ describe('the failure codes', () => {
     expect([
       ERROR_CODES.publishNoRepo,
       ERROR_CODES.publishNothingToSend,
+      ERROR_CODES.publishUndoesOpenReview,
       ERROR_CODES.publishSendActive,
       ERROR_CODES.publishMaestroMissing,
       ERROR_CODES.publishSyntaxError,
@@ -1538,6 +1539,7 @@ describe('the failure codes', () => {
     ]).toEqual([
       'publish/no-repo',
       'publish/nothing-to-send',
+      'publish/undoes-open-review',
       'publish/send-active',
       'publish/maestro-missing',
       'publish/syntax-error',

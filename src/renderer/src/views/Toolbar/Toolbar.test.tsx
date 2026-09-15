@@ -239,8 +239,19 @@ describe('the send control', () => {
     expect(names).toEqual(['Toggle sidebar', 'Run', 'Send changes2', 'Dark appearance']);
   });
 
-  /** Criterion 3 — the neutral pill, +N when changes piled on top. */
-  it('shows Waiting for review with +N while a review is open', () => {
+  /** Criterion 3 — the neutral pill while a review is open and nothing is
+   * unsent. */
+  it('shows Waiting for review while a review is open', () => {
+    usePublishStore.setState({ loaded: true, reviewOpen: true, changes: [] });
+    render(<Toolbar />);
+
+    expect(screen.getByRole('button', { name: /Waiting for review/ })).toBeInTheDocument();
+  });
+
+  /** Criterion 3 as amended (2026-09-09) — a change made while a review is
+   * open belongs to a review of its own, so the control offers to send it
+   * rather than adding it to the pill. */
+  it('offers Send changes while a review is open', () => {
     usePublishStore.setState({
       loaded: true,
       reviewOpen: true,
@@ -248,7 +259,7 @@ describe('the send control', () => {
     });
     render(<Toolbar />);
 
-    expect(screen.getByRole('button', { name: /Waiting for review/ })).toHaveTextContent('+1');
+    expect(screen.getByRole('button', { name: /Send changes/ })).toHaveTextContent('1');
   });
 
   /** Criterion 4 — any interactive state opens the publish sheet. */

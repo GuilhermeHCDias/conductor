@@ -105,6 +105,11 @@ type HarnessOptions = {
   prCreate?: (call: Call) => RunResult;
   prEdit?: (call: Call) => RunResult;
   prView?: (call: Call) => RunResult;
+  /** Answers a `git` call, or `null` to let the real binary run it. Git stays
+   * real everywhere else — the plumbing semantics are what this suite exists
+   * to pin — so this is only for the failures a working git will not produce
+   * on demand. */
+  git?: (call: Call) => RunResult | null;
   /** Answers the gate per absolute file path. Defaults to ok. */
   syntax?: (path: string) => SyntaxCheck | Promise<SyntaxCheck>;
   maestroMissing?: boolean;
@@ -194,7 +199,8 @@ async function harness(options: HarnessOptions = {}): Promise<{
     run: async (command, args, runOptions) => {
       calls.push({ command, args, options: runOptions });
       if (command === 'git') {
-        return run('git', args, runOptions);
+        const call: Call = { command, args, options: runOptions };
+        return options.git?.(call) ?? run('git', args, runOptions);
       }
       if (command === (options.gh ?? GH)) {
         if (args[0] === 'auth') {
@@ -915,6 +921,25 @@ describe('sending — refusals and the gate', () => {
   });
 
   /** Criterion 19 — no maestro at all is its own refusal, with its own fix. */
+  /** Criterion 24's own arm of the same guard, and why the refusal above has
+   * to be told apart rather than replace it: with nothing sent yet the sheet
+   * counts from the base too, so a set that empties under the running
+   * pipeline really is nothing new to send. */
+  it('refuses with publish/nothing-to-send when the set empties under the pipeline', async () => {
+    const { service, cloneRoot, events } = await harness();
+    write(cloneRoot, 'conductor/novo.yml', FLOW);
+
+    const { sendId } = data(await service.send('note', 'novo.yml'));
+    rmSync(join(cloneRoot, 'conductor/novo.yml'));
+
+    expect(await untilSettled(events)).toEqual({
+      kind: 'send-failed',
+      sendId,
+      code: 'publish/nothing-to-send',
+      message: 'There is nothing new to send.',
+    });
+  });
+
   it('fails with publish/maestro-missing when the gate cannot run', async () => {
     const { service, cloneRoot, events } = await harness({ maestroMissing: true });
     write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
@@ -941,7 +966,7 @@ describe('the first send', () => {
       { kind: 'send-step', sendId, step: 'checking' },
       { kind: 'send-step', sendId, step: 'sending' },
       { kind: 'send-step', sendId, step: 'opening-review' },
-      { kind: 'sent', sendId, joined: false },
+      { kind: 'sent', sendId },
     ]);
     expect(ghCalls().map((call) => `${call.args[0]} ${call.args[1] ?? ''}`.trim())).toEqual([
       'auth status',
@@ -993,10 +1018,14 @@ describe('the first send', () => {
     expect(fetch?.options?.timeout).toBe(60_000);
     expect(add?.args).toEqual(['add', '-A', '--', 'conductor']);
     expect(commitTree?.args.slice(0, 1)).toEqual(['commit-tree']);
+    // The trailing empty old value is git's "this ref must not exist": the
+    // send creates its branch and never moves one, so a name the free-name
+    // search got wrong cannot cost an open review its only local tip.
     expect(updateRef?.args).toEqual([
       'update-ref',
       'refs/heads/conductor/2026-08-07-login',
       expect.stringMatching(/^[0-9a-f]{40}$/),
+      '',
     ]);
     expect(push?.args.slice(-3)).toEqual(['push', 'origin', 'conductor/2026-08-07-login']);
     expect(push?.options?.timeout).toBe(60_000);
@@ -1090,12 +1119,15 @@ describe('the first send', () => {
     const publication = persisted.publications['loja-verde-pnp-1a2b3c4d'];
     expect(publication).toMatchObject({
       branch: 'conductor/2026-08-07-tests',
-      baseBranch: 'main',
       prNumber: 41,
       prUrl: PR_URL,
+      reviewOpen: true,
     });
-    expect(publication.baseCommit).toBe(await git(cloneRoot, 'rev-parse', 'origin/main'));
     expect(publication.lastSentCommit).toMatch(/^[0-9a-f]{40}$/);
+    // Criterion 25 names what persists: branch, PR number, URL, last sent
+    // commit. The base is read off the clone at send time (criterion 22), so
+    // storing it only preserved a second, staler answer to the same question.
+    expect(publication).not.toHaveProperty('baseBranch');
     expect(data(await service.status())).toEqual({
       repo: 'loja-verde-pnp-1a2b3c4d',
       changes: [],
@@ -1182,7 +1214,7 @@ describe('the first send', () => {
   });
 });
 
-describe('subsequent sends', () => {
+describe('subsequent sends — a review of their own', () => {
   async function firstSend(bundle: Awaited<ReturnType<typeof harness>>): Promise<void> {
     write(bundle.cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
     data(await bundle.service.send('First words.', 'login.yml'));
@@ -1190,44 +1222,222 @@ describe('subsequent sends', () => {
     bundle.events.length = 0;
   }
 
-  /** Criterion 23 — same branch, parent = the previous tip, `gh pr edit`
-   * refreshing title and body, and the UI told the changes joined the open
-   * review. */
-  it('commits on the same branch and refreshes the PR', async () => {
-    let body: string | null = null;
-    const bundle = await harness({
-      prEdit: (call) => {
-        const flag = call.args.indexOf('--body-file');
-        body = readFileSync(call.args[flag + 1] as string, 'utf8');
-        return { stdout: '', stderr: '', code: 0 };
-      },
-    });
-    const { service, cloneRoot, originDir, events, ghCalls, gitCalls, deps } = bundle;
+  /** Criterion 23 as amended (2026-09-09) — the review already open is never
+   * joined: the next send cuts its own branch from the freshly fetched base
+   * tip and opens its own PR. `gh pr edit` left the pipeline with it. */
+  it('opens a review of its own instead of updating the one already open', async () => {
+    const bundle = await harness();
+    const { service, cloneRoot, originDir, events, ghCalls, deps } = bundle;
     await firstSend(bundle);
-    const firstTip = await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login');
+    const baseTip = await git(cloneRoot, 'rev-parse', 'main');
     write(cloneRoot, 'conductor/checkout/pix.yml', `${FLOW}- tapOn: "Pagar"\n`);
 
     const { sendId } = data(await service.send('Second words.', 'checkout/pix.yml'));
     const settled = await untilSettled(events);
 
-    expect(settled).toEqual({ kind: 'sent', sendId, joined: true });
-    expect(gitCalls().filter((call) => gitSubcommand(call) === 'fetch')).toHaveLength(1);
-    const edit = ghCalls().find((call) => call.args[1] === 'edit');
-    expect(edit?.args.slice(0, 3)).toEqual(['pr', 'edit', '41']);
-    expect(edit?.args).toContain('--title');
-    expect(edit?.args).toContain('--body-file');
-    expect(body).toBe('Second words.');
-    const tip = await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login');
-    expect(await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login^')).toBe(firstTip);
-    expect(await git(originDir, 'rev-parse', 'refs/heads/conductor/2026-08-07-login')).toBe(tip);
-    const persisted = JSON.parse(readFileSync(deps.stateFile, 'utf8'));
-    expect(persisted.publications['loja-verde-pnp-1a2b3c4d'].lastSentCommit).toBe(tip);
+    expect(settled).toEqual({ kind: 'sent', sendId });
+    expect(ghCalls().filter((call) => call.args[1] === 'create')).toHaveLength(2);
+    expect(ghCalls().some((call) => call.args[1] === 'edit')).toBe(false);
+    const second = 'conductor/2026-08-07-pix';
+    const tip = await git(cloneRoot, 'rev-parse', second);
+    expect(await git(cloneRoot, 'rev-parse', `${second}^`)).toBe(baseTip);
+    expect(await git(originDir, 'rev-parse', `refs/heads/${second}`)).toBe(tip);
+    expect(
+      JSON.parse(readFileSync(deps.stateFile, 'utf8')).publications['loja-verde-pnp-1a2b3c4d'],
+    ).toMatchObject({ branch: second, lastSentCommit: tip, reviewOpen: true });
   });
 
-  /** Criteria 11 and 23 — the note describes the publication whole: with a
-   * review open, the diff handed to the model runs from the publication's
-   * birth base to the working tree, not merely from the last send. */
-  it('describes the full publication diff once a review is open', async () => {
+  /** Criterion 20 as amended — one review per send makes the dated name
+   * collide the moment someone sends the same flow twice in a day. The next
+   * free one is taken, and the review already open keeps its branch exactly
+   * where it was. */
+  it('takes the next free branch name when the same flow is sent twice in a day', async () => {
+    const bundle = await harness();
+    const { service, cloneRoot, originDir, events, gitCalls } = bundle;
+    const firstTip = await (async () => {
+      await firstSend(bundle);
+      return git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login');
+    })();
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n- back\n`);
+
+    data(await service.send('Second words.', 'login.yml'));
+    await untilSettled(events);
+
+    expect(
+      gitCalls()
+        .filter((call) => call.args[0] === 'update-ref')
+        .map((call) => call.args[1]),
+    ).toEqual(['refs/heads/conductor/2026-08-07-login', 'refs/heads/conductor/2026-08-07-login-2']);
+    expect(await git(originDir, 'rev-parse', 'refs/heads/conductor/2026-08-07-login-2')).toBe(
+      await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login-2'),
+    );
+    expect(await git(originDir, 'rev-parse', 'refs/heads/conductor/2026-08-07-login')).toBe(
+      firstTip,
+    );
+  });
+
+  /** The retry that used to be doomed: a send whose review never opened left
+   * its branch on the remote and nothing remembered, so the next attempt
+   * rebuilt a different commit under the same name and the push was refused
+   * for good. The free-name search walks past it. */
+  it('moves to the next branch name after a send whose review never opened', async () => {
+    let attempts = 0;
+    const bundle = await harness({
+      prCreate: () => {
+        attempts += 1;
+        return attempts === 1
+          ? { stdout: '', stderr: 'boom', code: 1 }
+          : { stdout: `${PR_URL}\n`, stderr: '', code: 0 };
+      },
+    });
+    const { service, cloneRoot, events, deps } = bundle;
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+    data(await service.send('note', 'login.yml'));
+    expect((await untilSettled(events)).kind).toBe('send-failed');
+    events.length = 0;
+
+    const { sendId } = data(await service.send('note', 'login.yml'));
+    const settled = await untilSettled(events);
+
+    expect(settled).toEqual({ kind: 'sent', sendId });
+    expect(
+      JSON.parse(readFileSync(deps.stateFile, 'utf8')).publications['loja-verde-pnp-1a2b3c4d']
+        .branch,
+    ).toBe('conductor/2026-08-07-login-2');
+  });
+
+  /**
+   * The amendment left two baselines standing on purpose: the sheet counts
+   * from the last send, and the review is born from the base tip. Work that
+   * undoes a review still open is real against the first and empty against
+   * the second — there is nothing to put in a review of its own. Criterion
+   * 24's "nothing new to send" is the one answer that cannot be given here,
+   * because the sheet is listing a change at the moment it is said.
+   */
+  it('refuses work that undoes an open review in its own words', async () => {
+    const bundle = await harness();
+    const { service, cloneRoot, events } = bundle;
+    write(cloneRoot, 'conductor/novo.yml', FLOW);
+    data(await service.send('First words.', 'novo.yml'));
+    await untilSettled(events);
+    events.length = 0;
+    rmSync(join(cloneRoot, 'conductor/novo.yml'));
+
+    expect(data(await service.status()).changes).toHaveLength(1);
+    const { sendId } = data(await service.send('Second words.', 'novo.yml'));
+
+    expect(await untilSettled(events)).toEqual({
+      kind: 'send-failed',
+      sendId,
+      code: 'publish/undoes-open-review',
+      message:
+        'These changes undo everything you sent for review, so there is nothing left to send.',
+    });
+  });
+
+  /** The other face of the same rule, and the reason the refusal above has to
+   * be narrow: "each one is complete and mergeable alone" (spec, 2026-09-09).
+   * A send left carrying only work an open review already carries is still a
+   * review — it is born from the base tip, so it holds everything that has
+   * not reached the base, and only a set that adds up to the base itself has
+   * nothing to open. */
+  it('opens a review that carries only what an open review already carries', async () => {
+    const bundle = await harness();
+    const { service, cloneRoot, events, originDir } = bundle;
+    await firstSend(bundle);
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n- back\n`);
+
+    const { sendId } = data(await service.send('Second words.', 'login.yml'));
+    // Back to exactly what the last send carried, while the pipeline runs.
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+    const settled = await untilSettled(events);
+
+    expect(settled).toEqual({ kind: 'sent', sendId });
+    const second = 'conductor/2026-08-07-login-2';
+    expect(await git(originDir, 'rev-parse', `refs/heads/${second}`)).toBe(
+      await git(cloneRoot, 'rev-parse', second),
+    );
+  });
+
+  /** Criterion 20 as amended searches the clone's own refs for the free name.
+   * A listing that failed is not an empty answer: taking the name anyway
+   * hands `update-ref` the branch the open review is standing on, and the
+   * only local record of that review's tip moves out from under it. */
+  it('fails the send rather than reuse a name it could not check', async () => {
+    let listable = true;
+    const bundle = await harness({
+      git: (call) =>
+        !listable && call.args[0] === 'for-each-ref'
+          ? { stdout: '', stderr: 'boom', code: 1 }
+          : null,
+    });
+    const { service, cloneRoot, events } = bundle;
+    await firstSend(bundle);
+    const firstTip = await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login');
+    listable = false;
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n- back\n`);
+
+    const { sendId } = data(await service.send('Second words.', 'login.yml'));
+
+    expect(await untilSettled(events)).toMatchObject({ kind: 'send-failed', sendId });
+    expect(await git(cloneRoot, 'rev-parse', 'conductor/2026-08-07-login')).toBe(firstTip);
+  });
+
+  /** The wildcard arm of the search: by the third send of the day, the names
+   * already taken are no longer only the exact one. */
+  it('walks the series past every name the day already used', async () => {
+    const bundle = await harness();
+    const { service, cloneRoot, events, deps } = bundle;
+    await firstSend(bundle);
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n- back\n`);
+    data(await service.send('Second words.', 'login.yml'));
+    await untilSettled(events);
+    events.length = 0;
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n- back\n- back\n`);
+
+    data(await service.send('Third words.', 'login.yml'));
+    await untilSettled(events);
+
+    expect(
+      JSON.parse(readFileSync(deps.stateFile, 'utf8')).publications['loja-verde-pnp-1a2b3c4d']
+        .branch,
+    ).toBe('conductor/2026-08-07-login-3');
+  });
+
+  /** The end of the series says what happened. "Try again" is a promise the
+   * hundredth name cannot keep, and criterion 26 asks for what to do. */
+  it('refuses in its own words once the day series is exhausted', async () => {
+    const taken = [
+      'conductor/2026-08-07-login',
+      ...Array.from({ length: 99 }, (_, index) => `conductor/2026-08-07-login-${index + 2}`),
+    ];
+    const bundle = await harness({
+      git: (call) =>
+        call.args[0] === 'for-each-ref'
+          ? {
+              stdout: `${taken.map((name) => `refs/heads/${name}`).join('\n')}\n`,
+              stderr: '',
+              code: 0,
+            }
+          : null,
+    });
+    const { service, cloneRoot, events } = bundle;
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+
+    const { sendId } = data(await service.send('note', 'login.yml'));
+
+    expect(await untilSettled(events)).toEqual({
+      kind: 'send-failed',
+      sendId,
+      code: 'publish/send-failed',
+      message: 'These changes have been sent for review many times today. Try again tomorrow.',
+    });
+  });
+
+  /** Criterion 11 as amended — a review carries one send, so the note
+   * describes exactly what this send carries: the diff runs from the last
+   * send, never from a publication's birth. */
+  it('describes only what changed since the last send', async () => {
     let patch: string | null = null;
     const bundle = await harness({
       claudeRun: (call) => {
@@ -1242,8 +1452,8 @@ describe('subsequent sends', () => {
     data(await service.describe());
     await until(() => events.some((payload) => data(payload).kind === 'described'));
 
-    expect(patch).toContain('+- back');
     expect(patch).toContain('+- tapOn: "Pagar"');
+    expect(patch).not.toContain('+- back');
   });
 
   /** Criterion 7's tail — sent and untouched does not count; edited after
@@ -1269,15 +1479,15 @@ describe('the publication lifecycle', () => {
     bundle.changed.length = 0;
   }
 
-  /** Criteria 28 and 29 — the refresh rides the sheet opening (status), and a
-   * merged PR ends the publication: state cleared, base fetched, and the disk
-   * — never rewritten — counts as unsent again. */
-  it('ends the publication when the refresh reports the PR merged', async () => {
+  /** Criteria 28 and 29 as amended (2026-09-09) — the refresh rides the sheet
+   * opening (status), and a review that ends stops being open. That is all it
+   * does now: what was sent stays sent, so the list does not fill back up. */
+  it('keeps what was sent when the refresh reports the review merged', async () => {
     let state = 'OPEN';
     const bundle = await harness({
       prView: () => ({ stdout: JSON.stringify({ state, url: PR_URL }), stderr: '', code: 0 }),
     });
-    const { service, deps, changed, ghCalls, gitCalls } = bundle;
+    const { service, deps, changed, ghCalls } = bundle;
     await sent(bundle);
     state = 'MERGED';
 
@@ -1285,13 +1495,67 @@ describe('the publication lifecycle', () => {
     await until(() => changed.some((payload) => data(payload).reviewOpen === false));
 
     expect(ghCalls().some((call) => call.args[1] === 'view')).toBe(true);
-    expect(JSON.parse(readFileSync(deps.stateFile, 'utf8')).publications).toEqual({});
-    expect(
-      gitCalls().filter((call) => gitSubcommand(call) === 'fetch').length,
-    ).toBeGreaterThanOrEqual(2);
     const last = data(changed.at(-1) as Result<PublishState>);
     expect(last.reviewOpen).toBe(false);
-    expect(last.changes).toEqual([{ path: 'login.yml', kind: 'changed' }]);
+    expect(last.changes).toEqual([]);
+    expect(
+      JSON.parse(readFileSync(deps.stateFile, 'utf8')).publications['loja-verde-pnp-1a2b3c4d'],
+    ).toMatchObject({ prNumber: 41, reviewOpen: false });
+  });
+
+  /** The complaint this decision answers: a review closed without merging used
+   * to put every file it carried back on the list, and the counts kept growing
+   * send after send. Sent is sent, whatever becomes of the review. */
+  it('leaves a closed review out of the unsent set', async () => {
+    let state = 'OPEN';
+    const bundle = await harness({
+      prView: () => ({ stdout: JSON.stringify({ state, url: PR_URL }), stderr: '', code: 0 }),
+    });
+    const { service, changed } = bundle;
+    await sent(bundle);
+    state = 'CLOSED';
+
+    await service.status();
+    await until(() => changed.some((payload) => data(payload).reviewOpen === false));
+
+    expect(data(await service.status())).toMatchObject({ changes: [], reviewOpen: false });
+  });
+
+  /** A file written before the amendment carries `baseCommit` and no
+   * `reviewOpen`: back then a publication was persisted only while it was
+   * open. It reads as exactly that — an open review whose work is already
+   * sent — so nobody's counts jump on the first launch after this change. */
+  it('reads a record written before the amendment as an open review', async () => {
+    const bundle = await harness();
+    write(bundle.cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+    const sentCommit = await (async () => {
+      data(await bundle.service.send('First words.', 'login.yml'));
+      await untilSettled(bundle.events);
+      return git(bundle.cloneRoot, 'rev-parse', 'conductor/2026-08-07-login');
+    })();
+    writeFileSync(
+      bundle.deps.stateFile,
+      JSON.stringify({
+        version: 1,
+        publications: {
+          'loja-verde-pnp-1a2b3c4d': {
+            branch: 'conductor/2026-08-07-login',
+            baseBranch: 'main',
+            baseCommit: 'a'.repeat(40),
+            lastSentCommit: sentCommit,
+            prNumber: 41,
+            prUrl: PR_URL,
+            createdAt: '2026-08-07T15:00:00.000Z',
+          },
+        },
+      }),
+    );
+
+    const second = new PublishService({ ...bundle.deps });
+    services.push(second);
+    await second.start();
+
+    expect(data(await second.status())).toMatchObject({ changes: [], reviewOpen: true });
   });
 
   /** Criterion 30 — a refresh that fails keeps the stored state and stays
@@ -1386,6 +1650,27 @@ describe('View on GitHub', () => {
 
   it('refuses with publish/no-review when nothing is open', async () => {
     const { service, opened } = await harness();
+
+    expect(code(await service.openPr())).toBe('publish/no-review');
+    expect(opened).toEqual([]);
+  });
+
+  /** The record outlives its review now, so "is there a record" stopped
+   * meaning "is a review open". The guard has to ask the question its own
+   * refusal answers, or main hands out a closed review's link while saying
+   * no review is open. */
+  it('refuses with publish/no-review once the review is closed', async () => {
+    let state = 'OPEN';
+    const bundle = await harness({
+      prView: () => ({ stdout: JSON.stringify({ state, url: PR_URL }), stderr: '', code: 0 }),
+    });
+    const { service, cloneRoot, events, changed, opened } = bundle;
+    write(cloneRoot, 'conductor/login.yml', `${FLOW}- back\n`);
+    data(await service.send('note', null));
+    await untilSettled(events);
+    state = 'CLOSED';
+    await service.status();
+    await until(() => changed.some((payload) => data(payload).reviewOpen === false));
 
     expect(code(await service.openPr())).toBe('publish/no-review');
     expect(opened).toEqual([]);

@@ -212,9 +212,7 @@ describe('PublishSheet', () => {
 
     act(() => {
       usePublishStore.setState({ sending: true });
-      usePublishStore
-        .getState()
-        .applyEvent({ ok: true, data: { kind: 'sent', sendId: 3, joined: false } });
+      usePublishStore.getState().applyEvent({ ok: true, data: { kind: 'sent', sendId: 3 } });
     });
 
     expect(screen.getByRole('dialog', { name: 'Waiting for review' })).toBeInTheDocument();
@@ -223,26 +221,23 @@ describe('PublishSheet', () => {
     expect(screen.queryByRole('textbox')).not.toBeInTheDocument();
   });
 
-  /** Criterion 23's UI clause — a subsequent send says the changes joined the
-   * review already open, not the first-send copy. */
-  it('says the changes joined the review already open on a subsequent send', () => {
+  /** Criterion 25 as amended (2026-09-09) — the sent state says what comes
+   * next, and what comes next is a review of its own. */
+  it('says the next changes go out as their own review', () => {
     render(<PublishSheet />);
     openWith([CHANGES[0]]);
+
     act(() => {
-      usePublishStore.setState({ reviewOpen: true, sending: true });
-      usePublishStore
-        .getState()
-        .applyEvent({ ok: true, data: { kind: 'sent', sendId: 3, joined: true } });
+      usePublishStore.setState({ sending: true });
+      usePublishStore.getState().applyEvent({ ok: true, data: { kind: 'sent', sendId: 3 } });
     });
 
-    expect(
-      screen.getByText(/joined the review your team is already looking at/),
-    ).toBeInTheDocument();
+    expect(screen.getByText(/the next ones go out as their own review/)).toBeInTheDocument();
   });
 
-  /** Criterion 6 — a review open with fresh unsent changes offers sending
-   * them into it, never a second review. */
-  it('offers sending fresh changes into the open review', () => {
+  /** Criterion 6 as amended (2026-09-09) — changes made while a review is
+   * open never join it: the sheet offers to send them as their own. */
+  it('offers fresh changes as a review of their own while one is open', () => {
     render(<PublishSheet />);
     openWith([CHANGES[0]]);
     described();
@@ -251,7 +246,8 @@ describe('PublishSheet', () => {
     });
 
     expect(screen.getByRole('dialog', { name: 'Send 1 change' })).toBeInTheDocument();
-    expect(screen.getByText(/join the review your team is already looking at/)).toBeInTheDocument();
+    expect(screen.getByText(/go out as a review of their own/)).toBeInTheDocument();
+    expect(screen.queryByText(/join the review/)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Send for review' })).toBeEnabled();
   });
 

@@ -28,9 +28,6 @@ export type PublishData = {
   readonly writing: boolean;
   readonly sending: boolean;
   readonly sendStep: 'checking' | 'sending' | 'opening-review' | null;
-  /** Criterion 23's UI clause — the last sent event said the changes joined
-   * the review already open, so the sent state can say so. */
-  readonly sentJoined: boolean;
   readonly failure: { readonly code: string; readonly message: string } | null;
 };
 
@@ -59,7 +56,6 @@ function createPublishData(): PublishData {
     writing: false,
     sending: false,
     sendStep: null,
-    sentJoined: false,
     failure: null,
   };
 }
@@ -105,7 +101,6 @@ export const usePublishStore = create<PublishState>((set, get) => ({
             noteEdited: false,
             writing: false,
             failure: null,
-            sentJoined: false,
           }
         : fresh,
     );
@@ -137,14 +132,14 @@ export const usePublishStore = create<PublishState>((set, get) => ({
     }
     if (event.kind === 'sent') {
       // Criterion 25 — the sheet flips at once; the `publish:changed` push
-      // arrives right behind with the same truth. The field starts clean for
-      // the next publication.
+      // arrives right behind with the same truth. The set empties because the
+      // send moved the mark it counts from (§8.3 as amended, 2026-09-09), and
+      // the field starts clean for the next review.
       set({
         sending: false,
         sendStep: null,
         reviewOpen: true,
         changes: [],
-        sentJoined: event.joined,
         failure: null,
         note: '',
         noteEdited: false,
@@ -163,7 +158,7 @@ export const usePublishStore = create<PublishState>((set, get) => ({
    * refreshes the PR state behind it, which is how a Waiting for review
    * sheet learns the review merged. */
   openSheet: () => {
-    set({ sheetOpen: true, failure: null, sentJoined: false });
+    set({ sheetOpen: true, failure: null });
     void get().init();
     cancelPending = false;
     set({ writing: true });
@@ -253,12 +248,18 @@ export function resetPublishStore(): void {
   usePublishStore.setState(createPublishData());
 }
 
-/** Criteria 1–3 — the control's three states, from the two pushed facts. */
+/**
+ * Criteria 1–3 — the control's three states, from the two pushed facts.
+ * Unsent work outranks a review already open (criterion 3 as amended,
+ * 2026-09-09): it no longer piles onto that review, it is a review of its
+ * own, so the control offers to send it rather than counting it beside a pill
+ * it has nothing to do with.
+ */
 export function selectControlPhase(state: PublishState): 'sent-all' | 'unsent' | 'review' {
-  if (state.reviewOpen) {
-    return 'review';
+  if (state.changes.length > 0) {
+    return 'unsent';
   }
-  return state.changes.length > 0 ? 'unsent' : 'sent-all';
+  return state.reviewOpen ? 'review' : 'sent-all';
 }
 
 /** Criteria 5–6 and 25 — what the open sheet shows. */

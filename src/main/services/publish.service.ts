@@ -96,17 +96,21 @@ export type PublishServiceDeps = {
   readonly describeTimeoutMs?: number;
 };
 
-/** One open publication (§8.3): a branch, a PR, and the commits that anchor
- * the two diffs — `baseCommit` for the publication's whole story, and
- * `lastSentCommit` for what is still unsent (criterion 7). */
+/** The last publication (§8.3 as amended, 2026-09-09): the branch and PR one
+ * send opened, and `lastSentCommit` — the mark the unsent set counts from
+ * (criterion 7). The record outlives its review: what was sent stays sent
+ * whatever becomes of the review, so this is never deleted, only closed
+ * (criterion 29 as amended). */
 const persistedPublication = z.object({
   branch: z.string(),
-  baseBranch: z.string(),
-  baseCommit: z.string(),
   lastSentCommit: z.string(),
   prNumber: z.number().int().positive(),
   prUrl: z.string(),
   createdAt: z.string(),
+  /** Whether that review is still open on GitHub — criterion 28's refresh
+   * writes it. Records written before the amendment carry no such field:
+   * back then a publication was persisted only while open. */
+  reviewOpen: z.boolean().default(true),
 });
 
 const persistedState = z.object({
@@ -173,6 +177,10 @@ const PROMPT_PATCH_LIMIT = 120_000;
 
 /** Criterion 12's bound, and PR-title convention. */
 const TITLE_LIMIT = 72;
+
+/** How far the free-name search walks before giving up (criterion 20 as
+ * amended). Far past any day's sending; a ceiling only so the loop is one. */
+const BRANCH_ATTEMPTS = 100;
 
 /** The note's IPC bound (criterion 32) — a longer prefill could never be
  * sent back. */
@@ -361,13 +369,11 @@ export class PublishService {
     // computed — nothing was invoked, so there is nothing to protect.
     let hash = '';
     try {
-      const publication = this.publications[clone.slug];
-      // Criterion 11: the note describes the publication whole — its birth
-      // base to the working tree — not merely what is unsent, so the PR body
-      // always tells everything the review contains (criterion 23).
-      const baseline =
-        publication === undefined ? await this.unsentBaseline(clone) : publication.baseCommit;
-      const diff = await this.publicationDiff(clone, baseline);
+      // Criterion 11 as amended (2026-09-09): a review carries exactly one
+      // send, so the note describes exactly what this send carries — the
+      // unsent set itself, never a publication's accumulated story.
+      const baseline = await this.unsentBaseline(clone);
+      const diff = await this.sendDiff(clone, baseline);
       hash = hashText(`${baseline}\n${diff.patch}`);
       const cached = this.generations.get(clone.slug);
       if (cached !== undefined && cached.hash === hash) {
@@ -398,8 +404,10 @@ export class PublishService {
     }
   }
 
-  /** The publication's full diff and listing, off one temp index. */
-  private async publicationDiff(
+  /** What this send carries, and its listing, off one temp index: criterion
+   * 11 as amended measures from the last send, never across a publication —
+   * there is no publication to span any more, each send is its own review. */
+  private async sendDiff(
     clone: ActiveClone,
     baseline: string,
   ): Promise<{ patch: string; entries: PublishChange[] }> {
@@ -595,12 +603,7 @@ export class PublishService {
       // is AI-owned and main-side: the renderer never saw it.
       const title =
         this.generations.get(clone.slug)?.title ?? mechanicalGeneration('', changes).title;
-      const publication = this.publications[clone.slug];
-      if (publication === undefined) {
-        await this.firstSend(job, clone, gh, title, note, openFlowPath);
-      } else {
-        await this.nextSend(job, clone, gh, publication, title, note);
-      }
+      await this.openReview(job, clone, gh, title, note, openFlowPath);
       void this.pushFreshState();
     } catch (error) {
       if (job.canceled || this.disposed) {
@@ -663,10 +666,12 @@ export class PublishService {
     }
   }
 
-  /** §8.3's first click: fetch the base, branch from its tip, commit the
-   * `conductor/` scope, push, open the PR — and only then persist the
-   * publication, so a review that never opened is never believed in. */
-  private async firstSend(
+  /** §8.3 as amended (2026-09-09) — every click: fetch the base, branch from
+   * its tip, commit the `conductor/` scope, push, open the PR — and only then
+   * persist the publication, so a review that never opened is never believed
+   * in. There is no other shape of send: the review already open is history
+   * the moment it opens, and the next changes are a review of their own. */
+  private async openReview(
     job: SendJob,
     clone: ActiveClone,
     gh: string,
@@ -703,11 +708,20 @@ export class PublishService {
         'The project could not be read after syncing. Try again.',
       );
     }
-    // Criterion 20 — dated at publication birth, slugged from the flow open
-    // when it was born, sanitized by resolution (§9.3), `tests` when none.
+    // The set the sheet counted, measured where it counted it — resolved
+    // before the temp index is taken, because `withTempIndex` serializes on
+    // one file per clone and a second call from inside the first would wait
+    // on itself.
+    const baseline = await this.unsentBaseline(clone);
+    // Criterion 20 — dated, slugged from the flow open at the click,
+    // sanitized by resolution (§9.3), `tests` when none, and walked past
+    // whatever the day already used.
     const date = (this.deps.now?.() ?? new Date()).toISOString().slice(0, 10);
-    const branch = `conductor/${date}-${this.branchSlug(clone, openFlowPath)}`;
-    const commit = await this.buildCommit(job, clone, parent, title);
+    const branch = await this.freeBranch(
+      clone,
+      `conductor/${date}-${this.branchSlug(clone, openFlowPath)}`,
+    );
+    const commit = await this.buildCommit(job, clone, parent, baseline, title);
     await this.pushBranch(job, clone, gh, branch, commit);
     this.emitStep(job, 'opening-review');
     const { number, url } = await this.createPr(job, clone, gh, base, branch, title, note);
@@ -715,61 +729,65 @@ export class PublishService {
       ...this.publications,
       [clone.slug]: {
         branch,
-        baseBranch: base,
-        baseCommit: parent,
         lastSentCommit: commit,
         prNumber: number,
         prUrl: url,
         createdAt: (this.deps.now?.() ?? new Date()).toISOString(),
+        reviewOpen: true,
       },
     };
     await this.saveState();
-    this.emitSent(job, false);
+    this.emitSent(job);
   }
 
-  /** §8.3's following clicks: a commit on the same branch, parented on the
-   * previous tip, and the PR refreshed to describe everything it contains
-   * (criterion 23). */
-  private async nextSend(
-    job: SendJob,
-    clone: ActiveClone,
-    gh: string,
-    publication: Publication,
-    title: string,
-    note: string,
-  ): Promise<void> {
-    this.emitStep(job, 'sending');
-    const commit = await this.buildCommit(job, clone, publication.lastSentCommit, title);
-    await this.pushBranch(job, clone, gh, publication.branch, commit);
-    this.emitStep(job, 'opening-review');
-    const bodyFile = await this.writeBody(job, note);
-    try {
-      const edit = await this.deps.run(
-        gh,
-        ['pr', 'edit', String(publication.prNumber), '--title', title, '--body-file', bodyFile],
-        {
-          cwd: clone.root,
-          env: this.deps.env,
-          timeout: NETWORK_TIMEOUT_MS,
-          signal: job.controller.signal,
-        },
+  /**
+   * Criterion 20 as amended — a review per send makes the dated name collide
+   * the moment someone sends the same flow twice in a day, so the next free
+   * one is taken: `…-login`, then `…-login-2`. The search reads the clone's
+   * own refs and pays no round trip for it — every branch this app pushed
+   * left `refs/heads/<name>` behind, and the clone carries `origin/*` for
+   * what it fetched. That the local ref is written *before* the push is what
+   * makes a send whose review never opened give its name up: its commit may
+   * already be on the remote, and a different one under the same name would
+   * be refused for good.
+   */
+  private async freeBranch(clone: ActiveClone, wanted: string): Promise<string> {
+    const listed = await this.git(clone, [
+      'for-each-ref',
+      '--format=%(refname)',
+      `refs/heads/${wanted}`,
+      `refs/heads/${wanted}-*`,
+      `refs/remotes/origin/${wanted}`,
+      `refs/remotes/origin/${wanted}-*`,
+    ]);
+    if (listed.code !== 0) {
+      // Not an empty answer: an unread listing that becomes "nothing is taken"
+      // hands back a name the clone already holds, and `update-ref` then moves
+      // the branch an open review is standing on — the only local record of
+      // that review's tip.
+      throw new SendRefusal(
+        ERROR_CODES.publishSendFailed,
+        'The project could not be read on this Mac. Try again.',
+        listed.stderr,
       );
-      if (edit.code !== 0) {
-        throw new SendRefusal(
-          ERROR_CODES.publishSendFailed,
-          'The review could not be updated on GitHub. Try again in a moment.',
-          edit.stderr,
-        );
-      }
-    } finally {
-      await rm(bodyFile, { force: true }).catch(() => {});
     }
-    this.publications = {
-      ...this.publications,
-      [clone.slug]: { ...publication, lastSentCommit: commit },
-    };
-    await this.saveState();
-    this.emitSent(job, true);
+    const taken = new Set(
+      listed.stdout
+        .split('\n')
+        .map((line) => line.trim().replace(/^refs\/(?:heads|remotes\/origin)\//, '')),
+    );
+    for (let attempt = 1; attempt <= BRANCH_ATTEMPTS; attempt += 1) {
+      const branch = attempt === 1 ? wanted : `${wanted}-${attempt}`;
+      if (!taken.has(branch)) {
+        return branch;
+      }
+    }
+    // Criterion 26 — what happened and what to do. "Try again" is a promise
+    // the hundredth name of the day cannot keep.
+    throw new SendRefusal(
+      ERROR_CODES.publishSendFailed,
+      'These changes have been sent for review many times today. Try again tomorrow.',
+    );
   }
 
   /**
@@ -782,6 +800,7 @@ export class PublishService {
     job: SendJob,
     clone: ActiveClone,
     parent: string,
+    baseline: string,
     title: string,
   ): Promise<string> {
     return this.withTempIndex(clone, parent, async (indexEnv) => {
@@ -791,9 +810,7 @@ export class PublishService {
       }
       const parentTree = await this.git(clone, ['rev-parse', `${parent}^{tree}`]);
       if (parentTree.stdout.trim() === tree.stdout.trim()) {
-        // The unsent set emptied between the invoke and here — a race, and
-        // §8.3 already has the words for it.
-        throw new SendRefusal(ERROR_CODES.publishNothingToSend, 'There is nothing new to send.');
+        throw await this.emptyAgainstBase(clone, baseline, indexEnv);
       }
       const commit = await this.git(
         clone,
@@ -811,6 +828,36 @@ export class PublishService {
     });
   }
 
+  /**
+   * The review would hold nothing its base does not already hold — and which
+   * truth that is depends on the two baselines §8.3 as amended left standing.
+   * Measured from the base tip the set is empty; measured from the last send
+   * it can still be real, and then it is work that undoes what a review
+   * already open carries. Criterion 24's "nothing new to send" is the honest
+   * answer only in the first case: in the second the sheet is listing those
+   * changes at the moment it would be said.
+   */
+  private async emptyAgainstBase(
+    clone: ActiveClone,
+    baseline: string,
+    indexEnv: RunOptions,
+  ): Promise<SendRefusal> {
+    const diff = await this.git(clone, this.diffArgs(baseline), indexEnv);
+    if (diff.code !== 0) {
+      return new SendRefusal(
+        ERROR_CODES.publishSendFailed,
+        'The project could not be read on this Mac. Try again.',
+        diff.stderr,
+      );
+    }
+    return parseNameStatus(diff.stdout, `${this.deps.flowsDir}/`).length === 0
+      ? new SendRefusal(ERROR_CODES.publishNothingToSend, 'There is nothing new to send.')
+      : new SendRefusal(
+          ERROR_CODES.publishUndoesOpenReview,
+          'These changes undo everything you sent for review, so there is nothing left to send.',
+        );
+  }
+
   private async pushBranch(
     job: SendJob,
     clone: ActiveClone,
@@ -818,7 +865,11 @@ export class PublishService {
     branch: string,
     commit: string,
   ): Promise<void> {
-    const ref = await this.git(clone, ['update-ref', `refs/heads/${branch}`, commit]);
+    // The empty old value is git's "this ref must not exist": `freeBranch`
+    // already proved the name free, and a create that turns out to be a move
+    // is the one outcome this pipeline must never have — it would leave an
+    // open review's tip unreachable locally.
+    const ref = await this.git(clone, ['update-ref', `refs/heads/${branch}`, commit, '']);
     if (ref.code !== 0) {
       throw new Error(`git update-ref failed: ${ref.stderr}`);
     }
@@ -943,11 +994,11 @@ export class PublishService {
     this.deps.emitEvent({ ok: true, data: { kind: 'send-step', sendId: job.id, step } });
   }
 
-  private emitSent(job: SendJob, joined: boolean): void {
+  private emitSent(job: SendJob): void {
     if (job.canceled || this.disposed) {
       return;
     }
-    this.deps.emitEvent({ ok: true, data: { kind: 'sent', sendId: job.id, joined } });
+    this.deps.emitEvent({ ok: true, data: { kind: 'sent', sendId: job.id } });
   }
 
   private emitSendFailed(job: SendJob, code: string, message: string): void {
@@ -962,9 +1013,10 @@ export class PublishService {
   /**
    * Reads the PR's state through `gh pr view` — on start, on a repo change
    * and on the sheet opening, never on the send click (criterion 28). Merged
-   * or closed ends the publication and fetches the base, so the next send
-   * starts from the fresh tip (criterion 29); any failure keeps the stored
-   * state and stays quiet — the next trigger retries (criterion 30).
+   * or closed only closes the review (criterion 29 as amended): the mark of
+   * what was sent survives, because the next send opens a review of its own
+   * from the base tip it fetches then. Any failure keeps the stored state and
+   * stays quiet — the next trigger retries (criterion 30).
    */
   private refresh(): void {
     if (this.refreshing || this.disposed) {
@@ -975,7 +1027,7 @@ export class PublishService {
       return;
     }
     const publication = this.publications[clone.slug];
-    if (publication === undefined) {
+    if (publication === undefined || !publication.reviewOpen) {
       return;
     }
     this.refreshing = true;
@@ -1010,20 +1062,16 @@ export class PublishService {
     if (parsed.data.state === 'OPEN') {
       return;
     }
-    // Merged or closed: the publication is over (criterion 29). The disk is
-    // the truth and is never rewritten — content still differing from base
-    // simply counts as unsent again.
-    const { [clone.slug]: _ended, ...rest } = this.publications;
-    this.publications = rest;
+    // Merged or closed: the review is over, and only the review (criterion 29
+    // as amended). `lastSentCommit` stays, so work that reached a review is
+    // never counted as unsent a second time — the complaint this amendment
+    // answers. Nothing is fetched here either: the next send fetches the base
+    // itself, and it is the only thing that needs a fresh tip.
+    this.publications = {
+      ...this.publications,
+      [clone.slug]: { ...publication, reviewOpen: false },
+    };
     await this.saveState();
-    const fetch = await this.git(
-      clone,
-      [...credentialArgs(gh), 'fetch', 'origin', publication.baseBranch],
-      { timeout: NETWORK_TIMEOUT_MS },
-    );
-    if (fetch.code !== 0) {
-      console.error('The base could not be fetched after the review ended:', fetch.stderr);
-    }
     await this.pushFreshState();
   }
 
@@ -1032,7 +1080,9 @@ export class PublishService {
   async openPr(): Promise<Result<{ url: string }>> {
     const clone = this.deps.activeClone();
     const publication = clone === null ? undefined : this.publications[clone.slug];
-    if (publication === undefined) {
+    // The record outlives its review (criterion 29 as amended), so holding one
+    // stopped meaning a review is open — and this refusal says exactly that.
+    if (publication === undefined || !publication.reviewOpen) {
       return refuse(ERROR_CODES.publishNoReview, 'No review is open right now.');
     }
     if (!isGitHubPrUrl(publication.prUrl)) {
@@ -1076,22 +1126,22 @@ export class PublishService {
   private async projection(clone: ActiveClone): Promise<PublishState> {
     // One read of the publication for both halves: `reviewOpen` and the
     // baseline must describe the same moment, or a recompute racing the
-    // publication's end would pair an empty set with "no review" — a torn
-    // state the control would render as "Everything sent" over unsent work.
+    // review's end would pair one moment's set with another's answer — a torn
+    // state the control would render as a truth neither half holds.
     const publication = this.publications[clone.slug];
     return {
       repo: clone.slug,
       changes: await this.changeSet(clone, await this.unsentBaseline(clone, publication)),
-      reviewOpen: publication !== undefined,
+      reviewOpen: publication?.reviewOpen === true,
     };
   }
 
   /**
-   * Criterion 7's baseline: the open publication's last sent commit, or the
-   * base branch tip — the freshest we know locally, preferring the fetched
-   * `origin/<base>` so a merged publication stops counting as unsent once the
-   * end-of-publication fetch lands. Never the network: the sheet opening must
-   * not block on it (constraint).
+   * Criterion 7's baseline as amended (2026-09-09): the last sent commit of
+   * the last publication — open or closed, because what was sent stays sent —
+   * and the base branch tip only for a clone that has never sent anything,
+   * `origin/<base>` first as the freshest tip we hold locally. Never the
+   * network: the sheet opening must not block on it (constraint).
    */
   private async unsentBaseline(
     clone: ActiveClone,
