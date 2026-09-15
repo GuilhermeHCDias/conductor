@@ -40,7 +40,6 @@ export function PublishSheet(): JSX.Element | null {
   const note = usePublishStore((state) => state.note);
   const writing = usePublishStore((state) => state.writing);
   const sendStep = usePublishStore((state) => state.sendStep);
-  const sentJoined = usePublishStore((state) => state.sentJoined);
   const failure = usePublishStore((state) => state.failure);
   const closeSheet = usePublishStore((state) => state.closeSheet);
   const editNote = usePublishStore((state) => state.editNote);
@@ -60,15 +59,13 @@ export function PublishSheet(): JSX.Element | null {
     : count === 0
       ? 'Everything sent'
       : `Send ${count} ${count === 1 ? 'change' : 'changes'}`;
-  // Criterion 6 — with a review already open, the sheet says these changes
-  // join it; there is never a second review. Criterion 23 — right after a
-  // subsequent send, the sent state says they joined the one already open.
+  // Criteria 6 and 25 as amended (2026-09-09) — a review is never joined:
+  // what is sent goes out on its own, and what is edited afterwards goes out
+  // on its own too. With one still open, the sheet says so and moves on.
   const subtitle = sent
-    ? sentJoined
-      ? 'These changes joined the review your team is already looking at. You can keep working — new changes join the same review.'
-      : 'Your team will look at these and put them in the shared project. You can keep working — new changes join the same review.'
+    ? 'Your team will look at these and put them in the shared project. You can keep working — the next ones go out as their own review.'
     : reviewOpen
-      ? 'These changes will join the review your team is already looking at.'
+      ? 'Your team is still looking at what you sent before. These go out as a review of their own.'
       : 'Your work is already saved on this Mac. Sending puts it in front of your team, who adds it to the shared project.';
 
   // The kit blocks every exit mid-send: a send is quick or visibly failing,

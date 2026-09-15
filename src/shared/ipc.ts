@@ -565,7 +565,7 @@ const publishEvent = z.discriminatedUnion('kind', [
     sendId: publishJobId,
     step: z.enum(['checking', 'sending', 'opening-review']),
   }),
-  z.object({ kind: z.literal('sent'), sendId: publishJobId, joined: z.boolean() }),
+  z.object({ kind: z.literal('sent'), sendId: publishJobId }).strict(),
   z.object({
     kind: z.literal('send-failed'),
     sendId: publishJobId,
@@ -1202,6 +1202,15 @@ export const ERROR_CODES = {
   /** Criterion 24 — §8.3's "nothing new to send": the send is refused and the
    * sheet returns to the idle truth. */
   publishNothingToSend: 'publish/nothing-to-send',
+  /**
+   * §8.3 as amended (2026-09-09) — the unsent set is real against the last
+   * send and empty against the base the new review is born from: work that
+   * undoes what a still-open review carries. Distinct from
+   * `publish/nothing-to-send` because the sheet must *not* return to the idle
+   * truth — it is listing the changes at the moment this is said, and they
+   * are really there; there is just no review for them to become.
+   */
+  publishUndoesOpenReview: 'publish/undoes-open-review',
   /** A second send while one is in flight. One publication, one pipeline. */
   publishSendActive: 'publish/send-active',
   /**

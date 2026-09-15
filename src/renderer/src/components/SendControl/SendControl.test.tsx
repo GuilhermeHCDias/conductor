@@ -37,20 +37,15 @@ describe('SendControl', () => {
     expect(onClick).toHaveBeenCalledOnce();
   });
 
-  /** Criterion 3 — the neutral pill while a review is open… */
-  it('shows the Waiting for review pill without a count at zero', () => {
+  /** Criterion 3 as amended (2026-09-09) — the neutral pill, and never a
+   * count beside it: changes made while a review is open are their own future
+   * review, so the store hands this phase nothing to add up. */
+  it('shows the Waiting for review pill without a count', () => {
     render(<SendControl count={0} onClick={vi.fn()} phase="review" />);
 
     const button = screen.getByRole('button', { name: /Waiting for review/ });
     expect(button).toHaveAttribute('data-phase', 'review');
     expect(button).not.toHaveTextContent('+');
-  });
-
-  /** …appending +N when changes accumulated on top of it. */
-  it('appends +N to the pill when unsent changes exist', () => {
-    render(<SendControl count={2} onClick={vi.fn()} phase="review" />);
-
-    expect(screen.getByRole('button', { name: /Waiting for review/ })).toHaveTextContent('+2');
   });
 
   it('reports a click on the review state too', async () => {

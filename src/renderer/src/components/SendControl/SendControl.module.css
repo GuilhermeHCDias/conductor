@@ -76,8 +76,3 @@ button.control:focus-visible {
   padding: 0 4px;
   place-items: center;
 }
-
-.plus {
-  color: var(--accent);
-  font: var(--type-mono-label);
-}

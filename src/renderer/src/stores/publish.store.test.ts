@@ -72,8 +72,17 @@ describe('the control phase', () => {
     usePublishStore.setState({ changes: [CHANGE] });
     expect(selectControlPhase(store())).toBe('unsent');
 
-    usePublishStore.setState({ reviewOpen: true });
+    usePublishStore.setState({ changes: [], reviewOpen: true });
     expect(selectControlPhase(store())).toBe('review');
+  });
+
+  /** Criterion 3 as amended (2026-09-09) — unsent changes no longer pile on
+   * top of the review already open, so they are never a +N beside it: they
+   * are their own future review, and the control offers to send them. */
+  it('offers sending while a review is open', () => {
+    usePublishStore.setState({ changes: [CHANGE], reviewOpen: true });
+
+    expect(selectControlPhase(store())).toBe('unsent');
   });
 });
 
@@ -319,33 +328,13 @@ describe('sending', () => {
     usePublishStore.setState({ changes: [CHANGE], note: 'The words.', noteEdited: true });
     await store().sendForReview(null);
 
-    store().applyEvent(ok({ kind: 'sent' as const, sendId: 3, joined: false }));
+    store().applyEvent(ok({ kind: 'sent' as const, sendId: 3 }));
 
     expect(store().sending).toBe(false);
     expect(store().reviewOpen).toBe(true);
     expect(store().changes).toEqual([]);
     expect(store().note).toBe('');
     expect(selectSheetPhase(store())).toBe('sent');
-  });
-
-  /** Criterion 23's UI clause — a subsequent send's changes joined the review
-   * already open; the sheet reads that fact from here. */
-  it('remembers whether the sent changes joined an open review', async () => {
-    window.conductor.publishSend = vi.fn(() => Promise.resolve(ok({ sendId: 3 })));
-    usePublishStore.setState({ note: 'The words.' });
-    await store().sendForReview(null);
-
-    store().applyEvent(ok({ kind: 'sent' as const, sendId: 3, joined: true }));
-
-    expect(store().sentJoined).toBe(true);
-  });
-
-  it('forgets the joined mark when the sheet reopens', () => {
-    usePublishStore.setState({ sentJoined: true });
-
-    store().openSheet();
-
-    expect(store().sentJoined).toBe(false);
   });
 
   /** Criterion 26 — the failure lands with its stable code and message. */
