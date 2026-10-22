@@ -1,6 +1,6 @@
 import { act, render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { beforeEach, describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { ENVIRONMENT } from '../../fixtures/flows';
 import {
   APPEARANCE_KEY,
@@ -32,7 +32,25 @@ describe('Toolbar', () => {
       'Run',
       'Send changes2',
       'Dark appearance',
+      'Teste',
     ]);
+  });
+
+  /** C1 — the Teste button is large, at display scale. */
+  it('renders a giant Teste button', () => {
+    render(<Toolbar />);
+
+    expect(screen.getByRole('button', { name: 'Teste' })).toHaveAttribute('data-size', 'display');
+  });
+
+  /** C4 — clicking Teste reports it, so the window can show the alert. */
+  it('calls onTest when Teste is clicked', async () => {
+    const onTest = vi.fn();
+    render(<Toolbar onTest={onTest} />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Teste' }));
+
+    expect(onTest).toHaveBeenCalledTimes(1);
   });
 
   /**

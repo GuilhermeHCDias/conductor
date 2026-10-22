@@ -1,6 +1,6 @@
 # Teste button and TESTEI alert
 
-status: todo
+status: done
 created: 2026-10-21
 type: feat
 depends-on: none
@@ -27,15 +27,15 @@ alert, and the alert closes.
 
 ## Acceptance criteria
 
-- [ ] C1. When the Conductor window renders, the system shall show a button whose visible text is
+- [x] C1. When the Conductor window renders, the system shall show a button whose visible text is
   "Teste", sized at display scale (large, far bigger than the toolbar controls).
-- [ ] C2. When the user clicks the "Teste" button, the system shall show an alert whose visible
+- [x] C2. When the user clicks the "Teste" button, the system shall show an alert whose visible
   text is "TESTEI", at display scale, centred over the window.
-- [ ] C3. While the alert is shown, the system shall cover the window with a scrim that blocks
+- [x] C3. While the alert is shown, the system shall cover the window with a scrim that blocks
   clicks on the content behind it.
-- [ ] C4. When the user dismisses the alert (its close button, or the Escape key), the system shall
+- [x] C4. When the user dismisses the alert (its close button, or the Escape key), the system shall
   hide the alert and leave the "Teste" button available to click again.
-- [ ] C5. The alert shall have `role="alertdialog"` and an accessible name, and move focus to its
+- [x] C5. The alert shall have `role="alertdialog"` and an accessible name, and move focus to its
   dismiss control when it opens.
 
 ## Out of scope
@@ -61,3 +61,9 @@ alert, and the alert closes.
 - Run the app (`npm run dev`), click the giant "Teste" button, see "TESTEI" in the centred alert,
   dismiss it with the close control and again with Escape, and confirm the button works a second
   time.
+
+## Implementation
+- Decision: the alert's open state lives in App (useState) and reaches Toolbar as an optional onTest prop, so the button stays a plain element with no store change. Why: the spec keeps the probe out of the stores and mounts the alert on the window. Cost if wrong: one prop to move into a store.
+- C1: proven by Toolbar.test.tsx "renders a giant Teste button" (data-size display), seen red first. C2: TestAlert.test.tsx "shows TESTEI" and App.test.tsx "opens the TESTEI alert from the Teste button", seen red first. C3: TestAlert.test.tsx "renders a scrim that dismisses on click" (fixed full-window scrim), seen red first. C4: TestAlert.test.tsx close-control and Escape tests, seen red first. C5: TestAlert.test.tsx "is an alertdialog with an accessible name" and "moves focus to its dismiss control", seen red first.
+- Decision: App.test.tsx's Tab-order test now expects "Teste" between "Dark appearance" and "New flow", since the probe sits on the toolbar's right. Why: the button is part of the toolbar's tab sequence. Cost if wrong: the expectation moves back, nothing else changes.
+- Bug report "Foco no alerta" (C5): the dismiss button's focus ring was drawn only on :focus-visible, which the script focus after a mouse click does not match. TestAlert.test.tsx "draws a focus ring on the dismiss control whenever it has focus" seen red first (reads the stylesheet); the rule is now .dismiss:focus. Decision: the test reads the stylesheet from the repo root because jsdom cannot render focus rings. Cost if wrong: the test breaks if the suite runs from another directory; the hand check M5 remains the real proof.

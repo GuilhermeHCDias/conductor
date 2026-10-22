@@ -151,16 +151,17 @@ describe('App', () => {
       reached.push(active?.getAttribute('aria-label') ?? active?.textContent ?? '');
     }
 
-    // Toolbar left to right, then the sidebar, then its first row.
-    expect(reached.slice(0, 6)).toEqual([
+    // Toolbar left to right (the Teste probe last), then the sidebar, then its first row.
+    expect(reached.slice(0, 7)).toEqual([
       'Toggle sidebar',
       'staging',
       'Run',
       'Send changes2',
       'Dark appearance',
+      'Teste',
       'New flow',
     ]);
-    expect(reached[6]).toBe('Search flows');
+    expect(reached[7]).toBe('Search flows');
   });
 
   /**
@@ -216,5 +217,17 @@ describe('App', () => {
       // Two of the fixture flow's one command have reported, so the line is full.
       expect(screen.getByTestId('run-progress')).toHaveStyle({ width: '100%' });
     });
+  });
+
+  /** Teste probe: the button opens the TESTEI alert on the window, and it closes. */
+  it('opens the TESTEI alert from the Teste button and closes it', async () => {
+    render(<App />);
+
+    await userEvent.click(screen.getByRole('button', { name: 'Teste' }));
+    expect(screen.getByRole('alertdialog', { name: 'TESTEI' })).toBeInTheDocument();
+
+    await userEvent.click(screen.getByRole('button', { name: 'Fechar' }));
+    expect(screen.queryByRole('alertdialog')).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Teste' })).toBeInTheDocument();
   });
 });

@@ -1,0 +1,48 @@
+/* Throwaway Teste probe alert: a fixed scrim over the window and a centred panel. */
+
+.scrim {
+  animation: cd-fade-in var(--dur-base) var(--ease-out);
+  background: oklch(16% 0.02 240 / 0.46);
+  inset: 0;
+  position: fixed;
+  z-index: 70;
+}
+
+.panel {
+  align-items: center;
+  background: var(--a-content);
+  border-radius: var(--a-radius-window);
+  box-shadow: var(--shadow-window);
+  display: grid;
+  gap: 24px;
+  left: 50%;
+  padding: 48px 64px;
+  position: fixed;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 71;
+}
+
+.message {
+  color: var(--text-primary);
+  font: var(--type-display);
+  margin: 0;
+}
+
+.dismiss {
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  font: var(--type-body-strong);
+  height: 36px;
+  padding: 0 18px;
+}
+
+/* `:focus`, not `:focus-visible`: the alert focuses this button from script
+   after a mouse click, and `:focus-visible` does not match that focus. */
+.dismiss:focus {
+  box-shadow: var(--glow-accent);
+  outline: none;
+}

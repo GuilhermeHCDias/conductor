@@ -198,3 +198,16 @@
 .sendIdleGlyph {
   color: var(--state-pass);
 }
+
+/* Throwaway Teste probe: a display-scale button, far bigger than the toolbar controls. */
+.testeProbe {
+  background: var(--accent);
+  border: 1px solid transparent;
+  border-radius: var(--a-radius-field);
+  color: var(--accent-on);
+  cursor: pointer;
+  font: var(--type-display);
+  flex: none;
+  height: 56px;
+  padding: 0 24px;
+}

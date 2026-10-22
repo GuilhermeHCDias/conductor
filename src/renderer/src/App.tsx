@@ -1,4 +1,4 @@
-import { type JSX, useEffect, useLayoutEffect } from 'react';
+import { type JSX, useCallback, useEffect, useLayoutEffect, useState } from 'react';
 import styles from './App.module.css';
 import { FLOW_YAML } from './fixtures/flows';
 import { useElementWidth } from './hooks/useElementWidth';
@@ -9,6 +9,7 @@ import { DeviceMirror } from './views/DeviceMirror/DeviceMirror';
 import { FlowEditor } from './views/FlowEditor/FlowEditor';
 import { FlowList } from './views/FlowList/FlowList';
 import { PublishSheet } from './views/PublishSheet/PublishSheet';
+import { TestAlert } from './views/TestAlert/TestAlert';
 import { Toolbar } from './views/Toolbar/Toolbar';
 
 /** The window opens at this width; the frame corrects it on first measure. */
@@ -30,6 +31,15 @@ export function App(): JSX.Element {
   const setWindowWidth = useUiStore((state) => state.setWindowWidth);
   const sidebarVisible = useUiStore(selectSidebarVisible);
   const [frameRef, frameWidth] = useElementWidth(INITIAL_WIDTH);
+  // Teste probe state (spec: teste-button). Held here, not in a store, and
+  // callbacks are stable so the alert's focus effect runs once per open.
+  const [testAlertOpen, setTestAlertOpen] = useState(false);
+  const openTest = useCallback(() => {
+    setTestAlertOpen(true);
+  }, []);
+  const closeTest = useCallback(() => {
+    setTestAlertOpen(false);
+  }, []);
 
   useWindowShortcuts();
 
@@ -52,7 +62,7 @@ export function App(): JSX.Element {
       <div aria-hidden="true" className={styles.wash} />
 
       <div className={styles.window}>
-        <Toolbar />
+        <Toolbar onTest={openTest} />
 
         <div
           className={styles.panes}
@@ -83,6 +93,7 @@ export function App(): JSX.Element {
             cover the toolbar too, or the controls it blocks stay clickable
             and the panel centres off-window. */}
         <PublishSheet />
+        {testAlertOpen ? <TestAlert onDismiss={closeTest} /> : null}
       </div>
     </div>
   );

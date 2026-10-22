@@ -63,7 +63,7 @@ function SendControl(): JSX.Element {
  * Save beside it — saving is not an act the person performs (§8.2), so the
  * subtitle reports the file's state instead of offering a button for it.
  */
-export function Toolbar(): JSX.Element {
+export function Toolbar({ onTest }: { readonly onTest?: () => void }): JSX.Element {
   const dark = useUiStore((state) => state.dark);
   const running = useUiStore((state) => state.running);
   const toggleAppearance = useUiStore((state) => state.toggleAppearance);
@@ -117,6 +117,11 @@ export function Toolbar(): JSX.Element {
           onClick={toggleAppearance}
         />
       </Tooltip>
+
+      {/* Throwaway probe (spec: teste-button): a giant button that asks the window to show the alert. */}
+      <button className={styles.testeProbe} data-size="display" onClick={onTest} type="button">
+        Teste
+      </button>
     </div>
   );
 }
