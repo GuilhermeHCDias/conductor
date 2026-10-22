@@ -10,12 +10,18 @@ export function TestAlert({ onDismiss }: { readonly onDismiss: () => void }): JS
   const titleId = useId();
   const dismissRef = useRef<HTMLButtonElement>(null);
 
-  // Opening the alert moves focus into it; Escape closes it from anywhere.
+  // Opening the alert moves focus into it; Escape closes it from anywhere, and
+  // Tab stays on its only control. Escape stops here so the window's shortcuts
+  // do not also run (they would clear the flow search behind the scrim).
   useEffect(() => {
     dismissRef.current?.focus();
     function onKey(event: KeyboardEvent): void {
       if (event.key === 'Escape') {
+        event.stopPropagation();
         onDismiss();
+      } else if (event.key === 'Tab') {
+        event.preventDefault();
+        dismissRef.current?.focus();
       }
     }
     document.addEventListener('keydown', onKey);

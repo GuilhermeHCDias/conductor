@@ -73,4 +73,25 @@ describe('TestAlert', () => {
 
     expect(onDismiss).toHaveBeenCalledTimes(1);
   });
+
+  /** The Escape that closes the alert must not reach the window's shortcuts, which would clear the flow search. */
+  it('keeps Escape from reaching the window listeners', async () => {
+    const onWindowKey = vi.fn();
+    window.addEventListener('keydown', onWindowKey);
+    render(<TestAlert onDismiss={() => {}} />);
+
+    await userEvent.keyboard('{Escape}');
+
+    window.removeEventListener('keydown', onWindowKey);
+    expect(onWindowKey).not.toHaveBeenCalled();
+  });
+
+  /** C5 — the alert is modal, so Tab keeps focus on its dismiss control. */
+  it('keeps Tab focus inside the alert', async () => {
+    render(<TestAlert onDismiss={() => {}} />);
+
+    await userEvent.tab();
+
+    expect(screen.getByRole('button', { name: 'Fechar' })).toHaveFocus();
+  });
 });
